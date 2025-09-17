@@ -142,8 +142,7 @@ export default function CoverSelectionPage() {
         'README.yml',
         yamlContent,
         `Add new album: ${albumForm.name}`,
-        sha,
-        'master'
+        sha
       );
 
       // 清理sessionStorage

@@ -84,12 +84,11 @@ jobs:
       run: npm ci
       
     - name: Build for static export
-      run: |
-        npm run build
-        npm run export
+      run: npm run build:static
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH || '' }}
+        BUILD_STATIC: 'true'
         
     - name: Setup Pages
       uses: actions/configure-pages@v4

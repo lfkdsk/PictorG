@@ -10,8 +10,6 @@
     "format": "prettier --write .",
     "test": "jest",
     "test:ci": "jest --ci --coverage --watchAll=false",
-    "export": "next export",
-    "deploy": "npm run build && npm run export",
     "docker:build": "docker build -t picg .",
     "docker:run": "docker run -p 3000:3000 picg"
   },

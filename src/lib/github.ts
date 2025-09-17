@@ -95,6 +95,28 @@ export function logout(): void {
   }
 }
 
+// 获取仓库的默认分支
+export async function getDefaultBranch(token: string, owner: string, repo: string): Promise<string> {
+  try {
+    const response = await fetch(`${BASE}/repos/${owner}/${repo}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get repository info: ${response.statusText}`);
+    }
+    
+    const repoData = await response.json();
+    return repoData.default_branch || 'main';
+  } catch (error) {
+    console.warn('Failed to get default branch, falling back to main:', error);
+    return 'main'; // 默认使用 main 分支
+  }
+}
+
 export async function listRepos(token: string): Promise<Repo[]> {
   // Include both public and private repos the user can access
   const params = new URLSearchParams({
@@ -137,7 +159,10 @@ export interface UploadFileOptions {
 }
 
 export async function uploadFile(token: string, options: UploadFileOptions): Promise<any> {
-  const { owner, repo, path, content, message, branch = 'master' } = options;
+  const { owner, repo, path, content, message } = options;
+  
+  // 动态获取默认分支
+  const branch = options.branch || await getDefaultBranch(token, owner, repo);
   
   // First, try to get the existing file to get its SHA (for updates)
   let sha: string | undefined;
@@ -259,12 +284,14 @@ export async function updateGitHubFile(
   content: string, 
   message: string,
   sha?: string,
-  branch: string = 'master'
+  branch?: string
 ): Promise<any> {
+  // 动态获取默认分支
+  const targetBranch = branch || await getDefaultBranch(token, owner, repo);
   const body: any = {
     message,
     content: btoa(unescape(encodeURIComponent(content))), // 正确处理UTF-8编码
-    branch
+    branch: targetBranch
   };
 
   if (sha) {
@@ -321,10 +348,12 @@ export async function batchUploadFiles(
   repo: string, 
   files: BatchUploadFile[], 
   message: string,
-  branch: string = 'master'
+  branch?: string
 ): Promise<any> {
+  // 动态获取默认分支
+  const targetBranch = branch || await getDefaultBranch(token, owner, repo);
   // Get the latest commit SHA
-  const branchRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+  const branchRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
     headers: {
       Accept: 'application/vnd.github+json',
       Authorization: `token ${token}`
@@ -425,7 +454,7 @@ export async function batchUploadFiles(
   const newCommitData = await newCommitRes.json();
   
   // Update branch reference
-  const updateRefRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+  const updateRefRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',

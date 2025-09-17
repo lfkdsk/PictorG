@@ -11,29 +11,20 @@
 - [环境变量配置](#环境变量配置)
 - [故障排除](#故障排除)
 
-## 🚀 GitHub Pages 部署
+## 🚀 Vercel 部署（推荐）
 
-### 自动部署（推荐）
+### 自动部署
 
-1. **启用 GitHub Pages**
+1. **配置 Vercel Secrets**
    ```bash
-   # 在 GitHub 仓库设置中：
-   # Settings > Pages > Source > GitHub Actions
-   ```
-
-2. **配置 Secrets**
-   ```bash
-   # 在 GitHub 仓库设置中添加以下 Secrets：
-   # Settings > Secrets and variables > Actions
-   
-   # 必需的 Secrets：
+   # 在 GitHub 仓库 Secrets 中添加：
+   VERCEL_TOKEN=your_vercel_token
+   VERCEL_ORG_ID=your_vercel_org_id
+   VERCEL_PROJECT_ID=your_vercel_project_id
    GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx  # GitHub Personal Access Token
-   
-   # 可选的 Variables：
-   NEXT_PUBLIC_BASE_PATH=/your-repo-name  # 用于子路径部署
    ```
 
-3. **推送代码触发部署**
+2. **推送代码自动部署**
    ```bash
    git push origin main
    ```
@@ -41,12 +32,12 @@
 ### 手动部署
 
 ```bash
-# 1. 构建静态文件
-npm run build
-npm run export
+# 1. 安装 Vercel CLI
+npm i -g vercel
 
-# 2. 部署到 gh-pages 分支
-npx gh-pages -d out
+# 2. 登录并部署
+vercel login
+vercel --prod
 ```
 
 ## ☁️ Vercel 部署

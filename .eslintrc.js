@@ -1,10 +1,11 @@
 module.exports = {
   root: true,
   extends: [
-    "next/core-web-vitals",
-    "@next/eslint-plugin-next/recommended"
+    "next/core-web-vitals"
   ],
   rules: {
-    // 移除有问题的规则，使用 Next.js 默认配置
+    // 自定义规则
+    "@next/next/no-img-element": "off",
+    "react/no-unescaped-entities": "off"
   }
 }

@@ -5,14 +5,9 @@ const nextConfig = {
     typedRoutes: true
   },
   
-  // 静态导出配置
-  output: 'export',
-  trailingSlash: true,
-  skipTrailingSlashRedirect: true,
-  
-  // 图片优化配置（静态导出时需要）
+  // 图片优化配置
   images: {
-    unoptimized: true
+    unoptimized: true // 为了兼容性，禁用图片优化
   },
   
   // 基础路径配置（用于GitHub Pages等子路径部署）
@@ -31,7 +26,39 @@ const nextConfig = {
   
   // Webpack配置
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // 自定义webpack配置
+    // 优化chunk分割以减少循环依赖
+    if (!dev && !isServer) {
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          default: {
+            minChunks: 2,
+            priority: -20,
+            reuseExistingChunk: true,
+          },
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name: 'vendors',
+            priority: -10,
+            chunks: 'all',
+          },
+          common: {
+            name: 'common',
+            minChunks: 2,
+            priority: -30,
+            chunks: 'all',
+            reuseExistingChunk: true,
+          },
+        },
+      };
+    }
+    
+    // 添加resolve别名以避免循环依赖
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': require('path').resolve(__dirname, 'src'),
+    };
+    
     return config;
   },
   
