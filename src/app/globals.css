@@ -1,0 +1,49 @@
+:root {
+  --bg: #fefdfb;
+  --text: #451a03;
+  --text-secondary: #78716c;
+  --surface: #f7f3f0;
+  --input: #faf8f5;
+  --border: #e7e5e4;
+  --primary: #a16207;
+  color-scheme: light;
+}
+
+/* Dark mode via attribute or OS preference */
+:root[data-theme="dark"] {
+  --bg: #1c1917;
+  --text: #fef7ed;
+  --text-secondary: #d6d3d1;
+  --surface: #292524;
+  --input: #1c1917;
+  --border: #57534e;
+  --primary: #fbbf24;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #1c1917;
+    --text: #fef7ed;
+    --text-secondary: #d6d3d1;
+    --surface: #292524;
+    --input: #1c1917;
+    --border: #57534e;
+    --primary: #fbbf24;
+    color-scheme: dark;
+  }
+}
+
+html, body {
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans,
+    Ubuntu, Cantarell, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+* { box-sizing: border-box; }
+
+/* Layout helpers */
+.container { width: min(1200px, 94vw); margin: 0 auto; padding: 18px 8px 32px; }
