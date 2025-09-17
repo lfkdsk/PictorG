@@ -4,28 +4,28 @@ const nextConfig = {
   experimental: {
     typedRoutes: true
   },
-  
+
   // 图片优化配置
   images: {
     unoptimized: true // 为了兼容性，禁用图片优化
   },
-  
+
   // 基础路径配置（用于GitHub Pages等子路径部署）
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || '',
-  
+
   // 环境变量配置
   env: {
     CUSTOM_KEY: process.env.CUSTOM_KEY,
   },
-  
+
   // 构建时的环境变量
   publicRuntimeConfig: {
     basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   },
-  
+
   // Webpack配置
-  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+  webpack: (config, { dev, isServer }) => {
     // 优化chunk分割以减少循环依赖
     if (!dev && !isServer) {
       config.optimization.splitChunks = {
@@ -60,32 +60,32 @@ const nextConfig = {
         },
       };
     }
-    
+
     // Next.js已经有优化的CSS处理，不需要额外配置
-    
+
     // 添加resolve别名以避免循环依赖
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': require('path').resolve(__dirname, 'src'),
     };
-    
+
     return config;
   },
-  
+
   // 重定向配置
   async redirects() {
     return [
       // 可以在这里添加重定向规则
     ];
   },
-  
+
   // 重写配置
   async rewrites() {
     return [
       // 可以在这里添加重写规则
     ];
   },
-  
+
   // 头部配置
   async headers() {
     return [
