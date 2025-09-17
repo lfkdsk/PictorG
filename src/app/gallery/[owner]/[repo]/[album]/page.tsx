@@ -3,7 +3,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import yaml from 'js-yaml';
-import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath } from '@/lib/github';
+import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath, deleteDirectory } from '@/lib/github';
 
 type Config = {
   thumbnail_url: string;
@@ -55,6 +55,8 @@ export default function AlbumPage() {
     location: [0, 0] as [number, number]
   });
   const [saving, setSaving] = useState(false);
+  const [showDeleteAlbumDialog, setShowDeleteAlbumDialog] = useState(false);
+  const [deletingAlbum, setDeletingAlbum] = useState(false);
 
   const fetchDirectoryContents = async (path: string): Promise<ImageFile[]> => {
     const token = getGitHubToken();
@@ -342,6 +344,77 @@ export default function AlbumPage() {
     }
   };
 
+  const deleteAlbum = async () => {
+    const token = getGitHubToken();
+    if (!token) {
+      setError('未找到GitHub token');
+      return;
+    }
+
+    if (!albumInfo) {
+      setError('相册信息未加载');
+      return;
+    }
+
+    setDeletingAlbum(true);
+    try {
+      // 1. 删除GitHub目录
+      await deleteDirectory(
+        token,
+        owner,
+        repo,
+        albumUrl,
+        `Delete album: ${albumInfo.name}`
+      );
+
+      // 2. 从README.yml中删除相册信息
+      const readmeContent = await fetchGitHubFile(token, owner, repo, 'README.yml');
+      const readmeData = yaml.load(readmeContent, { 
+        schema: yaml.CORE_SCHEMA,
+        json: true 
+      }) as Record<string, Omit<AlbumInfo, 'name'>>;
+
+      // 删除相册条目
+      delete readmeData[albumInfo.name];
+
+      // 转换回YAML格式
+      const updatedYaml = yaml.dump(readmeData, {
+        indent: 2,
+        lineWidth: -1,
+        noRefs: true,
+        quotingType: '"',
+        forceQuotes: false
+      });
+
+      // 获取README.yml的SHA
+      const sha = await getFileSha(token, owner, repo, 'README.yml');
+      if (!sha) {
+        throw new Error('无法获取README.yml文件信息');
+      }
+
+      // 更新README.yml
+      await updateGitHubFile(
+        token,
+        owner,
+        repo,
+        'README.yml',
+        updatedYaml,
+        `Remove album ${albumInfo.name} from README.yml`,
+        sha
+      );
+
+      // 删除成功，跳转回gallery页面
+      window.location.href = `/gallery/${owner}/${repo}`;
+
+    } catch (err) {
+      console.error('删除相册失败:', err);
+      setError(err instanceof Error ? err.message : '删除相册失败');
+    } finally {
+      setDeletingAlbum(false);
+      setShowDeleteAlbumDialog(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container">
@@ -444,7 +517,7 @@ export default function AlbumPage() {
             }}
             disabled={deleting || saving}
           >
-            📤 上传图片
+            上传图片
           </button>
           
           <button 
@@ -456,6 +529,14 @@ export default function AlbumPage() {
             disabled={deleting}
           >
             {isDeleteMode ? '取消删除' : '删除图片'}
+          </button>
+
+          <button 
+            className="delete-album-btn"
+            onClick={() => setShowDeleteAlbumDialog(true)}
+            disabled={deleting || saving || deletingAlbum}
+          >
+            删除相册
           </button>
           
           {isDeleteMode && (
@@ -630,7 +711,7 @@ export default function AlbumPage() {
                  </div>
                </div>
               
-              <div className="form-actions">
+              <div className="form-actions dialog-actions">
                 <button 
                   type="button"
                   className="cancel-btn"
@@ -648,6 +729,54 @@ export default function AlbumPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 删除相册确认对话框 */}
+      {showDeleteAlbumDialog && (
+        <div className="modal-overlay" onClick={() => setShowDeleteAlbumDialog(false)}>
+          <div className="modal-content delete-album-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-body">
+              <p style={{ marginBottom: '16px', color: 'var(--text)' }}>
+                您确定要删除相册 <strong>"{albumInfo?.name}"</strong> 吗？
+              </p>
+              <div style={{ 
+                background: '#fef2f2', 
+                border: '1px solid #fecaca', 
+                borderRadius: '8px', 
+                padding: '12px', 
+                marginBottom: '16px' 
+              }}>
+                <p style={{ margin: 0, fontSize: '14px', color: '#dc2626' }}>
+                  ⚠️ <strong>此操作不可撤销！</strong>
+                </p>
+                <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '14px', color: '#dc2626' }}>
+                  <li>将删除相册目录及其所有图片</li>
+                  <li>将从README.yml中移除相册信息</li>
+                  <li>所有数据将永久丢失</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="form-actions">
+              <button 
+                type="button"
+                className="cancel-btn"
+                onClick={() => setShowDeleteAlbumDialog(false)}
+                disabled={deletingAlbum}
+              >
+                取消
+              </button>
+              <button 
+                type="button"
+                className="delete-confirm-btn-dialog"
+                onClick={deleteAlbum}
+                disabled={deletingAlbum}
+              >
+                {deletingAlbum ? '删除中...' : '确认删除'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -900,6 +1029,38 @@ export default function AlbumPage() {
           opacity: 0.6;
           cursor: not-allowed;
         }
+
+        .delete-album-btn {
+          width: 100%;
+          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          color: white;
+          border: none;
+          padding: 12px 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          margin-top: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          box-shadow: 0 4px 12px color-mix(in srgb, #dc2626, transparent 70%);
+        }
+
+        .delete-album-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #b91c1c, #991b1b);
+          transform: translateY(-2px);
+          box-shadow: 0 6px 16px color-mix(in srgb, #dc2626, transparent 60%);
+        }
+
+        .delete-album-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
+        }
         
         .delete-actions {
           display: flex;
@@ -1062,6 +1223,10 @@ export default function AlbumPage() {
           color: var(--text);
         }
         
+        .modal-body {
+          padding: 24px;
+        }
+
         .edit-form {
           padding: 24px;
         }
@@ -1108,7 +1273,13 @@ export default function AlbumPage() {
           gap: 12px;
           justify-content: flex-end;
           margin-top: 24px;
-          padding-top: 20px;
+          padding: 20px 24px 20px 24px;
+          border-top: 1px solid var(--border);
+        }
+
+        .dialog-actions {
+          padding: 20px 24px 32px 24px;
+          margin-top: 0;
           border-top: 1px solid var(--border);
         }
         
@@ -1149,6 +1320,32 @@ export default function AlbumPage() {
         .save-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .delete-confirm-btn-dialog {
+          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          color: white;
+          border: none;
+          padding: 10px 20px;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 12px color-mix(in srgb, #dc2626, transparent 70%);
+        }
+
+        .delete-confirm-btn-dialog:hover:not(:disabled) {
+          background: linear-gradient(135deg, #b91c1c, #991b1b);
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px color-mix(in srgb, #dc2626, transparent 60%);
+        }
+
+        .delete-confirm-btn-dialog:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
         }
       `}</style>
     </div>

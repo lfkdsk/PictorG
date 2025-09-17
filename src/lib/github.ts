@@ -488,3 +488,160 @@ export async function batchUploadFiles(
   
   return newCommitData;
 }
+
+// 删除GitHub目录及其所有内容
+export async function deleteDirectory(
+  token: string,
+  owner: string,
+  repo: string,
+  directoryPath: string,
+  message: string,
+  branch?: string
+): Promise<any> {
+  // 动态获取默认分支
+  const targetBranch = branch || await getDefaultBranch(token, owner, repo);
+  
+  try {
+    // 1. 获取目录下的所有文件
+    const response = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${encodeGitHubPath(directoryPath)}?ref=${targetBranch}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('目录不存在');
+      }
+      throw new Error(`获取目录内容失败: ${response.statusText}`);
+    }
+
+    const files = await response.json();
+    
+    if (!Array.isArray(files)) {
+      throw new Error('目录路径指向的不是一个目录');
+    }
+
+    if (files.length === 0) {
+      throw new Error('目录为空，无需删除');
+    }
+
+    // 2. 获取当前分支的最新commit SHA
+    const branchRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!branchRes.ok) {
+      throw new Error(`获取分支信息失败: ${branchRes.statusText}`);
+    }
+
+    const branchData = await branchRes.json();
+    const latestCommitSha = branchData.object.sha;
+
+    // 3. 获取当前commit的tree
+    const commitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!commitRes.ok) {
+      throw new Error(`获取commit信息失败: ${commitRes.statusText}`);
+    }
+
+    const commitData = await commitRes.json();
+    const baseTreeSha = commitData.tree.sha;
+
+    // 4. 获取完整的tree，排除要删除的目录
+    const treeRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/trees/${baseTreeSha}?recursive=1`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!treeRes.ok) {
+      throw new Error(`获取tree信息失败: ${treeRes.statusText}`);
+    }
+
+    const treeData = await treeRes.json();
+    
+    // 5. 过滤掉要删除的目录及其所有子文件
+    const filteredTree = treeData.tree.filter((item: any) => {
+      return !item.path.startsWith(directoryPath + '/') && item.path !== directoryPath;
+    });
+
+    // 6. 创建新的tree
+    const newTreeRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/trees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        tree: filteredTree.map((item: any) => ({
+          path: item.path,
+          mode: item.mode,
+          type: item.type,
+          sha: item.sha
+        }))
+      })
+    });
+
+    if (!newTreeRes.ok) {
+      throw new Error(`创建新tree失败: ${newTreeRes.statusText}`);
+    }
+
+    const newTreeData = await newTreeRes.json();
+
+    // 7. 创建新的commit
+    const newCommitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        message,
+        tree: newTreeData.sha,
+        parents: [latestCommitSha]
+      })
+    });
+
+    if (!newCommitRes.ok) {
+      throw new Error(`创建commit失败: ${newCommitRes.statusText}`);
+    }
+
+    const newCommitData = await newCommitRes.json();
+
+    // 8. 更新分支引用
+    const updateRefRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        sha: newCommitData.sha
+      })
+    });
+
+    if (!updateRefRes.ok) {
+      throw new Error(`更新分支失败: ${updateRefRes.statusText}`);
+    }
+
+    return newCommitData;
+    
+  } catch (error) {
+    console.error('删除目录失败:', error);
+    throw error;
+  }
+}
