@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Navbar from '@/components/Navbar';
-import Script from 'next/script';
+import StyledJsxProvider from '@/components/StyledJsxProvider';
 
 export const metadata: Metadata = {
   title: 'Pictor',
@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             })();
           `
         }} />
-        
+
         {/* 防止FOUC的关键CSS */}
         <style dangerouslySetInnerHTML={{
           __html: `
@@ -47,9 +47,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }} />
       </head>
       <body>
-        
-        <Navbar />
-        <main className="container">{children}</main>
+        <StyledJsxProvider>
+          <Navbar />
+          <main className="container">{children}</main>
+        </StyledJsxProvider>
       </body>
     </html>
   );
