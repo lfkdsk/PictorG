@@ -1,7 +1,43 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import styled from 'styled-components';
 import { validateCurrentToken } from '@/lib/github';
+
+// Styled Components
+const Wrap = styled.section`
+  display: grid;
+  gap: 16px;
+  padding: 12px 0;
+`;
+
+const Brand = styled.h1`
+  font-size: 40px;
+  line-height: 1;
+  margin: 8px 0;
+`;
+
+const Actions = styled.div`
+  display: grid;
+  gap: 12px;
+  width: 260px;
+`;
+
+const Button = styled.button<{ $outline?: boolean }>`
+  height: 44px;
+  min-width: 220px;
+  border-radius: 10px;
+  border: none;
+  background: ${props => props.$outline ? 'transparent' : props.theme.primary};
+  color: ${props => props.$outline ? 'inherit' : '#fff'};
+  font-weight: 600;
+  text-align: center;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 16px;
+  cursor: pointer;
+  border: ${props => props.$outline ? `2px solid ${props.theme.border}` : 'none'};
+`;
 
 export default function LoginOptions() {
   const router = useRouter();
@@ -14,7 +50,7 @@ export default function LoginOptions() {
         if (isValid) {
           router.push('/main');
         }
-      } catch (error) {
+      } catch {
         // Token验证失败，留在登录页面
         console.log('No valid token found, staying on login page');
       }
@@ -29,42 +65,17 @@ export default function LoginOptions() {
   };
 
   return (
-    <section aria-label="login-options" className="wrap">
-      <h1 className="brand">Pictor</h1>
+    <Wrap aria-label="login-options">
+      <Brand>Pictor</Brand>
 
-      <div className="actions">
-        <button type="button" className="btn" onClick={onGithubLogin}>
+      <Actions>
+        <Button type="button" onClick={onGithubLogin}>
           使用 GitHub 登录
-        </button>
-        <button type="button" className="btn outline" onClick={() => router.push('/login/token')}>
+        </Button>
+        <Button type="button" $outline onClick={() => router.push('/login/token')}>
           输入 GitHub Token
-        </button>
-      </div>
-
-      <style jsx>{`
-        .wrap { display: grid; gap: 16px; padding: 12px 0; }
-        .brand { font-size: 40px; line-height: 1; margin: 8px 0; }
-        .actions { display: grid; gap: 12px; width: 260px; }
-        .btn {
-          height: 44px;
-          min-width: 220px;
-          border-radius: 10px;
-          border: none;
-          background: var(--primary);
-          color: #fff;
-          font-weight: 600;
-          text-align: center;
-          display: inline-grid;
-          place-items: center;
-          padding: 0 16px;
-          cursor: pointer;
-        }
-        .btn.outline {
-          background: transparent;
-          color: inherit;
-          border: 2px solid var(--border);
-        }
-      `}</style>
-    </section>
+        </Button>
+      </Actions>
+    </Wrap>
   );
 }
