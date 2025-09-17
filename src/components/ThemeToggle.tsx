@@ -3,11 +3,14 @@ import { useEffect, useState } from 'react';
 
 function getPreferredTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'light';
-  const saved = localStorage.getItem('theme');
-  if (saved === 'light' || saved === 'dark') return saved;
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
+  
+  try {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch(e) {}
+  
+  // 默认使用浅色主题，除非用户明确偏好暗色
+  return 'light';
 }
 
 export default function ThemeToggle() {
@@ -17,6 +20,11 @@ export default function ThemeToggle() {
   useEffect(() => {
     const t = getPreferredTheme();
     setTheme(t);
+    
+    // 立即应用主题，避免闪烁
+    const html = document.documentElement;
+    html.setAttribute('data-theme', t);
+    
     setMounted(true);
   }, []);
 

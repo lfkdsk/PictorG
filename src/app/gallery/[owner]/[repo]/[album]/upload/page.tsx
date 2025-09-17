@@ -3,13 +3,14 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
 import { compressImage } from '@/lib/compress-image';
-import { uploadFile, fileToBase64, batchUploadFiles, BatchUploadFile, getGitHubToken } from '@/lib/github';
+import { uploadFile, fileToBase64, batchUploadFiles, BatchUploadFile, getGitHubToken, decodeGitHubPath, encodeGitHubPath } from '@/lib/github';
 
-export default function UploadPage() {
+export default function AlbumUploadPage() {
   const params = useParams();
   const owner = params.owner as string;
   const repo = params.repo as string;
-  const albumUrl = params.album as string;
+  // 解码URL参数中的中文字符
+  const albumUrl = decodeGitHubPath(params.album as string);
   
   interface FileWithCompression {
     original: File;
@@ -182,7 +183,7 @@ export default function UploadPage() {
       {/* 顶部导航栏 */}
       <div className="top-nav">
         <Link 
-          href={`/gallery/${owner}/${repo}/${albumUrl}`} 
+          href={`/gallery/${owner}/${repo}/${encodeGitHubPath(albumUrl)}`} 
           className="back-btn"
           style={{
             color: 'var(--primary)',

@@ -6,10 +6,11 @@
   --input: #faf8f5;
   --border: #e7e5e4;
   --primary: #a16207;
+  --hover: #f5f5f4;
   color-scheme: light;
 }
 
-/* Dark mode via attribute or OS preference */
+/* Dark mode via explicit attribute */
 :root[data-theme="dark"] {
   --bg: #1c1917;
   --text: #fef7ed;
@@ -18,11 +19,13 @@
   --input: #1c1917;
   --border: #57534e;
   --primary: #fbbf24;
+  --hover: #44403c;
   color-scheme: dark;
 }
 
+/* 只有在没有明确设置主题时才使用系统偏好 */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --bg: #1c1917;
     --text: #fef7ed;
     --text-secondary: #d6d3d1;
@@ -30,6 +33,7 @@
     --input: #1c1917;
     --border: #57534e;
     --primary: #fbbf24;
+    --hover: #44403c;
     color-scheme: dark;
   }
 }
@@ -47,3 +51,27 @@ html, body {
 
 /* Layout helpers */
 .container { width: min(1200px, 94vw); margin: 0 auto; padding: 18px 8px 32px; }
+
+/* CSS加载完成标记 */
+html::after {
+  content: '';
+  display: none;
+}
+
+/* 防止FOUC的过渡效果 */
+body {
+  opacity: 1;
+  transition: opacity 0.1s ease-in-out;
+}
+
+/* 确保关键元素立即可见 */
+.navbar, .container, main {
+  visibility: visible;
+}
+
+/* 优化字体加载 */
+@font-face {
+  font-family: 'system-ui';
+  src: local('system-ui'), local('-apple-system'), local('BlinkMacSystemFont');
+  font-display: swap;
+}

@@ -3,7 +3,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import yaml from 'js-yaml';
-import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken } from '@/lib/github';
+import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, encodeGitHubPath } from '@/lib/github';
 import AuthGuard from '@/components/AuthGuard';
 
 type Config = {
@@ -376,7 +376,7 @@ export default function GalleryPage() {
         {albums.map((album) => (
           <Link 
             key={album.name} 
-            href={`/gallery/${owner}/${repo}/${album.url}`} 
+            href={`/gallery/${owner}/${repo}/${encodeGitHubPath(album.url)}`} 
             className="album-card"
             style={{
               border: '1px solid color-mix(in srgb, var(--text), transparent 80%)',

@@ -3,7 +3,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import yaml from 'js-yaml';
-import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken } from '@/lib/github';
+import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath } from '@/lib/github';
 
 type Config = {
   thumbnail_url: string;
@@ -34,7 +34,8 @@ export default function AlbumPage() {
   const params = useParams();
   const owner = params.owner as string;
   const repo = params.repo as string;
-  const albumUrl = params.album as string;
+  // 解码URL参数中的中文字符
+  const albumUrl = decodeGitHubPath(params.album as string);
   
   const [config, setConfig] = useState<Config | null>(null);
   const [albumInfo, setAlbumInfo] = useState<AlbumInfo | null>(null);
@@ -438,8 +439,8 @@ export default function AlbumPage() {
           <button 
             className="upload-btn"
             onClick={() => {
-              // 跳转到上传页面
-              window.location.href = `/gallery/${owner}/${repo}/${albumUrl}/upload`;
+              // 跳转到上传页面，对albumUrl进行编码
+              window.location.href = `/gallery/${owner}/${repo}/${encodeGitHubPath(albumUrl)}/upload`;
             }}
             disabled={deleting || saving}
           >

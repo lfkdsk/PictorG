@@ -95,6 +95,22 @@ export function logout(): void {
   }
 }
 
+// URL编码工具函数，正确处理中文字符
+export function encodeGitHubPath(path: string): string {
+  // 对路径中的每个部分进行编码，但保留斜杠
+  return path.split('/').map(part => encodeURIComponent(part)).join('/');
+}
+
+// URL解码工具函数
+export function decodeGitHubPath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch (error) {
+    console.warn('Failed to decode path:', path, error);
+    return path;
+  }
+}
+
 // 获取仓库的默认分支
 export async function getDefaultBranch(token: string, owner: string, repo: string): Promise<string> {
   try {

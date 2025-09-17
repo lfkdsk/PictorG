@@ -49,9 +49,19 @@ const nextConfig = {
             chunks: 'all',
             reuseExistingChunk: true,
           },
+          // CSS优化
+          styles: {
+            name: 'styles',
+            test: /\.(css|scss|sass)$/,
+            chunks: 'all',
+            enforce: true,
+            priority: 10,
+          },
         },
       };
     }
+    
+    // Next.js已经有优化的CSS处理，不需要额外配置
     
     // 添加resolve别名以避免循环依赖
     config.resolve.alias = {

@@ -151,7 +151,109 @@ export default function GalleryManager() {
     }
   };
 
-  const removeGallery = (id: number) => setGalleries((prev) => prev.filter((g) => g.id !== id));
+  const removeGallery = (id: number) => {
+    // 获取要移除的仓库信息
+    const galleryToRemove = galleries.find(g => g.id === id);
+    
+    if (!galleryToRemove) return;
+    
+    // 从状态中移除
+    setGalleries((prev) => {
+      const newGalleries = prev.filter((g) => g.id !== id);
+      // 如果是最后一个仓库，确保更新缓存
+      if (newGalleries.length === 0) {
+        localStorage.removeItem(GALLERIES_KEY);
+      }
+      return newGalleries;
+    });
+    
+    // 清理相关缓存（静默清理）
+    clearGalleryCache(galleryToRemove.full_name, true);
+  };
+
+  const clearGalleryCache = (repoFullName: string, silent: boolean = false) => {
+    try {
+      // 清理仓库相关的所有缓存
+      const [owner, repo] = repoFullName.split('/');
+      
+      // 清理localStorage中所有相关的键
+      const localStorageKeys = Object.keys(localStorage);
+      let clearedCount = 0;
+      
+      localStorageKeys.forEach(key => {
+        // 清理包含仓库信息的缓存
+        if (key.includes(owner) && key.includes(repo)) {
+          localStorage.removeItem(key);
+          clearedCount++;
+          if (!silent) console.log(`清理localStorage键: ${key}`);
+        }
+        // 清理特定模式的缓存
+        if (key.includes(`${owner}_${repo}`) || 
+            key.includes(`${owner}/${repo}`) ||
+            key.includes(repoFullName)) {
+          localStorage.removeItem(key);
+          clearedCount++;
+          if (!silent) console.log(`清理localStorage键: ${key}`);
+        }
+      });
+      
+      // 清理sessionStorage中所有相关的键
+      const sessionStorageKeys = Object.keys(sessionStorage);
+      sessionStorageKeys.forEach(key => {
+        // 清理包含仓库信息的缓存
+        if (key.includes(owner) && key.includes(repo)) {
+          sessionStorage.removeItem(key);
+          clearedCount++;
+          if (!silent) console.log(`清理sessionStorage键: ${key}`);
+        }
+        // 清理特定模式的缓存
+        if (key.includes(`${owner}_${repo}`) || 
+            key.includes(`${owner}/${repo}`) ||
+            key.includes(repoFullName)) {
+          sessionStorage.removeItem(key);
+          clearedCount++;
+          if (!silent) console.log(`清理sessionStorage键: ${key}`);
+        }
+      });
+      
+      // 强制清理已知的缓存键
+      const knownCacheKeys = [
+        'newAlbumForm',
+        'uploadedFiles',
+        `gallery_${owner}_${repo}`,
+        `albums_${owner}_${repo}`,
+        `config_${owner}_${repo}`,
+        `readme_${owner}_${repo}`,
+        `images_${owner}_${repo}`,
+        `upload_${owner}_${repo}`,
+        `${owner}/${repo}_cache`,
+        `${repoFullName}_cache`
+      ];
+      
+      knownCacheKeys.forEach(key => {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      });
+      
+      // 清理浏览器缓存（如果支持）
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          names.forEach(name => {
+            if (name.includes(owner) || name.includes(repo) || name.includes(repoFullName)) {
+              caches.delete(name);
+              if (!silent) console.log(`清理浏览器缓存: ${name}`);
+            }
+          });
+        });
+      }
+      
+      if (!silent) {
+        console.log(`✅ 已清理仓库 ${repoFullName} 的所有相关缓存`);
+      }
+    } catch (error) {
+      console.warn('清理缓存时出错:', error);
+    }
+  };
 
 
 
