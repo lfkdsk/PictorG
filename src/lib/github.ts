@@ -573,8 +573,26 @@ export async function deleteDirectory(
     
     // 5. 过滤掉要删除的目录及其所有子文件
     const filteredTree = treeData.tree.filter((item: any) => {
-      return !item.path.startsWith(directoryPath + '/') && item.path !== directoryPath;
+      // 确保路径匹配的准确性
+      const itemPath = item.path;
+      const targetPath = directoryPath;
+      
+      // 完全匹配目录本身
+      if (itemPath === targetPath) {
+        console.log(`删除目录: ${itemPath}`);
+        return false;
+      }
+      
+      // 匹配目录下的所有子文件和子目录
+      if (itemPath.startsWith(targetPath + '/')) {
+        console.log(`删除子文件: ${itemPath}`);
+        return false;
+      }
+      
+      return true;
     });
+    
+    console.log(`原始文件数: ${treeData.tree.length}, 过滤后文件数: ${filteredTree.length}`);
 
     // 6. 创建新的tree
     const newTreeRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/trees`, {

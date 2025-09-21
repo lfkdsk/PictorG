@@ -752,10 +752,22 @@ export default function AlbumPage() {
                   ⚠️ <strong>此操作不可撤销！</strong>
                 </p>
                 <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '14px', color: '#dc2626' }}>
-                  <li>将删除相册目录及其所有图片</li>
-                  <li>将从README.yml中移除相册信息</li>
-                  <li>所有数据将永久丢失</li>
+                  <li><strong>删除GitHub仓库中的相册文件夹</strong> ({albumUrl}/)</li>
+                  <li><strong>删除文件夹内的所有图片和文件</strong></li>
+                  <li><strong>从README.yml中移除相册配置</strong></li>
                 </ul>
+              </div>
+              
+              <div style={{ 
+                background: '#f0f9ff', 
+                border: '1px solid #bae6fd', 
+                borderRadius: '8px', 
+                padding: '12px', 
+                marginBottom: '16px' 
+              }}>
+                <p style={{ margin: 0, fontSize: '13px', color: '#0369a1' }}>
+                  💡 <strong>提示：</strong>删除操作会在GitHub仓库中创建一个新的commit，记录此次删除操作。
+                </p>
               </div>
             </div>
             
