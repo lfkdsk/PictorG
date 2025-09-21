@@ -11,7 +11,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![GitHub OAuth](https://img.shields.io/badge/GitHub-OAuth-green?style=flat-square&logo=github)](https://docs.github.com/en/developers/apps/building-oauth-apps)
 
-[在线演示](https://picg.vercel.app) • [快速开始](#-快速开始) • [功能特性](#-功能特性) • [部署指南](#-部署)
+[在线演示](https://pictor-g.vercel.app) • [快速开始](#-快速开始) • [功能特性](#-功能特性) • [部署指南](#-部署)
 
 </div>
 
@@ -42,7 +42,7 @@ PicG 是一个基于GitHub的现代化相册管理系统，让你可以轻松地
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/PicG.git
+git clone https://github.com/lfkdsk/PictorG.git
 cd PicG
 ```
 
