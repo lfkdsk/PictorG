@@ -1,6 +1,18 @@
 {
   "name": "picg",
   "version": "0.1.0",
+  "description": "A modern GitHub-based photo gallery management system",
+  "keywords": ["github", "photo", "gallery", "nextjs", "react", "typescript"],
+  "author": "PicG Contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/your-username/PicG#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/PicG.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/PicG/issues"
+  },
   "private": true,
   "scripts": {
     "dev": "next dev",
