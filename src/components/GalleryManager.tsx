@@ -322,30 +322,6 @@ export default function GalleryManager() {
                 <div className="card-content">
                   <div className="name">{g.full_name}</div>
                 </div>
-                <div className="actions">
-                  <Link
-                    href={`/gallery/${owner}/${repo}`}
-                    className="link"
-                    style={{
-                      height: '32px',
-                      padding: '0 12px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: 'var(--primary)',
-                      color: '#fff',
-                      fontWeight: '500',
-                      textDecoration: 'none',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    打开
-                  </Link>
-                  <button className="danger" onClick={() => removeGallery(g.id)}>移除</button>
-                </div>
                 <div className="url" style={{ marginTop: '12px', width: '100%' }}>
                   <a 
                     href={`https://${owner}.github.io/${repo}`}
@@ -373,6 +349,31 @@ export default function GalleryManager() {
                   >
                     🌐 {owner}.github.io/{repo}
                   </a>
+                </div>
+
+                <div className="actions">
+                  <Link
+                    href={`/gallery/${owner}/${repo}`}
+                    className="link"
+                    style={{
+                      height: '32px',
+                      padding: '0 12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--primary)',
+                      color: '#fff',
+                      fontWeight: '500',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    打开
+                  </Link>
+                  <button className="danger" onClick={() => removeGallery(g.id)}>移除</button>
                 </div>
               </div>
             );
