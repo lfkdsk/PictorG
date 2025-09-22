@@ -382,8 +382,23 @@ export default function GalleryManager() {
       </section>
 
       {showImport ? (
-        <div className="modal">
-          <div className="dialog">
+        <div className="modal" style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,.45)',
+          display: 'grid',
+          placeItems: 'center',
+          zIndex: 1000
+        }}>
+          <div className="dialog" style={{
+            width: 'min(520px, 92vw)',
+            background: 'var(--surface)',
+            borderRadius: '12px',
+            padding: '16px',
+            display: 'grid',
+            gap: '12px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+          }}>
             <h3 className="dlg-title">导入画廊</h3>
             <label className="label">选择仓库</label>
             <input
@@ -423,8 +438,23 @@ export default function GalleryManager() {
       ) : null}
 
       {showCreate ? (
-        <div className="modal">
-          <div className="dialog">
+        <div className="modal" style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,.45)',
+          display: 'grid',
+          placeItems: 'center',
+          zIndex: 1000
+        }}>
+          <div className="dialog" style={{
+            width: 'min(520px, 92vw)',
+            background: 'var(--surface)',
+            borderRadius: '12px',
+            padding: '16px',
+            display: 'grid',
+            gap: '12px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+          }}>
             <h3 className="dlg-title">新建画廊</h3>
             <label className="label">画廊名称</label>
             <input className="input" value={newRepoName} onChange={(e) => setNewRepoName(e.target.value)} placeholder="输入名称" />
@@ -445,6 +475,7 @@ export default function GalleryManager() {
       {error ? <p role="alert" className="error">{error}</p> : null}
 
       <style jsx>{`
+        /* Styled JSX Test - This should apply styles */
         .wrap { width: min(980px, 92vw); margin: 0 auto; display: grid; gap: 16px; }
         .head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; }
         .toolbar { display: grid; grid-auto-flow: column; gap: 10px; }
