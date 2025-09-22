@@ -161,7 +161,24 @@ export async function createRepo(token: string, name: string, isPrivate = false)
     },
     body: JSON.stringify({ name, private: isPrivate })
   });
-  if (!res.ok) throw new Error(`Failed to create repo: ${res.status}`);
+  
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    
+    switch (res.status) {
+      case 409:
+        throw new Error(`仓库名称 "${name}" 已存在，请使用其他名称`);
+      case 422:
+        throw new Error(`仓库名称 "${name}" 无效，请使用有效的仓库名称`);
+      case 401:
+        throw new Error('GitHub token无效或已过期，请重新登录');
+      case 403:
+        throw new Error('没有权限创建仓库，请检查token权限');
+      default:
+        throw new Error(`创建仓库失败: ${errorData.message || res.statusText} (${res.status})`);
+    }
+  }
+  
   return (await res.json()) as Repo;
 }
 
@@ -358,6 +375,222 @@ export interface BatchUploadFile {
   content: string; // base64 encoded
 }
 
+// 初始化空仓库的函数
+// 新的批量提交函数，用于空仓库初始化
+export async function initializeEmptyRepoWithBatch(
+  token: string,
+  owner: string,
+  repo: string,
+  files: BatchUploadFile[],
+  message: string,
+  branch: string = 'main'
+): Promise<any> {
+  try {
+    // 对于空仓库，先创建一个初始文件来初始化Git对象存储
+    const firstFile = files[0];
+    if (!firstFile) {
+      throw new Error('No files to upload');
+    }
+
+    // 先检查第一个文件是否已存在
+    const checkResponse = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${firstFile.path}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `token ${token}`
+      }
+    });
+
+    let requestBody: any = {
+      message: `Initialize repository with ${firstFile.path}`,
+      content: firstFile.content,
+      branch: branch
+    };
+
+    // 如果文件已存在，需要提供 sha 来更新
+    if (checkResponse.ok) {
+      const existingFile = await checkResponse.json();
+      requestBody.sha = existingFile.sha;
+      requestBody.message = `Update ${firstFile.path}`;
+      console.log(`📝 Updating existing file: ${firstFile.path}`);
+    } else {
+      console.log(`📄 Creating new file: ${firstFile.path}`);
+    }
+
+    // 使用Contents API创建或更新第一个文件来初始化仓库
+    const initRes = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${firstFile.path}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/vnd.github+json',
+        Authorization: `token ${token}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!initRes.ok) {
+      const errorData = await initRes.json().catch(() => ({}));
+      throw new Error(`Failed to initialize repo: ${initRes.status} - ${errorData.message || initRes.statusText}`);
+    }
+
+    console.log(`✅ Repository initialized with ${firstFile.path}`);
+
+    // 如果只有一个文件，直接返回
+    if (files.length === 1) {
+      return await initRes.json();
+    }
+
+    // 等待一下让仓库完全初始化
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 对于剩余的文件，使用批量上传
+    const remainingFiles = files.slice(1);
+    return await batchUploadFiles(token, owner, repo, remainingFiles, message, branch);
+
+  } catch (error) {
+    console.error('Failed to initialize empty repo with batch:', error);
+    throw error;
+  }
+}
+
+export async function initializeEmptyRepo(
+  token: string,
+  owner: string,
+  repo: string,
+  files: BatchUploadFile[],
+  message: string,
+  branch: string = 'main'
+): Promise<any> {
+  // 分离根目录文件和嵌套目录文件
+  const rootFiles = files.filter(file => !file.path.includes('/'));
+  const nestedFiles = files.filter(file => file.path.includes('/'));
+  
+  // 先创建根目录文件来初始化仓库
+  for (const file of rootFiles) {
+    try {
+      // 验证base64编码
+      try {
+        atob(file.content);
+      } catch (e) {
+        console.error(`Invalid base64 content for ${file.path}:`, file.content.substring(0, 100));
+        throw new Error(`Invalid base64 encoding for ${file.path}`);
+      }
+      
+      // 先检查文件是否已存在
+      const checkResponse = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${file.path}`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `token ${token}`
+        }
+      });
+
+      let requestBody: any = {
+        message: `Add ${file.path}`,
+        content: file.content,
+        branch: branch
+      };
+
+      // 如果文件已存在，需要提供 sha 来更新
+      if (checkResponse.ok) {
+        const existingFile = await checkResponse.json();
+        requestBody.sha = existingFile.sha;
+        requestBody.message = `Update ${file.path}`;
+        console.log(`📝 Updating existing file: ${file.path}`);
+      } else {
+        console.log(`📄 Creating new file: ${file.path}`);
+      }
+
+      const response = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${file.path}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github+json',
+          Authorization: `token ${token}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`❌ ${file.path}: ${response.status} - ${errorData.message || response.statusText}`);
+        throw new Error(`Failed to create ${file.path}: ${response.status} - ${errorData.message || response.statusText}`);
+      }
+      
+      console.log(`Successfully created: ${file.path}`);
+    } catch (error) {
+      console.error(`Error creating ${file.path}:`, error);
+      throw error;
+    }
+  }
+
+  // 等待一下让仓库完全初始化
+  if (rootFiles.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 增加等待时间
+  }
+
+  // 然后创建嵌套目录文件
+  for (const file of nestedFiles) {
+    try {
+      // 验证base64编码
+      try {
+        atob(file.content);
+      } catch (e) {
+        console.error(`Invalid base64 content for ${file.path}:`, file.content.substring(0, 100));
+        throw new Error(`Invalid base64 encoding for ${file.path}`);
+      }
+      
+      // 等待一下确保目录文件已创建
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 先检查文件是否已存在
+      const checkResponse = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${file.path}`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `token ${token}`
+        }
+      });
+
+      let requestBody: any = {
+        message: `Add ${file.path}`,
+        content: file.content,
+        branch: branch
+      };
+
+      // 如果文件已存在，需要提供 sha 来更新
+      if (checkResponse.ok) {
+        const existingFile = await checkResponse.json();
+        requestBody.sha = existingFile.sha;
+        requestBody.message = `Update ${file.path}`;
+        console.log(`📝 Updating existing file: ${file.path}`);
+      } else {
+        console.log(`📄 Creating new file: ${file.path}`);
+      }
+
+      const response = await fetch(`${BASE}/repos/${owner}/${repo}/contents/${file.path}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github+json',
+          Authorization: `token ${token}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      console.log(response);
+      if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`❌ ${file.path}: ${response.status} - ${errorData.message || response.statusText}`);
+          throw new Error(`Failed to create ${file.path}: ${response.status} - ${errorData.message || response.statusText}`);
+        }
+      
+      console.log(`Successfully created: ${file.path}`);
+    } catch (error) {
+      console.error(`Error creating ${file.path}:`, error);
+      throw error;
+    }
+  }
+
+  return { message: 'Repository initialized successfully' };
+}
+
 export async function batchUploadFiles(
   token: string, 
   owner: string, 
@@ -368,6 +601,7 @@ export async function batchUploadFiles(
 ): Promise<any> {
   // 动态获取默认分支
   const targetBranch = branch || await getDefaultBranch(token, owner, repo);
+  
   // Get the latest commit SHA
   const branchRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
     headers: {
@@ -376,27 +610,35 @@ export async function batchUploadFiles(
     }
   });
   
-  if (!branchRes.ok) {
+  let latestCommitSha: string | null = null;
+  let baseTreeSha: string | null = null;
+  
+  if (branchRes.ok) {
+    // 仓库已有分支
+    const branchData = await branchRes.json();
+    latestCommitSha = branchData.object.sha;
+    
+    // Get the tree SHA from the latest commit
+    const commitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `token ${token}`
+      }
+    });
+    
+    if (!commitRes.ok) {
+      throw new Error(`Failed to get commit info: ${commitRes.status}`);
+    }
+    
+    const commitData = await commitRes.json();
+    baseTreeSha = commitData.tree.sha;
+  } else if (branchRes.status === 409 || branchRes.status === 404) {
+    // 新仓库或空仓库，没有分支，这是正常情况
+    console.log('Empty repository, no existing branches');
+  } else {
     throw new Error(`Failed to get branch info: ${branchRes.status}`);
   }
-  
-  const branchData = await branchRes.json();
-  const latestCommitSha = branchData.object.sha;
-  
-  // Get the tree SHA from the latest commit
-  const commitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `token ${token}`
-    }
-  });
-  
-  if (!commitRes.ok) {
-    throw new Error(`Failed to get commit info: ${commitRes.status}`);
-  }
-  
-  const commitData = await commitRes.json();
-  const baseTreeSha = commitData.tree.sha;
+
   
   // Create blobs for all files
   const blobPromises = files.map(async (file) => {
@@ -414,7 +656,8 @@ export async function batchUploadFiles(
     });
     
     if (!blobRes.ok) {
-      throw new Error(`Failed to create blob for ${file.path}: ${blobRes.status}`);
+      const errorData = await blobRes.json().catch(() => ({}));
+      throw new Error(`Failed to create blob for ${file.path}: ${blobRes.status} - ${errorData.message || blobRes.statusText}`);
     }
     
     const blobData = await blobRes.json();
@@ -429,6 +672,15 @@ export async function batchUploadFiles(
   const treeItems = await Promise.all(blobPromises);
   
   // Create new tree
+  const treeBody: any = {
+    tree: treeItems
+  };
+  
+  // 只有在有base tree时才添加
+  if (baseTreeSha) {
+    treeBody.base_tree = baseTreeSha;
+  }
+  
   const treeRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/trees`, {
     method: 'POST',
     headers: {
@@ -436,10 +688,7 @@ export async function batchUploadFiles(
       Accept: 'application/vnd.github+json',
       Authorization: `token ${token}`
     },
-    body: JSON.stringify({
-      base_tree: baseTreeSha,
-      tree: treeItems
-    })
+    body: JSON.stringify(treeBody)
   });
   
   if (!treeRes.ok) {
@@ -449,6 +698,16 @@ export async function batchUploadFiles(
   const treeData = await treeRes.json();
   
   // Create new commit
+  const commitBody: any = {
+    message,
+    tree: treeData.sha
+  };
+  
+  // 只有在有父提交时才添加
+  if (latestCommitSha) {
+    commitBody.parents = [latestCommitSha];
+  }
+  
   const newCommitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits`, {
     method: 'POST',
     headers: {
@@ -456,11 +715,7 @@ export async function batchUploadFiles(
       Accept: 'application/vnd.github+json',
       Authorization: `token ${token}`
     },
-    body: JSON.stringify({
-      message,
-      tree: treeData.sha,
-      parents: [latestCommitSha]
-    })
+    body: JSON.stringify(commitBody)
   });
   
   if (!newCommitRes.ok) {
@@ -490,6 +745,145 @@ export async function batchUploadFiles(
 }
 
 // 删除GitHub目录及其所有内容
+// 检查GitHub token的权限
+export async function checkTokenPermissions(token: string): Promise<{
+  hasRepoAccess: boolean;
+  hasWorkflowAccess: boolean;
+  scopes: string[];
+  error?: string;
+}> {
+  try {
+    // 检查token的scopes
+    const response = await fetch(`${BASE}/user`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!response.ok) {
+      return {
+        hasRepoAccess: false,
+        hasWorkflowAccess: false,
+        scopes: [],
+        error: `Token验证失败: ${response.status}`
+      };
+    }
+
+    // 从响应头获取scopes
+    const scopesHeader = response.headers.get('X-OAuth-Scopes') || '';
+    const scopes = scopesHeader.split(',').map(s => s.trim()).filter(s => s);
+
+    // 检查必要的权限
+    const hasRepoAccess = scopes.includes('repo') || scopes.includes('public_repo');
+    
+    // workflow权限检查：
+    // 1. 如果有 'repo' 权限，则自动包含workflow权限
+    // 2. 如果只有 'public_repo' 权限，则需要额外的 'workflow' 权限
+    // 3. 如果有明确的 'workflow' 权限也可以
+    const hasWorkflowAccess = (scopes.includes('public_repo') && scopes.includes('workflow')) ||
+                             scopes.includes('workflow');
+
+    return {
+      hasRepoAccess,
+      hasWorkflowAccess,
+      scopes,
+    };
+  } catch (error) {
+    return {
+      hasRepoAccess: false,
+      hasWorkflowAccess: false,
+      scopes: [],
+      error: `检查权限时出错: ${error instanceof Error ? error.message : '未知错误'}`
+    };
+  }
+}
+
+// 检查仓库是否配置了指定的密钥
+export async function checkRepositorySecret(
+  token: string,
+  owner: string,
+  repo: string,
+  secretName: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${BASE}/repos/${owner}/${repo}/actions/secrets/${secretName}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+    
+    // 如果返回200，说明密钥存在
+    return response.status === 200;
+  } catch (error) {
+    console.warn('Failed to check repository secret:', error);
+    return false;
+  }
+}
+
+// 获取图片并转换为base64（支持本地静态文件和网络文件）
+export async function fetchImageAsBase64(imageUrl: string): Promise<string> {
+  try {
+    // 如果是本地路径，转换为完整URL
+    const fullUrl = imageUrl.startsWith('/') ? 
+      `${window.location.origin}${imageUrl}` : 
+      imageUrl;
+    
+    const response = await fetch(fullUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // 将ArrayBuffer转换为base64
+    let binary = '';
+    for (let i = 0; i < uint8Array.byteLength; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    
+    return btoa(binary);
+  } catch (error) {
+    console.error('Failed to fetch image:', error);
+    throw error;
+  }
+}
+
+// 自动导入仓库到项目
+export async function importRepoToProject(repo: Repo): Promise<boolean> {
+  try {
+    const GALLERIES_KEY = 'pictor_galleries';
+    
+    // 获取现有的画廊列表
+    const existingGalleries = JSON.parse(localStorage.getItem(GALLERIES_KEY) || '[]');
+    
+    // 检查是否已经存在
+    const exists = existingGalleries.some((gallery: any) => gallery.full_name === repo.full_name);
+    if (exists) {
+      console.log('Repository already imported:', repo.full_name);
+      return true;
+    }
+    
+    // 添加新的画廊
+    const newGallery = {
+      id: repo.id,
+      full_name: repo.full_name,
+      html_url: repo.html_url
+    };
+    
+    const updatedGalleries = [...existingGalleries, newGallery];
+    localStorage.setItem(GALLERIES_KEY, JSON.stringify(updatedGalleries));
+    
+    console.log('Successfully imported repository:', repo.full_name);
+    return true;
+  } catch (error) {
+    console.error('Failed to import repository:', error);
+    return false;
+  }
+}
+
 export async function deleteDirectory(
   token: string,
   owner: string,

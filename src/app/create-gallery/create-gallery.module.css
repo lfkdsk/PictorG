@@ -1,0 +1,405 @@
+.createGalleryContainer {
+  min-height: 100vh;
+  background: var(--bg);
+  padding: 24px;
+}
+
+.createGalleryContent {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.header h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.progressBar {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.progressStep {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.progressStep.active {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary), transparent 80%);
+}
+
+.progressStep:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 12px;
+  height: 2px;
+  background: var(--border);
+  transform: translateY(-50%);
+}
+
+.errorMessage {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.stepContent {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 2px 30px 30px 30px;
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.stepContent h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepDescription {
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.formGroup {
+  margin-bottom: 24px;
+}
+
+.formGroup:last-child {
+  margin-bottom: 0;
+}
+
+.formGroup label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.formGroup input,
+.formGroup textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 14px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.formGroup input:focus,
+.formGroup textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary), transparent 90%);
+}
+
+.formGroup input:disabled {
+  background: color-mix(in srgb, var(--border), transparent 50%);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.fieldHint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.errorText {
+  font-size: 12px;
+  color: #ef4444;
+  margin-top: 4px;
+}
+
+.successText {
+  font-size: 12px;
+  color: #10b981;
+  margin-top: 4px;
+}
+
+.logsContainer {
+  margin-top: 30px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.logsContainer h3 {
+  margin: 0 0 15px 0;
+  color: #495057;
+  font-size: 16px;
+}
+
+.logsBox {
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 15px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.logItem {
+  padding: 4px 0;
+  color: #495057;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.logItem:last-child {
+  border-bottom: none;
+}
+
+.spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.userAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.userDetails {
+  flex: 1;
+}
+
+.userName {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.userLogin {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+}
+
+.navBtn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  font-size: 14px;
+  min-width: 100px;
+}
+
+.navBtn.prev {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.navBtn.prev:hover:not(:disabled) {
+  background: var(--hover);
+  transform: translateY(-1px);
+}
+
+.navBtn.next,
+.navBtn.create {
+  background: var(--primary);
+  color: white;
+}
+
+.navBtn.next:hover:not(:disabled),
+.navBtn.create:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary), black 10%);
+  transform: translateY(-1px);
+}
+
+.navBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.stepContent.success {
+  text-align: center;
+}
+
+.stepContent.success h2 {
+  justify-content: center;
+}
+
+.successIcon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.successInfo {
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 24px 0;
+  text-align: left;
+}
+
+.infoItem {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.infoItem strong {
+  color: var(--text);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.infoItem a {
+  color: var(--primary);
+  text-decoration: none;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.infoItem a:hover {
+  text-decoration: underline;
+}
+
+.nextSteps {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 24px 0;
+  text-align: left;
+}
+
+.nextSteps h3 {
+  color: #0369a1;
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+
+.nextSteps ol {
+  color: #0369a1;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.nextSteps li {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.nextSteps code {
+  background: #e0f2fe;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 32px;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  font-size: 14px;
+}
+
+.primaryBtn {
+  background: var(--primary);
+  color: white;
+}
+
+.primaryBtn:hover {
+  background: color-mix(in srgb, var(--primary), black 10%);
+  transform: translateY(-1px);
+}
+
+.secondaryBtn {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.secondaryBtn:hover {
+  background: var(--hover);
+  transform: translateY(-1px);
+}

@@ -116,3 +116,35 @@ export const compressImage = async (file: File, encoder: CompressEncoderEnum) =>
 无法压缩的文件就不压缩（非图片），保持原状上传
 4-3. 压缩之后会显示压缩后的图片大小和文件名
 4-4. 点击上传会逐个上传到目标文件夹内，展示进度条以及结束通知
+
+（基本完成）
+
+第五步
+
+实现项目初始化功能，即为用户创建一个新的 Gallery Repo, 初始化目录在 gallery-template。
+├── CONFIG.yml
+├── Cat
+│   ├── 15.jpg
+│   └── 16.jpg
+├── README.md
+└── README.yml
+
+其中 CONFIG.yml 是配置文件， Cat 是给一个 demo 相册，Readme.yml 里面存储的是目录信息（这你应该很熟悉），点击创建新建画廊会产生以下几步。
+1. 画廊名称（决定了 repo 名称、默认的部署子域名），我们默认这个部署的 url 是，username.github.io/repo_name
+2. 接下来 template 里面有很多需要替换的信息，模板里改成变量
+
+- .github/workflows/main.yml 的内部的：GIT_USER、GIT_EMAIL 
+- CONFIG.yml 内部的：
+
+title,subtitle,description, 这几个参数需要用户填写，也可以给缺省
+footer_logo 内部里 link 是我们的网页 url
+url: 是我们的网页 url
+root: 是我们的仓库名称 
+base_url: https://cdn.jsdelivr.net/gh/<user_name>/<repo>@<main_branch> 
+thumbnail_url: https://cdn.jsdelivr.net/gh/<user_name>/<repo>@thumbnail/
+
+填好表单之后，再创建 repo 以及上传对应的信息
+
+3. 提醒用户填写 GH_PAGES_DEPLOY, 并打开本 repo 的 github action 页面
+4. 完成项目创建
+

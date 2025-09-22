@@ -1,0 +1,44 @@
+title: Create Gallery Demo
+subtitle: Take Photo Think Seriously
+description: Create Gallery Demo 拿起相机，认真思考
+cover: 'https://github.com/lfkdsk/picx-images-hosting/raw/master/20230817/IMG_7586.4e91my1ve140.17iz0sa56gik.webp'
+author: lfkdsk
+
+footer_logo:
+  use: self
+  self:
+    link: 'https://lfkdsk.github.io/'
+    src: 'https://github.com/lfkdsk/picx-images-hosting/raw/master/20230817/tripper2white.2pbuwaqvndu0.webp'
+
+url: https://lfkdsk.github.io/create-gallery
+root: /create-gallery
+
+photography_page:
+  slogan: true
+  slogan_descr: 'The moments when I pressed the shutter, the moments are forever.'
+
+google_analytics:
+  use: gtag
+  ga_id:
+  ga_api:
+  gtag_id: XXXXX
+
+nav:
+  地图:
+    link: /location
+    icon: local-two
+  归档:
+    link: https://lfkdsk.github.io/blog
+    icon: inbox
+  随机:
+    link: /random
+    icon: pic
+  状态监控:
+    link: /status
+    icon: list-view
+  时间线:
+    link: /grid-all
+    icon: grid-nine
+
+thumbnail_url: https://cdn.jsdelivr.net/gh/lfkdsk/create-gallery@thumbnail/
+base_url: https://cdn.jsdelivr.net/gh/lfkdsk/create-gallery@master

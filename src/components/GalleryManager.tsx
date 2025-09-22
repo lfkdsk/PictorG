@@ -16,10 +16,10 @@ function readToken(): string | null {
   try {
     const m = document.cookie.match(/(?:^|; )gh_token=([^;]+)/);
     if (m) return decodeURIComponent(m[1]);
-  } catch {}
+  } catch { }
   try {
     return localStorage.getItem('gh_token');
-  } catch {}
+  } catch { }
   return null;
 }
 
@@ -35,7 +35,7 @@ function loadFromCache(key: string) {
   try {
     const cached = localStorage.getItem(key);
     if (!cached) return null;
-    
+
     return JSON.parse(cached);
   } catch (error) {
     console.warn('Failed to load from cache:', error);
@@ -88,17 +88,17 @@ export default function GalleryManager() {
 
   const loadRepos = async () => {
     if (!token) return;
-    
+
     // 优先使用内存中的数据
     if (repos && repos.length > 0) return;
-    
+
     // 检查缓存
     const cachedRepos = loadFromCache(REPOS_CACHE_KEY);
     if (cachedRepos && Array.isArray(cachedRepos) && cachedRepos.length > 0) {
       setRepos(cachedRepos);
       return;
     }
-    
+
     // 从网络加载
     setLoadingRepos(true);
     setError(null);
@@ -154,9 +154,9 @@ export default function GalleryManager() {
   const removeGallery = (id: number) => {
     // 获取要移除的仓库信息
     const galleryToRemove = galleries.find(g => g.id === id);
-    
+
     if (!galleryToRemove) return;
-    
+
     // 从状态中移除
     setGalleries((prev) => {
       const newGalleries = prev.filter((g) => g.id !== id);
@@ -166,7 +166,7 @@ export default function GalleryManager() {
       }
       return newGalleries;
     });
-    
+
     // 清理相关缓存（静默清理）
     clearGalleryCache(galleryToRemove.full_name, true);
   };
@@ -175,11 +175,11 @@ export default function GalleryManager() {
     try {
       // 清理仓库相关的所有缓存
       const [owner, repo] = repoFullName.split('/');
-      
+
       // 清理localStorage中所有相关的键
       const localStorageKeys = Object.keys(localStorage);
       let clearedCount = 0;
-      
+
       localStorageKeys.forEach(key => {
         // 清理包含仓库信息的缓存
         if (key.includes(owner) && key.includes(repo)) {
@@ -188,15 +188,15 @@ export default function GalleryManager() {
           if (!silent) console.log(`清理localStorage键: ${key}`);
         }
         // 清理特定模式的缓存
-        if (key.includes(`${owner}_${repo}`) || 
-            key.includes(`${owner}/${repo}`) ||
-            key.includes(repoFullName)) {
+        if (key.includes(`${owner}_${repo}`) ||
+          key.includes(`${owner}/${repo}`) ||
+          key.includes(repoFullName)) {
           localStorage.removeItem(key);
           clearedCount++;
           if (!silent) console.log(`清理localStorage键: ${key}`);
         }
       });
-      
+
       // 清理sessionStorage中所有相关的键
       const sessionStorageKeys = Object.keys(sessionStorage);
       sessionStorageKeys.forEach(key => {
@@ -207,15 +207,15 @@ export default function GalleryManager() {
           if (!silent) console.log(`清理sessionStorage键: ${key}`);
         }
         // 清理特定模式的缓存
-        if (key.includes(`${owner}_${repo}`) || 
-            key.includes(`${owner}/${repo}`) ||
-            key.includes(repoFullName)) {
+        if (key.includes(`${owner}_${repo}`) ||
+          key.includes(`${owner}/${repo}`) ||
+          key.includes(repoFullName)) {
           sessionStorage.removeItem(key);
           clearedCount++;
           if (!silent) console.log(`清理sessionStorage键: ${key}`);
         }
       });
-      
+
       // 强制清理已知的缓存键
       const knownCacheKeys = [
         'newAlbumForm',
@@ -229,12 +229,12 @@ export default function GalleryManager() {
         `${owner}/${repo}_cache`,
         `${repoFullName}_cache`
       ];
-      
+
       knownCacheKeys.forEach(key => {
         localStorage.removeItem(key);
         sessionStorage.removeItem(key);
       });
-      
+
       // 清理浏览器缓存（如果支持）
       if ('caches' in window) {
         caches.keys().then(names => {
@@ -246,7 +246,7 @@ export default function GalleryManager() {
           });
         });
       }
-      
+
       if (!silent) {
         console.log(`✅ 已清理仓库 ${repoFullName} 的所有相关缓存`);
       }
@@ -271,16 +271,31 @@ export default function GalleryManager() {
           <button className="btn outline" onClick={() => { setShowImport(true); loadRepos(); }}>
             导入
           </button>
-          <button className="btn" onClick={() => setShowCreate(true)}>
-            新建
-          </button>
+          <Link href="/create-gallery" className="link"
+            style={{
+              height: '36px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'var(--primary)',
+              color: '#fff',
+              fontWeight: '500',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '14px',
+              transition: 'all 0.2s ease'
+            }}>
+            创建画廊
+          </Link>
         </div>
       </header>
 
       {!token ? (
         <p className="dim">
-          未检测到 Token，请先前往 <a 
-            href="/login/token" 
+          未检测到 Token，请先前往 <a
+            href="/login/token"
             className="link"
             style={{
               color: 'var(--primary)',
@@ -303,13 +318,13 @@ export default function GalleryManager() {
           filteredGalleries.map((g) => {
             const [owner, repo] = g.full_name.split('/');
             return (
-              <div key={g.id} className="card">
+              <div key={g.id} className="card" style={{ display: 'flex', flexDirection: 'column' }}>
                 <div className="card-content">
                   <div className="name">{g.full_name}</div>
                 </div>
                 <div className="actions">
-                  <Link 
-                    href={`/gallery/${owner}/${repo}`} 
+                  <Link
+                    href={`/gallery/${owner}/${repo}`}
                     className="link"
                     style={{
                       height: '32px',
@@ -330,6 +345,34 @@ export default function GalleryManager() {
                     打开
                   </Link>
                   <button className="danger" onClick={() => removeGallery(g.id)}>移除</button>
+                </div>
+                <div className="url" style={{ marginTop: '12px', width: '100%' }}>
+                  <a 
+                    href={`https://${owner}.github.io/${repo}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: 'var(--text-secondary)',
+                      fontSize: '12px',
+                      textDecoration: 'none',
+                      display: 'block',
+                      padding: '6px 8px',
+                      backgroundColor: 'var(--surface)',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border)',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--surface)';
+                    }}
+                  >
+                    🌐 {owner}.github.io/{repo}
+                  </a>
                 </div>
               </div>
             );
@@ -405,10 +448,46 @@ export default function GalleryManager() {
         .head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; }
         .toolbar { display: grid; grid-auto-flow: column; gap: 10px; }
         .search { height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--input); padding: 0 10px; }
-        .btn { height: 36px; padding: 0 12px; border-radius: 10px; border: none; background: var(--primary); color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
-        .btn:hover { transform: translateY(-1px); }
-        .btn.outline { background: transparent; color: inherit; border: 2px solid var(--border); }
-        .btn.outline:hover { background: color-mix(in srgb, var(--border), transparent 90%); }
+        .toolbar .btn { 
+          height: 36px; 
+          padding: 0 12px; 
+          border-radius: 10px; 
+          border: none; 
+          background: var(--primary); 
+          color: #fff; 
+          font-weight: 600; 
+          cursor: pointer; 
+          transition: all 0.2s ease;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-sizing: border-box;
+        }
+        .toolbar a.btn {
+          height: 36px; 
+          padding: 0 12px; 
+          border-radius: 10px; 
+          border: none; 
+          background: var(--primary); 
+          color: #fff; 
+          font-weight: 600; 
+          cursor: pointer; 
+          transition: all 0.2s ease;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-sizing: border-box;
+        }
+        .toolbar a.btn:link,
+        .toolbar a.btn:visited {
+          color: #fff;
+          text-decoration: none;
+        }
+        .toolbar .btn:hover { transform: translateY(-1px); }
+        .toolbar .btn.outline { background: transparent; color: inherit; border: 2px solid var(--border); }
+        .toolbar .btn.outline:hover { background: color-mix(in srgb, var(--border), transparent 90%); }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
         .card { 
           background: var(--surface); 
@@ -468,7 +547,6 @@ export default function GalleryManager() {
           border-radius: 10px !important; 
           border: none !important; 
           background: var(--primary) !important; 
-          color: #fff !important; 
           font-weight: 600 !important; 
           cursor: pointer !important; 
           transition: all 0.2s ease !important;

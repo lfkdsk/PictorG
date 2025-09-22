@@ -84,7 +84,7 @@ export default function TokenForm() {
       </div>
 
       <Link
-        href="https://docs.github.com/zh/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token"
+        href="https://github.com/settings/tokens"
         target="_blank"
         rel="noreferrer"
         className="help"
