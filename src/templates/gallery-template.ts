@@ -125,19 +125,19 @@ google_analytics:
 
 nav:
   地图:
-    link: /location
+    link: {{REPO_NAME}}/location
     icon: local-two
   归档:
     link: https://{{USER_NAME}}.github.io/blog
     icon: inbox
   随机:
-    link: /random
+    link: {{REPO_NAME}}/random
     icon: pic
   状态监控:
-    link: /status
+    link: {{REPO_NAME}}/status
     icon: list-view
   时间线:
-    link: /grid-all
+    link: {{REPO_NAME}}/grid-all
     icon: grid-nine
 
 thumbnail_url: https://cdn.jsdelivr.net/gh/{{USER_NAME}}/{{REPO_NAME}}@thumbnail/
