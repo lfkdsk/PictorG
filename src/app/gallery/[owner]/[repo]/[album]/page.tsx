@@ -57,6 +57,10 @@ export default function AlbumPage() {
   const [saving, setSaving] = useState(false);
   const [showDeleteAlbumDialog, setShowDeleteAlbumDialog] = useState(false);
   const [deletingAlbum, setDeletingAlbum] = useState(false);
+  const [showMarkdownEditor, setShowMarkdownEditor] = useState(false);
+  const [markdownContent, setMarkdownContent] = useState('');
+  const [markdownLoading, setMarkdownLoading] = useState(false);
+  const [markdownSaving, setMarkdownSaving] = useState(false);
 
   const fetchDirectoryContents = async (path: string): Promise<ImageFile[]> => {
     const token = getGitHubToken();
@@ -415,6 +419,77 @@ export default function AlbumPage() {
     }
   };
 
+  const loadMarkdownContent = async () => {
+    try {
+      setMarkdownLoading(true);
+      const token = getGitHubToken();
+      if (!token) throw new Error('No token found');
+
+      const indexPath = `${albumUrl}/index.md`;
+      
+      try {
+        const content = await fetchGitHubFile(token, owner, repo, indexPath);
+        setMarkdownContent(content);
+      } catch (err) {
+        // 如果文件不存在，设置默认内容
+        setMarkdownContent(`## 这里是相册的描述内容...\n`);
+      }
+    } catch (err) {
+      console.error('加载Markdown内容失败:', err);
+      setMarkdownContent(`## n这里是相册的描述内容...\n`);
+    } finally {
+      setMarkdownLoading(false);
+    }
+  };
+
+  const saveMarkdownContent = async () => {
+    try {
+      setMarkdownSaving(true);
+      const token = getGitHubToken();
+      if (!token) throw new Error('No token found');
+
+      const indexPath = `${albumUrl}/index.md`;
+      
+      try {
+        // 尝试获取现有文件的SHA
+        const sha = await getFileSha(token, owner, repo, indexPath);
+        
+        await updateGitHubFile(
+          token,
+          owner,
+          repo,
+          indexPath,
+          markdownContent,
+          sha ? `Update ${indexPath}` : `Create ${indexPath}`,
+          sha || undefined
+        );
+      } catch (err) {
+        // 如果文件不存在，创建新文件
+        await updateGitHubFile(
+          token,
+          owner,
+          repo,
+          indexPath,
+          markdownContent,
+          `Create ${indexPath}`,
+          undefined
+        );
+      }
+
+      setShowMarkdownEditor(false);
+    } catch (err) {
+      console.error('保存Markdown内容失败:', err);
+      setError(err instanceof Error ? err.message : '保存Markdown内容失败');
+    } finally {
+      setMarkdownSaving(false);
+    }
+  };
+
+  const openMarkdownEditor = () => {
+    setShowMarkdownEditor(true);
+    loadMarkdownContent();
+  };
+
   if (loading) {
     return (
       <div className="container">
@@ -518,6 +593,14 @@ export default function AlbumPage() {
             disabled={deleting || saving}
           >
             上传图片
+          </button>
+
+          <button 
+            className="markdown-edit-btn"
+            onClick={openMarkdownEditor}
+            disabled={deleting || saving || markdownLoading}
+          >
+            📝 编辑说明
           </button>
           
           <button 
@@ -796,6 +879,65 @@ export default function AlbumPage() {
         </div>
       )}
 
+      {/* Markdown编辑窗口 */}
+      {showMarkdownEditor && (
+        <div className="modal-overlay" onClick={() => setShowMarkdownEditor(false)}>
+          <div className="modal-content markdown-editor-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📝 编辑相册说明</h2>
+              <button 
+                className="close-btn"
+                onClick={() => setShowMarkdownEditor(false)}
+                disabled={markdownSaving}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              {markdownLoading ? (
+                <div className="loading-state">
+                  <p>加载中...</p>
+                </div>
+              ) : (
+                <div className="markdown-editor">
+                  <div className="editor-header">
+                    <span className="editor-label">Markdown 内容</span>
+                    <span className="editor-hint">支持标准 Markdown 语法</span>
+                  </div>
+                  <textarea
+                    className="markdown-textarea"
+                    value={markdownContent}
+                    onChange={(e) => setMarkdownContent(e.target.value)}
+                    placeholder="# 相册标题&#10;&#10;在这里添加相册的描述内容...&#10;&#10;## 特色&#10;- 特色1&#10;- 特色2&#10;&#10;## 拍摄信息&#10;拍摄时间：&#10;拍摄地点：&#10;设备信息："
+                    disabled={markdownSaving}
+                  />
+                </div>
+              )}
+            </div>
+            
+            <div className="form-actions">
+              <button 
+                type="button"
+                className="cancel-btn"
+                onClick={() => setShowMarkdownEditor(false)}
+                disabled={markdownSaving}
+              >
+                取消
+              </button>
+              <button 
+                type="button"
+                className="save-btn"
+                onClick={saveMarkdownContent}
+                disabled={markdownSaving || markdownLoading}
+              >
+                {markdownSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         .album-container {
           display: flex;
@@ -1022,6 +1164,37 @@ export default function AlbumPage() {
         .upload-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .markdown-edit-btn {
+          width: 100%;
+          background: linear-gradient(135deg, #10b981, #059669);
+          color: white;
+          border: none;
+          padding: 12px 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          box-shadow: 0 2px 8px color-mix(in srgb, #10b981, transparent 70%);
+        }
+
+        .markdown-edit-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #059669, #047857);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px color-mix(in srgb, #10b981, transparent 60%);
+        }
+
+        .markdown-edit-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: 0 2px 6px color-mix(in srgb, #10b981, transparent 80%);
         }
         
         .delete-mode-btn {
@@ -1418,6 +1591,73 @@ export default function AlbumPage() {
           cursor: not-allowed;
           transform: none;
           box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
+        }
+
+        .markdown-editor-modal {
+          max-width: 800px;
+          width: 90vw;
+          max-height: 80vh;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .markdown-editor {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          height: 100%;
+        }
+
+        .editor-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+
+        .editor-label {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text);
+        }
+
+        .editor-hint {
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .markdown-textarea {
+          width: 100%;
+          min-height: 400px;
+          padding: 16px;
+          border: 2px solid var(--border);
+          border-radius: 8px;
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+          font-size: 14px;
+          line-height: 1.6;
+          background: var(--surface);
+          color: var(--text);
+          resize: vertical;
+          transition: border-color 0.2s ease;
+        }
+
+        .markdown-textarea:focus {
+          outline: none;
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary), transparent 90%);
+        }
+
+        .markdown-textarea:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .loading-state {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 200px;
+          color: var(--text-secondary);
         }
       `}</style>
     </div>
