@@ -61,6 +61,7 @@ export default function AlbumPage() {
   const [markdownContent, setMarkdownContent] = useState('');
   const [markdownLoading, setMarkdownLoading] = useState(false);
   const [markdownSaving, setMarkdownSaving] = useState(false);
+  const [editorMode, setEditorMode] = useState<'edit' | 'preview' | 'split'>('split');
 
   const fetchDirectoryContents = async (path: string): Promise<ImageFile[]> => {
     const token = getGitHubToken();
@@ -436,7 +437,7 @@ export default function AlbumPage() {
       }
     } catch (err) {
       console.error('加载Markdown内容失败:', err);
-      setMarkdownContent(`## n这里是相册的描述内容...\n`);
+      setMarkdownContent(`## 这里是相册的描述内容...\n`);
     } finally {
       setMarkdownLoading(false);
     }
@@ -488,6 +489,31 @@ export default function AlbumPage() {
   const openMarkdownEditor = () => {
     setShowMarkdownEditor(true);
     loadMarkdownContent();
+  };
+
+  const renderMarkdown = (markdown: string) => {
+    // 简单的Markdown渲染函数
+    return markdown
+      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+      .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+      .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+      .replace(/\*(.*)\*/gim, '<em>$1</em>')
+      .replace(/!\[([^\]]*)\]\(([^\)]*)\)/gim, '<img alt="$1" src="$2" style="max-width: 100%; height: auto;" />')
+      .replace(/\[([^\]]*)\]\(([^\)]*)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\n\* (.*)/gim, '\n<li>$1</li>')
+      .replace(/\n\d+\. (.*)/gim, '\n<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/gims, '<ul>$1</ul>')
+      .replace(/```([^`]*)```/gims, '<pre><code>$1</code></pre>')
+      .replace(/`([^`]*)`/gim, '<code>$1</code>')
+      .replace(/\n\n/gim, '</p><p>')
+      .replace(/^(.*)$/gim, '<p>$1</p>')
+      .replace(/<p><\/p>/gim, '')
+      .replace(/<p>(<h[1-6]>.*<\/h[1-6]>)<\/p>/gim, '$1')
+      .replace(/<p>(<blockquote>.*<\/blockquote>)<\/p>/gim, '$1')
+      .replace(/<p>(<ul>.*<\/ul>)<\/p>/gim, '$1')
+      .replace(/<p>(<pre>.*<\/pre>)<\/p>/gim, '$1');
   };
 
   if (loading) {
@@ -600,7 +626,7 @@ export default function AlbumPage() {
             onClick={openMarkdownEditor}
             disabled={deleting || saving || markdownLoading}
           >
-            📝 编辑说明
+            编辑说明
           </button>
           
           <button 
@@ -902,16 +928,59 @@ export default function AlbumPage() {
               ) : (
                 <div className="markdown-editor">
                   <div className="editor-header">
-                    <span className="editor-label">Markdown 内容</span>
-                    <span className="editor-hint">支持标准 Markdown 语法</span>
+                    <div className="editor-info">
+                      <span className="editor-label">Markdown 编辑器</span>
+                      <span className="editor-hint">支持标准 Markdown 语法</span>
+                    </div>
+                    <div className="editor-mode-tabs">
+                      <button
+                        className={`mode-tab ${editorMode === 'edit' ? 'active' : ''}`}
+                        onClick={() => setEditorMode('edit')}
+                        disabled={markdownSaving}
+                      >
+                        📝 编辑
+                      </button>
+                      <button
+                        className={`mode-tab ${editorMode === 'split' ? 'active' : ''}`}
+                        onClick={() => setEditorMode('split')}
+                        disabled={markdownSaving}
+                      >
+                        📄 分栏
+                      </button>
+                      <button
+                        className={`mode-tab ${editorMode === 'preview' ? 'active' : ''}`}
+                        onClick={() => setEditorMode('preview')}
+                        disabled={markdownSaving}
+                      >
+                        👁️ 预览
+                      </button>
+                    </div>
                   </div>
-                  <textarea
-                    className="markdown-textarea"
-                    value={markdownContent}
-                    onChange={(e) => setMarkdownContent(e.target.value)}
-                    placeholder="# 相册标题&#10;&#10;在这里添加相册的描述内容...&#10;&#10;## 特色&#10;- 特色1&#10;- 特色2&#10;&#10;## 拍摄信息&#10;拍摄时间：&#10;拍摄地点：&#10;设备信息："
-                    disabled={markdownSaving}
-                  />
+                  
+                  <div className={`editor-content ${editorMode}`}>
+                    {(editorMode === 'edit' || editorMode === 'split') && (
+                      <div className="editor-pane">
+                        <textarea
+                          className="markdown-textarea"
+                          value={markdownContent}
+                          onChange={(e) => setMarkdownContent(e.target.value)}
+                          placeholder="# 相册标题&#10;&#10;在这里添加相册的描述内容...&#10;&#10;## 特色&#10;- 特色1&#10;- 特色2&#10;&#10;## 拍摄信息&#10;拍摄时间：&#10;拍摄地点：&#10;设备信息："
+                          disabled={markdownSaving}
+                        />
+                      </div>
+                    )}
+                    
+                    {(editorMode === 'preview' || editorMode === 'split') && (
+                      <div className="preview-pane">
+                        <div 
+                          className="markdown-preview"
+                          dangerouslySetInnerHTML={{ 
+                            __html: renderMarkdown(markdownContent || '# 预览\n\n在左侧编辑区域输入 Markdown 内容，这里会实时显示预览效果。') 
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1594,9 +1663,9 @@ export default function AlbumPage() {
         }
 
         .markdown-editor-modal {
-          max-width: 800px;
-          width: 90vw;
-          max-height: 80vh;
+          max-width: 1200px;
+          width: 95vw;
+          max-height: 90vh;
           display: flex;
           flex-direction: column;
         }
@@ -1612,11 +1681,19 @@ export default function AlbumPage() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 8px;
+          margin-bottom: 16px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .editor-info {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
         }
 
         .editor-label {
-          font-size: 14px;
+          font-size: 16px;
           font-weight: 600;
           color: var(--text);
         }
@@ -1626,9 +1703,77 @@ export default function AlbumPage() {
           color: var(--text-secondary);
         }
 
+        .editor-mode-tabs {
+          display: flex;
+          gap: 4px;
+          background: var(--border);
+          padding: 4px;
+          border-radius: 8px;
+        }
+
+        .mode-tab {
+          padding: 8px 16px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .mode-tab:hover:not(:disabled) {
+          background: var(--surface);
+          color: var(--text);
+        }
+
+        .mode-tab.active {
+          background: var(--primary);
+          color: white;
+          box-shadow: 0 2px 4px color-mix(in srgb, var(--primary), transparent 70%);
+        }
+
+        .mode-tab:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .editor-content {
+          display: flex;
+          gap: 16px;
+          height: 500px;
+        }
+
+        .editor-content.edit {
+          display: block;
+        }
+
+        .editor-content.preview {
+          display: block;
+        }
+
+        .editor-content.split {
+          display: flex;
+        }
+
+        .editor-pane {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .preview-pane {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+        }
+
         .markdown-textarea {
           width: 100%;
-          min-height: 400px;
+          height: 100%;
+          min-height: 500px;
           padding: 16px;
           border: 2px solid var(--border);
           border-radius: 8px;
@@ -1637,7 +1782,7 @@ export default function AlbumPage() {
           line-height: 1.6;
           background: var(--surface);
           color: var(--text);
-          resize: vertical;
+          resize: none;
           transition: border-color 0.2s ease;
         }
 
@@ -1658,6 +1803,116 @@ export default function AlbumPage() {
           justify-content: center;
           min-height: 200px;
           color: var(--text-secondary);
+        }
+
+        .markdown-preview {
+          width: 100%;
+          height: 100%;
+          min-height: 500px;
+          padding: 16px;
+          border: 2px solid var(--border);
+          border-radius: 8px;
+          background: var(--surface);
+          color: var(--text);
+          overflow-y: auto;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          line-height: 1.6;
+        }
+
+        .markdown-preview h1 {
+          font-size: 24px;
+          font-weight: 700;
+          margin: 0 0 16px 0;
+          color: var(--text);
+          border-bottom: 2px solid var(--border);
+          padding-bottom: 8px;
+        }
+
+        .markdown-preview h2 {
+          font-size: 20px;
+          font-weight: 600;
+          margin: 24px 0 12px 0;
+          color: var(--text);
+        }
+
+        .markdown-preview h3 {
+          font-size: 18px;
+          font-weight: 600;
+          margin: 20px 0 10px 0;
+          color: var(--text);
+        }
+
+        .markdown-preview p {
+          margin: 0 0 12px 0;
+          color: var(--text);
+        }
+
+        .markdown-preview ul {
+          margin: 0 0 12px 0;
+          padding-left: 20px;
+        }
+
+        .markdown-preview li {
+          margin: 4px 0;
+          color: var(--text);
+        }
+
+        .markdown-preview blockquote {
+          margin: 16px 0;
+          padding: 12px 16px;
+          background: color-mix(in srgb, var(--primary), transparent 95%);
+          border-left: 4px solid var(--primary);
+          border-radius: 0 8px 8px 0;
+          color: var(--text);
+        }
+
+        .markdown-preview code {
+          background: var(--border);
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+          font-size: 13px;
+          color: var(--text);
+        }
+
+        .markdown-preview pre {
+          background: var(--border);
+          padding: 16px;
+          border-radius: 8px;
+          overflow-x: auto;
+          margin: 16px 0;
+        }
+
+        .markdown-preview pre code {
+          background: none;
+          padding: 0;
+          font-size: 14px;
+        }
+
+        .markdown-preview strong {
+          font-weight: 600;
+          color: var(--text);
+        }
+
+        .markdown-preview em {
+          font-style: italic;
+          color: var(--text);
+        }
+
+        .markdown-preview a {
+          color: var(--primary);
+          text-decoration: none;
+        }
+
+        .markdown-preview a:hover {
+          text-decoration: underline;
+        }
+
+        .markdown-preview img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 8px;
+          margin: 8px 0;
         }
       `}</style>
     </div>
