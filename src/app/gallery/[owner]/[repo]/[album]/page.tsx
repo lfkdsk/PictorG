@@ -530,14 +530,6 @@ export default function AlbumPage() {
           >
             {isDeleteMode ? '取消删除' : '删除图片'}
           </button>
-
-          <button 
-            className="delete-album-btn"
-            onClick={() => setShowDeleteAlbumDialog(true)}
-            disabled={deleting || saving || deletingAlbum}
-          >
-            删除相册
-          </button>
           
           {isDeleteMode && (
             <div className="delete-actions">
@@ -553,6 +545,17 @@ export default function AlbumPage() {
               </button>
             </div>
           )}
+        </div>
+
+        {/* 危险操作区域 - 放在侧边栏底部 */}
+        <div className="danger-zone">
+          <button 
+            className="delete-album-btn"
+            onClick={() => setShowDeleteAlbumDialog(true)}
+            disabled={deleting || saving || deletingAlbum}
+          >
+            🗑️ 删除相册
+          </button>
         </div>
       </aside>
 
@@ -809,6 +812,8 @@ export default function AlbumPage() {
           position: sticky;
           top: 0;
           height: 100vh;
+          display: flex;
+          flex-direction: column;
         }
         
         .album-header {
@@ -989,6 +994,7 @@ export default function AlbumPage() {
           display: flex;
           flex-direction: column;
           gap: 12px;
+          flex: 1;
         }
         
         .upload-btn {
@@ -1354,6 +1360,60 @@ export default function AlbumPage() {
         }
 
         .delete-confirm-btn-dialog:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
+        }
+
+        .danger-zone {
+          margin-top: auto;
+          border-radius: 12px;
+          margin-bottom: 0;
+        }
+
+        .danger-zone .delete-album-btn {
+          width: 100%;
+          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          color: white;
+          border: none;
+          padding: 14px 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          box-shadow: 0 4px 12px color-mix(in srgb, #dc2626, transparent 70%);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .danger-zone .delete-album-btn::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: -100%;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+          transition: left 0.5s ease;
+        }
+
+        .danger-zone .delete-album-btn:hover:not(:disabled)::before {
+          left: 100%;
+        }
+
+        .danger-zone .delete-album-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #b91c1c, #991b1b);
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px color-mix(in srgb, #dc2626, transparent 60%);
+        }
+
+        .danger-zone .delete-album-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;

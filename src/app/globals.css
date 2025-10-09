@@ -102,51 +102,6 @@ body {
   justify-content: end !important; 
 }
 
-/* Dialog中的按钮样式 */
-.dialog .btn {
-  height: 36px !important;
-  padding: 0 16px !important;
-  border-radius: 8px !important;
-  border: none !important;
-  background: var(--primary) !important;
-  color: #fff !important;
-  font-weight: 600 !important;
-  cursor: pointer !important;
-  transition: all 0.2s ease !important;
-  font-size: 14px !important;
-}
-
-.dialog .btn:hover {
-  transform: translateY(-1px) !important;
-  background: color-mix(in srgb, var(--primary), black 10%) !important;
-}
-
-.dialog .btn.outline {
-  background: transparent !important;
-  color: var(--text) !important;
-  border: 2px solid var(--border) !important;
-}
-
-.dialog .btn.outline:hover {
-  background: color-mix(in srgb, var(--border), transparent 90%) !important;
-}
-
-/* Dialog中的输入框样式 */
-.dialog .input {
-  height: 40px !important;
-  border-radius: 8px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--input) !important;
-  padding: 0 12px !important;
-  font-size: 14px !important;
-}
-
-.dialog .label {
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  margin-bottom: 4px !important;
-}
-
 /* 优化字体加载 */
 @font-face {
   font-family: 'system-ui';

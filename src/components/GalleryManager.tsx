@@ -438,23 +438,8 @@ export default function GalleryManager() {
       ) : null}
 
       {showCreate ? (
-        <div className="modal" style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,.45)',
-          display: 'grid',
-          placeItems: 'center',
-          zIndex: 1000
-        }}>
-          <div className="dialog" style={{
-            width: 'min(520px, 92vw)',
-            background: 'var(--surface)',
-            borderRadius: '12px',
-            padding: '16px',
-            display: 'grid',
-            gap: '12px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
-          }}>
+        <div className="modal">
+          <div className="dialog">
             <h3 className="dlg-title">新建画廊</h3>
             <label className="label">画廊名称</label>
             <input className="input" value={newRepoName} onChange={(e) => setNewRepoName(e.target.value)} placeholder="输入名称" />
