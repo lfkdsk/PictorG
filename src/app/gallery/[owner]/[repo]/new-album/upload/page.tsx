@@ -115,10 +115,10 @@ export default function NewAlbumUploadPage() {
 
     const filesToUpload = selectedFiles
       .map((fileObj, index) => ({ fileObj, index }))
-      .filter(({ fileObj }) => fileObj.compressed && !fileObj.isUploaded);
+      .filter(({ fileObj }) => !fileObj.isUploaded && !fileObj.isCompressing);
     
     if (filesToUpload.length === 0) {
-      alert('没有需要上传的文件，请先压缩图片');
+      alert('没有需要上传的文件');
       return;
     }
 
@@ -135,7 +135,7 @@ export default function NewAlbumUploadPage() {
       const batchFiles: BatchUploadFile[] = [];
       
       for (const { fileObj } of filesToUpload) {
-        const file = fileObj.compressed!;
+        const file = fileObj.compressed || fileObj.original;
         const base64Content = await fileToBase64(file);
         
         // 只将文件后缀转为小写
@@ -191,7 +191,7 @@ export default function NewAlbumUploadPage() {
 
     // 将上传的文件信息存储到sessionStorage（只将后缀转为小写）
     const uploadedFileNames = uploadedFiles.map(f => {
-      const fileName = f.compressed!.name;
+      const fileName = (f.compressed || f.original).name;
       const lastDotIndex = fileName.lastIndexOf('.');
       return lastDotIndex > 0 
         ? fileName.substring(0, lastDotIndex) + fileName.substring(lastDotIndex).toLowerCase()
@@ -396,13 +396,11 @@ export default function NewAlbumUploadPage() {
                 </button>
               </div>
               
-              {selectedFiles.length > 0 && 
-               selectedFiles.every(f => f.compressed || !f.original.type.startsWith('image/')) && 
-               selectedFiles.some(f => f.compressed && !f.isUploaded) && (
+              {selectedFiles.some(f => !f.isUploaded) && (
                 <button 
                   className="action-btn upload-btn full-width"
                   onClick={handleUpload}
-                  disabled={isUploading}
+                  disabled={isUploading || selectedFiles.some(f => f.isCompressing)}
                 >
                   {isUploading ? '上传中...' : '📤 开始上传'}
                 </button>

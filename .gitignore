@@ -4,6 +4,7 @@ out/
 coverage/
 .env*
 dist/
+*.tsbuildinfo
 *.log
 *.tmp
 .DS_Store

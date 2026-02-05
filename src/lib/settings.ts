@@ -2,12 +2,16 @@ export interface CompressionSettings {
   enableWebP: boolean;
   preserveEXIF: boolean;
   outputFormat: 'webp' | 'jpeg';
+  watermarkEnabled: boolean;
+  watermarkAuthor: string;
 }
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   enableWebP: true,
   preserveEXIF: true,
-  outputFormat: 'webp'
+  outputFormat: 'webp',
+  watermarkEnabled: false,
+  watermarkAuthor: ''
 };
 
 export const getCompressionSettings = (): CompressionSettings => {
