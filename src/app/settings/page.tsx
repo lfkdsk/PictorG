@@ -1,43 +1,23 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-
-interface CompressionSettings {
-  enableWebP: boolean;
-  preserveEXIF: boolean;
-  outputFormat: 'webp' | 'jpeg';
-}
+import { getCompressionSettings, saveCompressionSettings, type CompressionSettings } from '@/lib/settings';
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<CompressionSettings>({
-    enableWebP: true,
-    preserveEXIF: true,
-    outputFormat: 'webp'
-  });
+  const [settings, setSettings] = useState<CompressionSettings>(getCompressionSettings());
 
   // 从localStorage加载设置
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('compressionSettings');
-      if (saved) {
-        setSettings(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Failed to load settings:', error);
-    }
+    setSettings(getCompressionSettings());
   }, []);
 
   // 保存设置到localStorage
   const saveSettings = (newSettings: CompressionSettings) => {
     setSettings(newSettings);
-    try {
-      localStorage.setItem('compressionSettings', JSON.stringify(newSettings));
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-    }
+    saveCompressionSettings(newSettings);
   };
 
-  const handleToggle = (key: keyof CompressionSettings) => {
+  const handleToggle = (key: 'enableWebP' | 'preserveEXIF') => {
     const newSettings = { ...settings, [key]: !settings[key] };
     saveSettings(newSettings);
   };

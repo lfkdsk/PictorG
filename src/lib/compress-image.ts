@@ -78,17 +78,24 @@ export const compressImage = async (file: File, customSettings?: CompressionSett
     });
   }
 
-  function writeFileWithBuffer(data: string): Uint8Array {
+  function writeFileWithBuffer(data: string): ArrayBuffer {
     const len = data.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
       bytes[i] = data.charCodeAt(i);
     }
-    return bytes;
+    return bytes.buffer;
   }
 
   try {
     const result = await compress.process();
+
+    const extension = settings.outputFormat === 'jpeg' ? '.jpg' : '.webp';
+    const mimeType = settings.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/webp';
+    const originalName = result.name;
+    const dotIndex = originalName.lastIndexOf('.');
+    const nameWithoutExt = dotIndex > 0 ? originalName.substring(0, dotIndex) : originalName;
+    const newFileName = `${nameWithoutExt}${extension}`;
     
     if (settings.preserveEXIF) {
       try {
@@ -104,26 +111,12 @@ export const compressImage = async (file: File, customSettings?: CompressionSett
         const newData = await readFileAsString(result);
         const newDataWithEXIF = insert(dump(originEXIF), newData);
         
-        // 生成新的文件名
-        const originalName = result.name;
-        const nameWithoutExt = originalName.substring(0, originalName.lastIndexOf('.'));
-        const extension = settings.outputFormat === 'jpeg' ? '.jpg' : '.webp';
-        const mimeType = settings.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/webp';
-        const newFileName = `${nameWithoutExt}${extension}`;
-        
         return new File([writeFileWithBuffer(newDataWithEXIF)], newFileName, { type: mimeType });
       } catch (error) {
         console.error('EXIF processing error:', error);
         // 如果EXIF处理失败，返回不带EXIF的压缩结果
       }
     }
-    
-    // 不保留EXIF或EXIF处理失败时，直接返回压缩结果
-    const originalName = result.name;
-    const nameWithoutExt = originalName.substring(0, originalName.lastIndexOf('.'));
-    const extension = settings.outputFormat === 'jpeg' ? '.jpg' : '.webp';
-    const mimeType = settings.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/webp';
-    const newFileName = `${nameWithoutExt}${extension}`;
     
     return new File([result], newFileName, { type: mimeType });
   } catch (error) {

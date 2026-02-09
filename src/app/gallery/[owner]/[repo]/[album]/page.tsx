@@ -3,7 +3,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import yaml from 'js-yaml';
-import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath, deleteDirectory } from '@/lib/github';
+import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath, deleteDirectory, deleteFiles } from '@/lib/github';
 
 type Config = {
   thumbnail_url: string;
@@ -164,43 +164,8 @@ export default function AlbumPage() {
     
     setDeleting(true);
     try {
-      const deletePromises = Array.from(selectedImages).map(async (imageName) => {
-        // 获取文件信息以获取SHA
-        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${albumUrl}/${imageName}`, {
-          headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github+json'
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to get file info for ${imageName}: ${response.statusText}`);
-        }
-        
-        const fileData = await response.json();
-        
-        // 删除文件
-        const deleteResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${albumUrl}/${imageName}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github+json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            message: `Delete image ${imageName} from ${albumUrl}`,
-            sha: fileData.sha
-          })
-        });
-        
-        if (!deleteResponse.ok) {
-          throw new Error(`Failed to delete ${imageName}: ${deleteResponse.statusText}`);
-        }
-        
-        return imageName;
-      });
-      
-      await Promise.all(deletePromises);
+      const paths = Array.from(selectedImages).map((imageName) => `${albumUrl}/${imageName}`);
+      await deleteFiles(token, owner, repo, paths, `Delete ${paths.length} images from ${albumUrl}`);
       
       // 重新加载图片列表
       const imageFiles = await fetchDirectoryContents(albumUrl);

@@ -1057,3 +1057,132 @@ export async function deleteDirectory(
     throw error;
   }
 }
+
+export async function deleteFiles(
+  token: string,
+  owner: string,
+  repo: string,
+  filePaths: string[],
+  message: string,
+  branch?: string
+): Promise<any> {
+  const targetBranch = branch || await getDefaultBranch(token, owner, repo);
+
+  const uniquePaths = Array.from(new Set(filePaths.map((p) => p.trim()).filter(Boolean)));
+  if (uniquePaths.length === 0) {
+    throw new Error('没有可删除的文件');
+  }
+
+  try {
+    const branchRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!branchRes.ok) {
+      throw new Error(`获取分支信息失败: ${branchRes.statusText}`);
+    }
+
+    const branchData = await branchRes.json();
+    const latestCommitSha = branchData.object.sha;
+
+    const commitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits/${latestCommitSha}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!commitRes.ok) {
+      throw new Error(`获取commit信息失败: ${commitRes.statusText}`);
+    }
+
+    const commitData = await commitRes.json();
+    const baseTreeSha = commitData.tree.sha;
+
+    const treeRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/trees/${baseTreeSha}?recursive=1`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!treeRes.ok) {
+      throw new Error(`获取tree信息失败: ${treeRes.statusText}`);
+    }
+
+    const treeData = await treeRes.json();
+    const deleteSet = new Set(uniquePaths);
+    const filteredTree = treeData.tree.filter((item: any) => !deleteSet.has(item.path));
+
+    if (filteredTree.length === treeData.tree.length) {
+      throw new Error('未找到要删除的文件');
+    }
+
+    const newTreeRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/trees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        tree: filteredTree.map((item: any) => ({
+          path: item.path,
+          mode: item.mode,
+          type: item.type,
+          sha: item.sha
+        }))
+      })
+    });
+
+    if (!newTreeRes.ok) {
+      throw new Error(`创建新tree失败: ${newTreeRes.statusText}`);
+    }
+
+    const newTreeData = await newTreeRes.json();
+
+    const newCommitRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/commits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        message,
+        tree: newTreeData.sha,
+        parents: [latestCommitSha]
+      })
+    });
+
+    if (!newCommitRes.ok) {
+      throw new Error(`创建commit失败: ${newCommitRes.statusText}`);
+    }
+
+    const newCommitData = await newCommitRes.json();
+
+    const updateRefRes = await fetch(`${BASE}/repos/${owner}/${repo}/git/refs/heads/${targetBranch}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        sha: newCommitData.sha
+      })
+    });
+
+    if (!updateRefRes.ok) {
+      throw new Error(`更新分支失败: ${updateRefRes.statusText}`);
+    }
+
+    return newCommitData;
+  } catch (error) {
+    console.error('删除文件失败:', error);
+    throw error;
+  }
+}
