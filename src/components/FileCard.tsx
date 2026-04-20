@@ -28,27 +28,35 @@ function formatFileSize(bytes: number): string {
 function FileCardBase({ fileObj, variant, onDownload }: Props) {
   const displayFile = fileObj.compressed || fileObj.original;
   const isCompressed = !!fileObj.compressed;
-  const isImage = displayFile.type.startsWith('image/');
+  // 预览始终用原图：压缩后视觉几乎一致，避免换源触发主线程重新解码造成 input delay
+  const previewFile = fileObj.original;
+  const isImage = previewFile.type.startsWith('image/');
 
-  // Blob URL lifecycle: 每个 displayFile 引用只创建一次 URL，并在卸载/替换时 revoke。
+  // Blob URL lifecycle: 同一个 previewFile 引用只创建一次 URL，并在卸载/替换时 revoke。
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!isImage) {
       setPreviewUrl(null);
       return;
     }
-    const url = URL.createObjectURL(displayFile);
+    const url = URL.createObjectURL(previewFile);
     setPreviewUrl(url);
     return () => {
       URL.revokeObjectURL(url);
     };
-  }, [displayFile, isImage]);
+  }, [previewFile, isImage]);
 
   return (
     <div className={`file-card ${isCompressed ? 'compressed' : ''} ${variant}`}>
       <div className="file-preview">
         {isImage && previewUrl ? (
-          <img src={previewUrl} alt={displayFile.name} className="preview-image" />
+          <img
+            src={previewUrl}
+            alt={previewFile.name}
+            className="preview-image"
+            decoding="async"
+            loading="lazy"
+          />
         ) : !isImage ? (
           <div className="file-icon">📄</div>
         ) : null}
