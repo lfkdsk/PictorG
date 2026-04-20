@@ -188,6 +188,28 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com
    - Name: `GITHUB_TOKEN`
    - Value: 粘贴你的 token
 
+### GitHub OAuth 登录配置
+
+若要启用「使用 GitHub 登录」按钮的 OAuth Web 应用流程，需要创建一个 GitHub OAuth App 并配置以下环境变量：
+
+```bash
+# GitHub OAuth App 凭据
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+
+# 可选：显式覆盖回调 URL，默认根据请求 origin 自动推断
+# GITHUB_OAUTH_REDIRECT_URI=https://your-domain.com/api/auth/github/callback
+
+# 可选：自定义 scope，默认 "repo workflow read:user user:email"
+# GITHUB_OAUTH_SCOPE=repo workflow read:user user:email
+```
+
+1. 访问 <https://github.com/settings/developers> → OAuth Apps → New OAuth App
+2. Homepage URL 填写部署站点（本地可填 `http://localhost:3000`）
+3. Authorization callback URL 必须与 `GITHUB_OAUTH_REDIRECT_URI`（或默认推断值 `<origin>/api/auth/github/callback`）一致
+4. 生成 Client secret 并把 Client ID / Secret 配置到运行环境
+5. 注意：OAuth 回调依赖 Next.js API Route（服务器端），纯静态托管（例如 GitHub Pages）无法使用，可改用「输入 GitHub Token」
+
 ### 可选的环境变量
 
 ```bash

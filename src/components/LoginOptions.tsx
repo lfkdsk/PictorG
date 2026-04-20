@@ -1,13 +1,18 @@
 'use client';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { validateCurrentToken } from '@/lib/github';
 
 export default function LoginOptions() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
   // 检查是否已有有效token，如果有则跳转到main
   useEffect(() => {
+    const errParam = searchParams?.get('oauth_error');
+    if (errParam) setOauthError(errParam);
+
     const checkExistingAuth = async () => {
       try {
         const isValid = await validateCurrentToken();
@@ -21,11 +26,11 @@ export default function LoginOptions() {
     };
 
     checkExistingAuth();
-  }, [router]);
+  }, [router, searchParams]);
 
   const onGithubLogin = () => {
-    // TODO: integrate GitHub OAuth
-    console.log('GitHub OAuth login clicked');
+    // 使用服务器端 API 路由发起标准的 GitHub OAuth Web 应用流程
+    window.location.href = '/api/auth/github';
   };
 
   return (
@@ -40,6 +45,10 @@ export default function LoginOptions() {
           输入 GitHub Token
         </button>
       </div>
+
+      {oauthError ? (
+        <p role="alert" className="error">GitHub 登录失败：{oauthError}</p>
+      ) : null}
 
       <style jsx>{`
         .wrap { display: grid; gap: 16px; padding: 12px 0; }
@@ -63,6 +72,12 @@ export default function LoginOptions() {
           background: transparent;
           color: inherit;
           border: 2px solid var(--border);
+        }
+        .error {
+          color: #dc2626;
+          text-align: center;
+          margin: 0;
+          font-size: 14px;
         }
       `}</style>
     </section>

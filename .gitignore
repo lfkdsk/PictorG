@@ -3,6 +3,7 @@ node_modules/
 out/
 coverage/
 .env*
+!.env.example
 dist/
 *.tsbuildinfo
 *.log

@@ -1,9 +1,10 @@
 'use client';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { compressImage } from '@/lib/compress-image';
 import { uploadFile, fileToBase64, batchUploadFiles, BatchUploadFile, getGitHubToken, decodeGitHubPath, encodeGitHubPath } from '@/lib/github';
+import FileCard, { FileWithCompression } from '@/components/FileCard';
 
 export default function AlbumUploadPage() {
   const params = useParams();
@@ -11,14 +12,6 @@ export default function AlbumUploadPage() {
   const repo = params.repo as string;
   // 解码URL参数中的中文字符
   const albumUrl = decodeGitHubPath(params.album as string);
-  
-  interface FileWithCompression {
-    original: File;
-    compressed?: File;
-    isCompressing?: boolean;
-    isUploaded?: boolean;
-    uploadProgress?: number;
-  }
 
   const [selectedFiles, setSelectedFiles] = useState<FileWithCompression[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -44,14 +37,6 @@ export default function AlbumUploadPage() {
     if (fileInput) {
       fileInput.value = '';
     }
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const handleCompress = async () => {
@@ -90,16 +75,16 @@ export default function AlbumUploadPage() {
     }
   };
 
-  const downloadFile = (file: File, filename: string) => {
+  const handleDownload = useCallback((file: File) => {
     const url = URL.createObjectURL(file);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = file.name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, []);
 
   const handleUpload = async () => {
     const token = getGitHubToken();
@@ -219,85 +204,14 @@ export default function AlbumUploadPage() {
             <div className="files-section">
               <h3>选中的文件 ({selectedFiles.length})</h3>
               <div className="files-grid">
-                {selectedFiles.map((fileObj, index) => {
-                  const displayFile = fileObj.compressed || fileObj.original;
-                  const isCompressed = !!fileObj.compressed;
-                  
-                  return (
-                    <div key={index} className={`file-card ${isCompressed ? 'compressed' : ''}`}>
-                      <div className="file-preview">
-                        {displayFile.type.startsWith('image/') ? (
-                          <img 
-                            src={URL.createObjectURL(displayFile)} 
-                            alt={displayFile.name}
-                            className="preview-image"
-                          />
-                        ) : (
-                          <div className="file-icon">
-                            📄
-                          </div>
-                        )}
-                        
-                        {fileObj.isCompressing && (
-                          <div className="compression-badge">
-                            压缩中...
-                          </div>
-                        )}
-                        
-                        {fileObj.uploadProgress !== undefined && fileObj.uploadProgress >= 0 && (
-                          <div className="upload-badge">
-                            {fileObj.uploadProgress === 100 ? '已上传' : `上传中 ${fileObj.uploadProgress}%`}
-                          </div>
-                        )}
-                        
-                        {fileObj.uploadProgress === -1 && (
-                          <div className="upload-badge error">
-                            上传失败
-                          </div>
-                        )}
-                        
-                        {isCompressed && !fileObj.isUploaded && (
-                          <>
-                            <div className="compression-badge">
-                              -{Math.round((1 - displayFile.size / fileObj.original.size) * 100)}%
-                            </div>
-                            <button 
-                              className="download-btn"
-                              onClick={() => downloadFile(displayFile, displayFile.name)}
-                              title="下载压缩后的文件"
-                            >
-                              💾
-                            </button>
-                          </>
-                        )}
-                        
-                        {fileObj.isUploaded && (
-                          <div className="uploaded-badge">
-                            ✅ 已上传
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="file-info">
-                        <div className="file-name">{displayFile.name}</div>
-                        <div className="file-details">
-                          {isCompressed ? (
-                            <>
-                              <span className="file-size original">{formatFileSize(fileObj.original.size)}</span>
-                              <span className="arrow">→</span>
-                              <span className="file-size compressed">{formatFileSize(displayFile.size)}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="file-size">{formatFileSize(displayFile.size)}</span>
-                              <span className="file-type">{displayFile.type || '未知类型'}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {selectedFiles.map((fileObj, index) => (
+                  <FileCard
+                    key={index}
+                    fileObj={fileObj}
+                    variant="album"
+                    onDownload={handleDownload}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -606,180 +520,7 @@ export default function AlbumUploadPage() {
           grid-template-columns: 1fr;
           gap: 16px;
         }
-        
-        .file-card {
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          padding: 0;
-          transition: all 0.3s ease;
-          overflow: hidden;
-          position: relative;
-        }
-        
-        .file-card:hover {
-          border-color: var(--primary);
-          transform: translateY(-4px);
-          box-shadow: 0 8px 25px color-mix(in srgb, var(--text), transparent 85%);
-        }
-        
-        .file-card.compressed {
-          background: linear-gradient(135deg, 
-            color-mix(in srgb, var(--primary), transparent 95%) 0%, 
-            color-mix(in srgb, var(--primary), transparent 98%) 100%);
-          border: 2px solid var(--primary);
-          box-shadow: 0 4px 15px color-mix(in srgb, var(--primary), transparent 80%);
-        }
-        
-        .file-card.compressed::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 4px;
-          background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary), #fbbf24 50%));
-        }
-        
-        .file-preview {
-          position: relative;
-          width: 100%;
-          aspect-ratio: 3/2;
-          background: var(--border);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-        }
-        
-        .preview-image {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-        
-        .file-icon {
-          font-size: 48px;
-          color: var(--text-secondary);
-        }
-        
-        .compression-badge {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: rgba(0, 0, 0, 0.8);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-        
-        .upload-badge {
-          position: absolute;
-          top: 8px;
-          left: 8px;
-          background: var(--primary);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-        
-        .upload-badge.error {
-          background: #ef4444;
-        }
-        
-        .uploaded-badge {
-          position: absolute;
-          top: 8px;
-          left: 8px;
-          background: #10b981;
-          color: white;
-          padding: 4px 8px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-        
-        .download-btn {
-          position: absolute;
-          bottom: 8px;
-          right: 8px;
-          background: var(--primary);
-          color: white;
-          border: none;
-          padding: 6px 8px;
-          border-radius: 6px;
-          font-size: 12px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        
-        .download-btn:hover {
-          background: color-mix(in srgb, var(--primary), black 10%);
-          transform: scale(1.1);
-        }
-        
-        .file-info {
-          padding: 12px 16px;
-          background: color-mix(in srgb, var(--text), transparent 10%);
-          color: var(--bg);
-          position: relative;
-        }
-        
-        .file-card.compressed .file-info {
-          background: linear-gradient(135deg, 
-            var(--primary) 0%, 
-            color-mix(in srgb, var(--primary), black 20%) 100%);
-          color: white;
-        }
-        
-        .file-name {
-          font-weight: 500;
-          font-size: 14px;
-          margin-bottom: 4px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        
-        .file-details {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 12px;
-          opacity: 0.9;
-        }
-        
-        .file-size {
-          font-weight: 500;
-        }
-        
-        .file-size.original {
-          text-decoration: line-through;
-          opacity: 0.7;
-        }
-        
-        .file-size.compressed {
-          color: #4ade80;
-          font-weight: 600;
-        }
-        
-        .arrow {
-          color: #fbbf24;
-          font-weight: bold;
-        }
-        
-        .file-type {
-          opacity: 0.7;
-          font-size: 11px;
-        }
-        
+
         .action-buttons {
           display: flex;
           gap: 12px;
