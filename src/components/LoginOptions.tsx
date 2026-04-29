@@ -1,22 +1,26 @@
 'use client';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { validateCurrentToken } from '@/lib/github';
+import { initiateGitHubOAuth } from '@/lib/auth';
 
 export default function LoginOptions() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
-  // 检查是否已有有效token，如果有则跳转到main
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) setOauthError(decodeURIComponent(error));
+  }, [searchParams]);
+
   useEffect(() => {
     const checkExistingAuth = async () => {
       try {
         const isValid = await validateCurrentToken();
-        if (isValid) {
-          router.push('/main');
-        }
-      } catch (error) {
-        // Token验证失败，留在登录页面
-        console.log('No valid token found, staying on login page');
+        if (isValid) router.push('/main');
+      } catch {
+        // no valid token — stay on login page
       }
     };
 
@@ -24,8 +28,7 @@ export default function LoginOptions() {
   }, [router]);
 
   const onGithubLogin = () => {
-    // TODO: integrate GitHub OAuth
-    console.log('GitHub OAuth login clicked');
+    initiateGitHubOAuth();
   };
 
   return (
@@ -41,10 +44,15 @@ export default function LoginOptions() {
         </button>
       </div>
 
+      {oauthError ? (
+        <p role="alert" className="error">{oauthError}</p>
+      ) : null}
+
       <style jsx>{`
         .wrap { display: grid; gap: 16px; padding: 12px 0; }
         .brand { font-size: 40px; line-height: 1; margin: 8px 0; }
         .actions { display: grid; gap: 12px; width: 260px; }
+        .error { color: #dc2626; font-size: 14px; max-width: 280px; text-align: center; }
         .btn {
           height: 44px;
           min-width: 220px;
