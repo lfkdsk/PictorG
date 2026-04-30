@@ -5,12 +5,26 @@ import Link from 'next/link';
 import yaml from 'js-yaml';
 import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, encodeGitHubPath } from '@/lib/github';
 import AuthGuard from '@/components/AuthGuard';
+import { openGalleryDb } from '@/lib/sqlite';
+import {
+  listYearsWithPhotos,
+  listExistingSummaryYears,
+  parseGalleryConfig,
+} from '@/lib/annualSummary';
 
 type Config = {
   thumbnail_url: string;
   base_url: string;
   backup_base_url: string;
   backup_thumbnail_url: string;
+  url?: string;
+};
+
+type SummaryStatus = {
+  loading: boolean;
+  pendingYears: string[];
+  filledYears: string[];
+  error: string | null;
 };
 
 type Album = {
@@ -37,6 +51,12 @@ export default function GalleryPage() {
   const [isConfigEditMode, setIsConfigEditMode] = useState(false);
   const [configContent, setConfigContent] = useState<string>('');
   const [savingConfig, setSavingConfig] = useState(false);
+  const [summaryStatus, setSummaryStatus] = useState<SummaryStatus>({
+    loading: false,
+    pendingYears: [],
+    filledYears: [],
+    error: null,
+  });
 
 
 
@@ -267,6 +287,44 @@ export default function GalleryPage() {
     }
   }, [owner, repo]);
 
+  useEffect(() => {
+    if (!configContent || !owner || !repo) return;
+    let cancelled = false;
+    setSummaryStatus((s) => ({ ...s, loading: true, error: null }));
+    (async () => {
+      try {
+        const cfg = parseGalleryConfig(configContent);
+        const token = getGitHubToken();
+        if (!token) throw new Error('No token');
+        const [db, filledYears] = await Promise.all([
+          openGalleryDb(cfg.siteUrl),
+          listExistingSummaryYears(token, owner, repo),
+        ]);
+        if (cancelled) return;
+        const yearsWithPhotos = listYearsWithPhotos(db);
+        const filledSet = new Set(filledYears);
+        const pendingYears = yearsWithPhotos.filter((y) => !filledSet.has(y));
+        setSummaryStatus({
+          loading: false,
+          pendingYears,
+          filledYears: yearsWithPhotos.filter((y) => filledSet.has(y)),
+          error: null,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setSummaryStatus({
+          loading: false,
+          pendingYears: [],
+          filledYears: [],
+          error: err instanceof Error ? err.message : '加载年度精选状态失败',
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [configContent, owner, repo]);
+
   if (loading) {
     return (
       <div className="container">
@@ -372,6 +430,47 @@ export default function GalleryPage() {
           </div>
         </div>
       ) : (
+        <>
+        {(summaryStatus.pendingYears.length > 0 || summaryStatus.loading || summaryStatus.error) && (
+          <section className="summary-section">
+            <div className="summary-header">
+              <h2 className="summary-title">年度精选 · 每月印象</h2>
+              <p className="summary-desc">
+                为每年挑选每月一张代表照片，主题站会优先使用你选中的图，没填则随机。
+              </p>
+            </div>
+            {summaryStatus.loading && (
+              <div className="summary-loading">读取 sqlite.db 中…</div>
+            )}
+            {summaryStatus.error && !summaryStatus.loading && (
+              <div className="summary-error">无法加载年度精选状态：{summaryStatus.error}</div>
+            )}
+            {!summaryStatus.loading && summaryStatus.pendingYears.length > 0 && (
+              <div className="summary-grid">
+                {summaryStatus.pendingYears.map((y) => (
+                  <Link
+                    key={y}
+                    href={`/gallery/${owner}/${repo}/annual-summary/${y}`}
+                    className="summary-card pending"
+                  >
+                    <span className="summary-year">{y}</span>
+                    <span className="summary-state">待填写 →</span>
+                  </Link>
+                ))}
+                {summaryStatus.filledYears.map((y) => (
+                  <Link
+                    key={y}
+                    href={`/gallery/${owner}/${repo}/annual-summary/${y}`}
+                    className="summary-card filled"
+                  >
+                    <span className="summary-year">{y}</span>
+                    <span className="summary-state">已填写 · 编辑</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
         <div className="albums-grid">
         {albums.map((album) => (
           <Link 
@@ -448,6 +547,7 @@ export default function GalleryPage() {
           </Link>
         ))}
         </div>
+        </>
       )}
 
       <style jsx>{`
@@ -685,6 +785,59 @@ export default function GalleryPage() {
           opacity: 0.6;
           cursor: not-allowed;
         }
+        .summary-section {
+          margin-bottom: 28px;
+          padding: 20px;
+          border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
+          border-radius: 16px;
+          background: color-mix(in srgb, var(--surface), transparent 30%);
+        }
+        .summary-header { margin-bottom: 12px; }
+        .summary-title { font-size: 18px; font-weight: 700; margin: 0 0 4px; color: var(--text); }
+        .summary-desc { color: var(--text-secondary); font-size: 13px; margin: 0; }
+        .summary-loading, .summary-error {
+          font-size: 13px;
+          color: var(--text-secondary);
+          padding: 8px 0;
+        }
+        .summary-error { color: #ef4444; }
+        .summary-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+          gap: 10px;
+          margin-top: 10px;
+        }
+        .summary-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 14px;
+          border-radius: 10px;
+          text-decoration: none;
+          font-size: 14px;
+          transition: all 0.2s ease;
+          border: 1px solid transparent;
+        }
+        .summary-card.pending {
+          background: color-mix(in srgb, var(--primary), transparent 88%);
+          color: var(--primary);
+          border-color: color-mix(in srgb, var(--primary), transparent 60%);
+        }
+        .summary-card.pending:hover {
+          background: color-mix(in srgb, var(--primary), transparent 75%);
+          transform: translateY(-1px);
+        }
+        .summary-card.filled {
+          background: var(--surface);
+          color: var(--text-secondary);
+          border-color: var(--border);
+        }
+        .summary-card.filled:hover {
+          color: var(--text);
+          border-color: color-mix(in srgb, var(--text), transparent 70%);
+        }
+        .summary-year { font-weight: 700; font-size: 16px; }
+        .summary-state { font-size: 12px; }
       `}</style>
       </div>
     </AuthGuard>
