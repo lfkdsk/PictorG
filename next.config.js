@@ -69,6 +69,16 @@ const nextConfig = {
       '@': require('path').resolve(__dirname, 'src'),
     };
 
+    // sql.js 在浏览器端不需要 Node 内置模块，需要 stub 掉
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...(config.resolve.fallback || {}),
+        fs: false,
+        path: false,
+        crypto: false,
+      };
+    }
+
     return config;
   },
 
