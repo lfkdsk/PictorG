@@ -55,21 +55,40 @@ export async function validateCurrentToken(): Promise<boolean> {
 // 清理所有token相关的存储
 export function clearGitHubToken(): void {
   if (typeof window !== 'undefined') {
-    // 清除localStorage
-    localStorage.removeItem('gh_token');
-    localStorage.removeItem('github_token'); // 兼容旧版本
-    
+    // 清除localStorage 中的 token + 用户态 + 已导入画廊缓存
+    const localKeys = [
+      'gh_token',
+      'github_token', // 兼容旧版本
+      'gh_user',
+      'gh_token_expiry',
+      'pictor_galleries',
+      'pictor_repos_cache',
+    ];
+    localKeys.forEach((k) => localStorage.removeItem(k));
+
+    // 清除任何以 annualSummaryDraft: 开头的草稿（每个 owner/repo/year 一条）
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('annualSummaryDraft:'))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+
     // 清除所有相关的cookie
     const cookiesToClear = ['gh_token', 'github_token'];
     cookiesToClear.forEach(cookieName => {
       document.cookie = `${cookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
       document.cookie = `${cookieName}=; Path=/; Domain=${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
     });
-    
-    // 清除sessionStorage中的相关数据
+
+    // 清除sessionStorage中的相关数据 + annual-summary 草稿
     sessionStorage.removeItem('newAlbumForm');
     sessionStorage.removeItem('uploadedFiles');
-    
+    try {
+      Object.keys(sessionStorage)
+        .filter((k) => k.startsWith('annualSummaryDraft:'))
+        .forEach((k) => sessionStorage.removeItem(k));
+    } catch { /* ignore */ }
+
     // 清除其他可能的缓存
     try {
       if ('caches' in window) {
