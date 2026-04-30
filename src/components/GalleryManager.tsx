@@ -293,27 +293,17 @@ export default function GalleryManager() {
       </header>
 
       {!token ? (
-        <p className="dim">
-          未检测到 Token，请先前往 <a
-            href="/login/token"
-            className="link"
-            style={{
-              color: 'var(--primary)',
-              textDecoration: 'none',
-              fontWeight: '500',
-              padding: '2px 4px',
-              borderRadius: '4px',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            设置 Token
-          </a>
+        <p className="dim token-hint">
+          未检测到 Token，请先前往
+          <a href="/login/token" className="text-link">设置 Token</a>
         </p>
       ) : null}
 
       <section className="grid">
         {galleries.length === 0 ? (
-          <p className="dim">暂无画廊，请点击右上角“导入”或“新建”</p>
+          token ? (
+            <p className="dim">暂无画廊，请点击右上角“导入”或“新建”</p>
+          ) : null
         ) : (
           filteredGalleries.map((g) => {
             const [owner, repo] = g.full_name.split('/');
@@ -423,9 +413,9 @@ export default function GalleryManager() {
               </div>
             ) : null}
             <div className="dlg-actions">
-              <button className="btn outline" onClick={() => setShowImport(false)}>取消</button>
+              <button className="dlg-btn outline" onClick={() => setShowImport(false)}>取消</button>
               <button
-                className="btn"
+                className="dlg-btn primary"
                 onClick={importSelected}
                 disabled={!selectedRepo || !repoOptions.some((o) => o.value === selectedRepo)}
                 title={!selectedRepo || !repoOptions.some((o) => o.value === selectedRepo) ? '请选择列表中的仓库' : '导入'}
@@ -450,8 +440,8 @@ export default function GalleryManager() {
             </div>
             <p className="note">*私有画廊仅支持 GitHub 付费用户</p>
             <div className="dlg-actions">
-              <button className="btn outline" onClick={() => setShowCreate(false)}>取消</button>
-              <button className="btn" onClick={createNew} disabled={!newRepoName.trim() || creating}>{creating ? '新建中…' : '新建'}</button>
+              <button className="dlg-btn outline" onClick={() => setShowCreate(false)}>取消</button>
+              <button className="dlg-btn primary" onClick={createNew} disabled={!newRepoName.trim() || creating}>{creating ? '新建中…' : '新建'}</button>
             </div>
           </div>
         </div>
@@ -598,7 +588,54 @@ export default function GalleryManager() {
         .error { color: #dc2626; text-align: center; }
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; }
         .dialog { width: min(520px, 92vw); background: var(--surface); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
-        .dlg-title { margin: 4px 0 8px; font-size: 18px; }
+        .dlg-title { margin: 4px 0 8px; font-size: 18px; font-weight: 700; color: var(--text); }
+        .token-hint { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .token-hint :global(.text-link) {
+          color: var(--primary);
+          text-decoration: underline;
+          text-underline-offset: 3px;
+          font-weight: 500;
+          padding: 0;
+          background: transparent;
+          border: none;
+        }
+        .token-hint :global(.text-link:hover) {
+          text-decoration-thickness: 2px;
+        }
+        .dlg-btn {
+          height: 36px;
+          padding: 0 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.18s ease;
+          border: 1px solid transparent;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .dlg-btn.primary {
+          background: var(--primary);
+          color: #fff;
+          border-color: var(--primary);
+        }
+        .dlg-btn.primary:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--primary), black 10%);
+          transform: translateY(-1px);
+        }
+        .dlg-btn.outline {
+          background: transparent;
+          color: var(--text);
+          border-color: var(--border);
+        }
+        .dlg-btn.outline:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--text), transparent 92%);
+        }
+        .dlg-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
         .label { font-size: 14px; }
         .input, .select { height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--input); padding: 0 10px; }
         .results { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 4px; display: grid; gap: 4px; }
