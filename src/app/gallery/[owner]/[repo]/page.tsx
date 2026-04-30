@@ -434,9 +434,15 @@ export default function GalleryPage() {
         {(summaryStatus.pendingYears.length > 0 || summaryStatus.loading || summaryStatus.error) && (
           <section className="summary-section">
             <div className="summary-header">
-              <h2 className="summary-title">年度精选 · 每月印象</h2>
+              <div className="summary-title-row">
+                <span className="summary-dot" aria-hidden />
+                <h2 className="summary-title">年度精选 · 每月印象</h2>
+                {summaryStatus.pendingYears.length > 0 && (
+                  <span className="summary-badge">{summaryStatus.pendingYears.length} 年待填写</span>
+                )}
+              </div>
               <p className="summary-desc">
-                为每年挑选每月一张代表照片，主题站会优先使用你选中的图，没填则随机。
+                为每年挑选每月代表照片；未填写时主题站会按 EXIF 随机抽图。
               </p>
             </div>
             {summaryStatus.loading && (
@@ -445,26 +451,30 @@ export default function GalleryPage() {
             {summaryStatus.error && !summaryStatus.loading && (
               <div className="summary-error">无法加载年度精选状态：{summaryStatus.error}</div>
             )}
-            {!summaryStatus.loading && summaryStatus.pendingYears.length > 0 && (
-              <div className="summary-grid">
+            {!summaryStatus.loading && (summaryStatus.pendingYears.length > 0 || summaryStatus.filledYears.length > 0) && (
+              <div className="summary-actions">
                 {summaryStatus.pendingYears.map((y) => (
                   <Link
                     key={y}
                     href={`/gallery/${owner}/${repo}/annual-summary/${y}`}
-                    className="summary-card pending"
+                    className="summary-action pending"
+                    style={{ textDecoration: 'none', color: 'inherit' }}
                   >
-                    <span className="summary-year">{y}</span>
-                    <span className="summary-state">待填写 →</span>
+                    <span className="action-year">{y}</span>
+                    <span className="action-state">待填写</span>
+                    <span className="action-arrow" aria-hidden>→</span>
                   </Link>
                 ))}
                 {summaryStatus.filledYears.map((y) => (
                   <Link
                     key={y}
                     href={`/gallery/${owner}/${repo}/annual-summary/${y}`}
-                    className="summary-card filled"
+                    className="summary-action filled"
+                    style={{ textDecoration: 'none', color: 'inherit' }}
                   >
-                    <span className="summary-year">{y}</span>
-                    <span className="summary-state">已填写 · 编辑</span>
+                    <span className="action-year">{y}</span>
+                    <span className="action-state">已填写</span>
+                    <span className="action-arrow" aria-hidden>↻</span>
                   </Link>
                 ))}
               </div>
@@ -786,58 +796,115 @@ export default function GalleryPage() {
           cursor: not-allowed;
         }
         .summary-section {
-          margin-bottom: 28px;
-          padding: 20px;
-          border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
-          border-radius: 16px;
-          background: color-mix(in srgb, var(--surface), transparent 30%);
+          margin-bottom: 24px;
+          padding: 18px 20px;
+          border: 1px solid color-mix(in srgb, var(--primary), transparent 75%);
+          border-radius: 14px;
+          background: color-mix(in srgb, var(--primary), transparent 94%);
         }
-        .summary-header { margin-bottom: 12px; }
-        .summary-title { font-size: 18px; font-weight: 700; margin: 0 0 4px; color: var(--text); }
-        .summary-desc { color: var(--text-secondary); font-size: 13px; margin: 0; }
+        .summary-header { margin-bottom: 14px; }
+        .summary-title-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 6px;
+          flex-wrap: wrap;
+        }
+        .summary-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--primary);
+          flex-shrink: 0;
+          box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary), transparent 80%);
+        }
+        .summary-title {
+          font-size: 15px;
+          font-weight: 700;
+          margin: 0;
+          color: var(--text);
+          letter-spacing: 0.2px;
+        }
+        .summary-badge {
+          font-size: 11px;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 999px;
+          background: var(--primary);
+          color: white;
+          letter-spacing: 0.3px;
+        }
+        .summary-desc {
+          color: var(--text-secondary);
+          font-size: 13px;
+          margin: 0;
+          line-height: 1.5;
+        }
         .summary-loading, .summary-error {
           font-size: 13px;
           color: var(--text-secondary);
-          padding: 8px 0;
+          padding: 6px 0 0;
         }
         .summary-error { color: #ef4444; }
-        .summary-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-          gap: 10px;
-          margin-top: 10px;
-        }
-        .summary-card {
+        .summary-actions {
           display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        :global(.summary-action) {
+          display: inline-flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 12px 14px;
+          gap: 8px;
+          padding: 8px 14px;
           border-radius: 10px;
-          text-decoration: none;
           font-size: 14px;
-          transition: all 0.2s ease;
+          line-height: 1;
+          transition: all 0.18s ease;
           border: 1px solid transparent;
+          text-decoration: none;
+          color: inherit;
         }
-        .summary-card.pending {
-          background: color-mix(in srgb, var(--primary), transparent 88%);
-          color: var(--primary);
-          border-color: color-mix(in srgb, var(--primary), transparent 60%);
+        :global(.summary-action.pending) {
+          background: var(--primary);
+          color: #fff;
+          border-color: var(--primary);
+          box-shadow: 0 2px 6px color-mix(in srgb, var(--primary), transparent 75%);
         }
-        .summary-card.pending:hover {
-          background: color-mix(in srgb, var(--primary), transparent 75%);
+        :global(.summary-action.pending:hover) {
+          background: color-mix(in srgb, var(--primary), black 10%);
+          color: #fff;
           transform: translateY(-1px);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--primary), transparent 60%);
         }
-        .summary-card.filled {
+        :global(.summary-action.pending .action-state) {
+          color: rgba(255, 255, 255, 0.85);
+        }
+        :global(.summary-action.pending .action-arrow) {
+          color: rgba(255, 255, 255, 0.9);
+        }
+        :global(.summary-action.filled) {
           background: var(--surface);
           color: var(--text-secondary);
           border-color: var(--border);
         }
-        .summary-card.filled:hover {
+        :global(.summary-action.filled:hover) {
           color: var(--text);
-          border-color: color-mix(in srgb, var(--text), transparent 70%);
+          border-color: color-mix(in srgb, var(--text), transparent 60%);
+          transform: translateY(-1px);
         }
-        .summary-year { font-weight: 700; font-size: 16px; }
-        .summary-state { font-size: 12px; }
+        :global(.summary-action .action-year) {
+          font-weight: 700;
+          font-size: 15px;
+          font-variant-numeric: tabular-nums;
+        }
+        :global(.summary-action .action-state) {
+          font-size: 12px;
+          opacity: 0.9;
+        }
+        :global(.summary-action .action-arrow) {
+          font-size: 14px;
+          margin-left: 2px;
+        }
       `}</style>
       </div>
     </AuthGuard>
