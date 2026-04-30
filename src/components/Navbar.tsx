@@ -1,8 +1,10 @@
 'use client';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import ThemeToggle from './ThemeToggle';
 import { useEffect, useRef, useState } from 'react';
 import { getGitHubToken, logout } from '@/lib/github';
+import { getStoredUser } from '@/lib/auth';
 
 type GhUser = { avatar_url: string; login: string };
 
@@ -10,10 +12,24 @@ export default function Navbar() {
   const [user, setUser] = useState<GhUser | null>(null);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // Navbar lives in the root layout and survives SPA navigation, so re-run
+  // this effect on every route change — otherwise OAuth login (which only
+  // writes the token after the initial mount, then router.push('/main'))
+  // never refreshes the user state.
+  const pathname = usePathname();
 
   useEffect(() => {
+    const stored = getStoredUser();
+    if (stored?.avatar_url) {
+      setUser({ avatar_url: stored.avatar_url, login: stored.login });
+      return;
+    }
+
     const token = getGitHubToken();
-    if (!token) return;
+    if (!token) {
+      setUser(null);
+      return;
+    }
     fetch('https://api.github.com/user', {
       headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' }
     })
@@ -22,7 +38,7 @@ export default function Navbar() {
         if (data?.avatar_url) setUser({ avatar_url: data.avatar_url, login: data.login });
       })
       .catch(() => {});
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {

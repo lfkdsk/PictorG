@@ -29,7 +29,10 @@ export default function HomePage() {
           if (!resp.ok) throw new Error('Failed to fetch GitHub user');
           const user = await resp.json();
           storeAuthData(oauthResult.token, user);
-          router.push('/main');
+          // Hard navigation so the persistent Navbar re-mounts and picks up
+          // the freshly-stored gh_user — soft routing keeps the old (no-user)
+          // instance alive and the avatar/Settings menu stays hidden.
+          window.location.replace('/main');
         } catch {
           router.push('/login?error=Failed+to+fetch+GitHub+user+profile');
         }
