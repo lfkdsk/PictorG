@@ -19,8 +19,14 @@ import type {
   WireFileContent,
 } from './contract';
 
+// Spike default: don't push automatically. Real auto-push behaviour will be a
+// product decision once the desktop UX has a "Publish" affordance; for now
+// keeping it off means the e2e smoke test works without remote/credentials
+// configured. Override with PICG_AUTOPUSH=1.
+const AUTO_PUSH = process.env.PICG_AUTOPUSH === '1';
+
 function adapterFor(repoPath: string): LocalGitStorageAdapter {
-  return new LocalGitStorageAdapter({ repoPath });
+  return new LocalGitStorageAdapter({ repoPath, autoPush: AUTO_PUSH });
 }
 
 export function registerStorageIpcHandlers(): void {

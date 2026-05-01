@@ -35,5 +35,10 @@ export {
 } from './electron';
 export type {
   PreloadStorageBridge,
+  PreloadGalleryBridge,
   PreloadBridgeAdapterConfig,
+  PicgBridge,
+  LocalGallery,
+  CloneProgress,
+  CloneStage,
 } from './electron';

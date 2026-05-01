@@ -1,5 +1,5 @@
-// IPC contract shared between the main process (handlers in ipc/storage.ts)
-// and the preload script (window.picgBridge in preload.ts).
+// IPC contract shared between the main process (handlers in ipc/) and the
+// preload script (window.picgBridge in preload.ts).
 //
 // Methods are namespaced by channel; payloads use plain serializable types so
 // they survive Electron's structured-clone IPC.
@@ -12,9 +12,18 @@ import type {
   WriteContent,
   WriteOptions,
 } from '../../src/core/storage/types';
+import type { CloneProgress, LocalGallery } from '../../src/core/storage/electron/galleryTypes';
 
 export const CHANNELS = {
   pickGalleryDir: 'gallery:pick-dir',
+  gallery: {
+    list: 'gallery:list',
+    resolve: 'gallery:resolve',
+    clone: 'gallery:clone',
+    remove: 'gallery:remove',
+    sync: 'gallery:sync',
+    cloneProgress: 'gallery:clone-progress',
+  },
   storage: {
     getDefaultBranch: 'storage:get-default-branch',
     listDirectory: 'storage:list-directory',
@@ -27,6 +36,18 @@ export const CHANNELS = {
     deleteDirectory: 'storage:delete-directory',
   },
 } as const;
+
+export type GalleryCloneArgs = [
+  request: {
+    owner: string;
+    repo: string;
+    fullName: string;
+    htmlUrl: string;
+    cloneUrl: string;
+    defaultBranch?: string;
+    token: string;
+  },
+];
 
 // Wire format for FileContent. The renderer-side adapter rehydrates this into
 // a FileContent (with `text()` / `base64()` helpers) — those methods can't
@@ -85,6 +106,14 @@ export type StorageDeleteDirectoryArgs = [
 
 export interface PicgBridge {
   pickGalleryDir(): Promise<string | null>;
+  gallery: {
+    list(): Promise<LocalGallery[]>;
+    resolve(id: string): Promise<LocalGallery | null>;
+    clone(...args: GalleryCloneArgs): Promise<LocalGallery>;
+    remove(id: string): Promise<void>;
+    sync(id: string): Promise<LocalGallery>;
+    onCloneProgress(handler: (event: CloneProgress) => void): () => void;
+  };
   storage: {
     getDefaultBranch(repoPath: string): Promise<string>;
     listDirectory(...args: StorageListDirectoryArgs): Promise<DirectoryEntry[]>;

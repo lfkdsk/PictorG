@@ -1,14 +1,30 @@
 // Preload script. Runs in an isolated context with both DOM and limited Node
 // APIs, and uses contextBridge to expose a typed surface to the renderer.
-// All file system and git operations are routed through the main process.
+// All file system, git, and gallery operations are routed through the main
+// process.
 
 import { contextBridge, ipcRenderer } from 'electron';
 
 import { CHANNELS } from './ipc/contract';
 import type { PicgBridge } from './ipc/contract';
+import type { CloneProgress } from '../src/core/storage/electron/galleryTypes';
 
 const bridge: PicgBridge = {
   pickGalleryDir: () => ipcRenderer.invoke(CHANNELS.pickGalleryDir),
+
+  gallery: {
+    list: () => ipcRenderer.invoke(CHANNELS.gallery.list),
+    resolve: (id) => ipcRenderer.invoke(CHANNELS.gallery.resolve, id),
+    clone: (...args) => ipcRenderer.invoke(CHANNELS.gallery.clone, ...args),
+    remove: (id) => ipcRenderer.invoke(CHANNELS.gallery.remove, id),
+    sync: (id) => ipcRenderer.invoke(CHANNELS.gallery.sync, id),
+    onCloneProgress: (handler: (event: CloneProgress) => void) => {
+      const listener = (_e: unknown, evt: CloneProgress) => handler(evt);
+      ipcRenderer.on(CHANNELS.gallery.cloneProgress, listener);
+      return () => ipcRenderer.off(CHANNELS.gallery.cloneProgress, listener);
+    },
+  },
+
   storage: {
     getDefaultBranch: (repoPath) =>
       ipcRenderer.invoke(CHANNELS.storage.getDefaultBranch, repoPath),

@@ -6,9 +6,12 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'node:path';
 
+import { registerGalleryIpcHandlers } from './ipc/gallery';
 import { registerStorageIpcHandlers } from './ipc/storage';
 
-const DEV_URL = process.env.PICG_DEV_URL ?? 'http://localhost:3000';
+// Default to the desktop spike landing page; existing web routes still work
+// if you override PICG_DEV_URL.
+const DEV_URL = process.env.PICG_DEV_URL ?? 'http://localhost:3000/desktop/galleries';
 
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
@@ -31,6 +34,7 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  registerGalleryIpcHandlers();
   registerStorageIpcHandlers();
   createWindow();
 

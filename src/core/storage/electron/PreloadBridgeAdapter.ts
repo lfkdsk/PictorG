@@ -9,6 +9,7 @@ import type {
   WriteOptions,
 } from '../types';
 import { bytesToBase64, bytesToUtf8 } from '../encoding';
+import type { CloneProgress, LocalGallery } from './galleryTypes';
 
 // Renderer-side adapter that forwards every StorageAdapter call to the
 // Electron preload bridge. Used in the desktop app; on web the import is
@@ -153,14 +154,38 @@ export class PreloadBridgeAdapter implements StorageAdapter {
   }
 }
 
+// Bridge surface for the App-managed gallery library. The actual
+// implementation lives in main (electron/galleries/GalleryRegistry.ts) and
+// is exposed through preload.ts via contextBridge.
+export type PreloadGalleryBridge = {
+  list(): Promise<LocalGallery[]>;
+  resolve(id: string): Promise<LocalGallery | null>;
+  clone(request: {
+    owner: string;
+    repo: string;
+    fullName: string;
+    htmlUrl: string;
+    cloneUrl: string;
+    defaultBranch?: string;
+    token: string;
+  }): Promise<LocalGallery>;
+  remove(id: string): Promise<void>;
+  sync(id: string): Promise<LocalGallery>;
+  // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
+  // from a useEffect cleanup to avoid leaks.
+  onCloneProgress(handler: (event: CloneProgress) => void): () => void;
+};
+
+export type PicgBridge = {
+  pickGalleryDir(): Promise<string | null>;
+  gallery: PreloadGalleryBridge;
+  storage: PreloadStorageBridge;
+};
+
 // Detect whether the renderer is running inside Electron (has the preload
 // bridge mounted). UI code that wants to swap adapters can use this gate.
-export function getPicgBridge():
-  | { pickGalleryDir(): Promise<string | null>; storage: PreloadStorageBridge }
-  | null {
+export function getPicgBridge(): PicgBridge | null {
   if (typeof window === 'undefined') return null;
-  const w = window as unknown as {
-    picgBridge?: { pickGalleryDir(): Promise<string | null>; storage: PreloadStorageBridge };
-  };
+  const w = window as unknown as { picgBridge?: PicgBridge };
   return w.picgBridge ?? null;
 }
