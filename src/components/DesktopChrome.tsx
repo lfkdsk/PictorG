@@ -8,15 +8,47 @@
 
 import { useEffect, useState } from 'react';
 
-import { logout } from '@/lib/github';
+import { getGitHubToken, logout } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
 
 export function Topbar() {
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Cached user is only populated by the OAuth callback at "/", so PAT-login
+  // sessions land here with no avatar. Fall back to the GitHub /user endpoint
+  // when the cache is empty but a token exists — same dance as Navbar.
   useEffect(() => {
-    setUser(getStoredUser());
+    const stored = getStoredUser();
+    if (stored?.avatar_url) {
+      setUser(stored);
+      return;
+    }
+
+    const token = getGitHubToken();
+    if (!token) return;
+
+    let cancelled = false;
+    fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.avatar_url) return;
+        setUser(data as GitHubUser);
+        try {
+          localStorage.setItem('gh_user', JSON.stringify(data));
+        } catch {
+          /* quota / disabled — non-fatal */
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
