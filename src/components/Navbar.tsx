@@ -53,6 +53,11 @@ export default function Navbar() {
     logout(); // 使用统一的logout函数
   };
 
+  // Desktop routes own their full chrome and shouldn't render the web nav
+  // (which links to web-only flows like /main, /create-gallery). Placed
+  // after all hook calls so the rules of hooks are respected.
+  if (pathname?.startsWith('/desktop')) return null;
+
   return (
     <header className="nav">
       <div className="inner">
