@@ -29,3 +29,11 @@ export {
   checkRepositorySecret,
 } from './github';
 export type { GitHubStorageAdapterConfig, TokenPermissions } from './github';
+export {
+  PreloadBridgeAdapter,
+  getPicgBridge,
+} from './electron';
+export type {
+  PreloadStorageBridge,
+  PreloadBridgeAdapterConfig,
+} from './electron';
