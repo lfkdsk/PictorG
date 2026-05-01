@@ -14,19 +14,40 @@ import { registerStorageIpcHandlers } from './ipc/storage';
 const DEV_URL = process.env.PICG_DEV_URL ?? 'http://localhost:3000/desktop/galleries';
 
 async function createWindow(): Promise<void> {
+  console.log(`[picg] creating window, loading ${DEV_URL}`);
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     title: 'PicG',
+    show: false, // show after first paint to avoid a white flash
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      // sandbox is intentionally OFF: a sandboxed preload can't `require()`
+      // sibling modules (only `electron`, `events`, `timers`, `url`), which
+      // breaks our split preload/contract files. contextIsolation +
+      // nodeIntegration:false is the main security perimeter for the
+      // renderer; bundling the preload to re-enable sandbox is a follow-up.
+      sandbox: false,
     },
   });
 
-  await win.loadURL(DEV_URL);
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
+
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[picg] failed to load ${url}: ${desc} (${code}). Is "npm run dev" running on :3000?`);
+  });
+
+  try {
+    await win.loadURL(DEV_URL);
+    console.log(`[picg] loaded ${DEV_URL}`);
+  } catch (err) {
+    console.error(`[picg] loadURL threw:`, err);
+  }
 
   if (process.env.PICG_DEVTOOLS) {
     win.webContents.openDevTools({ mode: 'detach' });
