@@ -225,6 +225,25 @@ export function DesktopTheme() {
       .btn.ghost.icon { padding: 4px 10px; font-size: 14px; }
       .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+      /* Back link — global because styled-jsx occasionally misses next/link's
+         rendered <a> when the page also has many scoped rules. */
+      .picg-back-link {
+        display: inline-block;
+        margin-bottom: 24px;
+        color: var(--text-muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-decoration: none;
+        transition: color 0.15s ease;
+      }
+      .picg-back-link:hover { color: var(--accent); }
+
+      /* Card → detail link wrapping a serif title. Same scoping caution. */
+      .picg-card-link { text-decoration: none; color: inherit; display: block; }
+      .picg-card-link:hover .card-title { color: var(--accent); }
+
       /* Modal — global so styled-jsx scoping can't accidentally break it. */
       .picg-modal-backdrop {
         position: fixed; inset: 0;

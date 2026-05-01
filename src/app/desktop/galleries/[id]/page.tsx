@@ -165,7 +165,7 @@ export default function GalleryDetailPage() {
       <Topbar />
 
       <main>
-        <Link href="/desktop/galleries" className="back-link">
+        <Link href="/desktop/galleries" className="picg-back-link">
           ← All galleries
         </Link>
 
@@ -230,19 +230,6 @@ export default function GalleryDetailPage() {
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 1100px; margin: 0 auto; }
-
-        .back-link {
-          display: inline-block;
-          margin-bottom: 24px;
-          color: var(--text-muted);
-          font-family: var(--mono);
-          font-size: 11px;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          text-decoration: none;
-          transition: color 0.15s ease;
-        }
-        .back-link:hover { color: var(--accent); }
 
         .hero { margin-bottom: 40px; }
         .hero h1 {

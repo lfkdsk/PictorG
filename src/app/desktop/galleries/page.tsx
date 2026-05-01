@@ -190,7 +190,7 @@ export default function GalleriesPage() {
         <main className="empty">
           <h1>Sign in</h1>
           <p>Connect your GitHub account to start adding galleries.</p>
-          <Link href="/login/token" className="btn primary inline">
+          <Link href="/login/token" className="btn primary">
             Open token sign-in →
           </Link>
         </main>
@@ -199,7 +199,6 @@ export default function GalleriesPage() {
           .empty { padding: 96px 32px; max-width: 560px; margin: 0 auto; }
           .empty h1 { font-family: var(--serif); font-size: 56px; font-weight: 400; margin: 0 0 12px; letter-spacing: -0.01em; }
           .empty p { color: var(--text-muted); font-size: 15px; margin: 0 0 24px; }
-          .btn.inline { display: inline-block; }
         `}</style>
       </div>
     );
@@ -278,7 +277,7 @@ export default function GalleriesPage() {
 
           {galleries.map((g) => (
             <li key={g.id} className="card">
-              <Link href={`/desktop/galleries/${g.id}`} className="card-title-link">
+              <Link href={`/desktop/galleries/${g.id}`} className="picg-card-link">
                 <div className="card-title">{g.fullName}</div>
               </Link>
               <div className="card-meta">
@@ -415,7 +414,6 @@ export default function GalleriesPage() {
         .card:hover { border-color: var(--border-strong); }
         .card.cloning { background: var(--bg-card-warm); }
 
-        .card-title-link { text-decoration: none; color: inherit; }
         .card-title {
           font-family: var(--serif);
           font-size: 22px;
@@ -423,7 +421,6 @@ export default function GalleriesPage() {
           letter-spacing: -0.01em;
           color: var(--text);
         }
-        .card-title-link:hover .card-title { color: var(--accent); }
 
         .card-meta {
           font-family: var(--mono);
