@@ -262,6 +262,16 @@ export function DesktopTheme() {
       .picg-album-card {
         display: flex; flex-direction: column; gap: 8px;
         text-decoration: none; color: inherit;
+        cursor: pointer;
+        outline: none;
+      }
+      .picg-album-card:focus-visible .picg-album-cover {
+        border-color: var(--accent);
+      }
+      .picg-album-card.is-dragging { opacity: 0.4; }
+      .picg-album-card.is-drop-target .picg-album-cover {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(232, 160, 74, 0.32);
       }
       .picg-album-cover {
         position: relative;
@@ -270,7 +280,7 @@ export function DesktopTheme() {
         border: 1px solid var(--border);
         border-radius: 12px;
         overflow: hidden;
-        transition: border-color 0.15s ease, transform 0.15s ease;
+        transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
       }
       .picg-album-card:hover .picg-album-cover {
         border-color: var(--border-strong);

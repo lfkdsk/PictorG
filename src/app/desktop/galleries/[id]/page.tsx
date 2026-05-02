@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import yaml from 'js-yaml';
 
 import {
@@ -67,6 +67,8 @@ export default function GalleryDetailPage() {
   const [albums, setAlbums] = useState<Album[] | null>(null);
   const [readmeMissing, setReadmeMissing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [draggingUrl, setDraggingUrl] = useState<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -116,17 +118,54 @@ export default function GalleryDetailPage() {
     };
   }, [adapter]);
 
-  const sortedAlbums = useMemo(() => {
-    if (!albums) return null;
-    return [...albums].sort((a, b) => {
-      // Newest date first; albums with no parsable date drop to the end.
-      const ta = new Date(a.date).getTime();
-      const tb = new Date(b.date).getTime();
-      const va = Number.isNaN(ta) ? -Infinity : ta;
-      const vb = Number.isNaN(tb) ? -Infinity : tb;
-      return vb - va;
-    });
-  }, [albums]);
+  // Album order = README.yml key order. Drag/drop on the grid mutates this
+  // and writes the rearranged YAML back so refreshes are stable.
+  async function persistOrder(next: Album[]) {
+    if (!adapter) return;
+    setReorderError(null);
+    try {
+      const file = await adapter.readFile('README.yml');
+      const data =
+        (yaml.load(file.text(), { schema: yaml.CORE_SCHEMA, json: true }) ??
+          {}) as Record<string, any>;
+
+      // Rebuild with the new ordering. Any extra keys we don't know about
+      // (shouldn't normally exist, but stay safe) are appended at the end.
+      const reordered: Record<string, any> = {};
+      for (const album of next) {
+        if (data[album.name]) reordered[album.name] = data[album.name];
+      }
+      for (const k of Object.keys(data)) {
+        if (!(k in reordered)) reordered[k] = data[k];
+      }
+
+      const yamlText = yaml.dump(reordered, {
+        indent: 2,
+        lineWidth: -1,
+        noRefs: true,
+        quotingType: '"',
+        forceQuotes: false,
+      });
+
+      await adapter.writeFile('README.yml', yamlText, 'Reorder albums');
+    } catch (err) {
+      setReorderError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function handleDrop(targetUrl: string) {
+    if (!albums || !draggingUrl || draggingUrl === targetUrl) return;
+    const fromIdx = albums.findIndex((a) => a.url === draggingUrl);
+    let toIdx = albums.findIndex((a) => a.url === targetUrl);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = [...albums];
+    const [moved] = next.splice(fromIdx, 1);
+    if (fromIdx < toIdx) toIdx -= 1;
+    next.splice(toIdx, 0, moved);
+    setAlbums(next);
+    setDraggingUrl(null);
+    void persistOrder(next);
+  }
 
   if (!bridge) {
     return (
@@ -174,9 +213,9 @@ export default function GalleryDetailPage() {
                 <span>{formatBytes(gallery.sizeBytes)}</span>
                 <span className="dot">•</span>
                 <span>
-                  {sortedAlbums == null
+                  {albums == null
                     ? 'loading albums…'
-                    : `${sortedAlbums.length} album${sortedAlbums.length === 1 ? '' : 's'}`}
+                    : `${albums.length} album${albums.length === 1 ? '' : 's'}`}
                 </span>
               </p>
             </div>
@@ -202,21 +241,31 @@ export default function GalleryDetailPage() {
           </div>
         )}
 
-        {sortedAlbums && sortedAlbums.length > 0 && (
+        {reorderError && (
+          <div className="banner">
+            <span>Reorder failed: {reorderError}</span>
+          </div>
+        )}
+
+        {albums && albums.length > 0 && (
           <ul className="album-grid">
-            {sortedAlbums.map((album) => (
+            {albums.map((album) => (
               <li key={album.url} className="album-cell">
                 <AlbumCard
                   galleryId={gallery.id}
                   adapter={adapter}
                   album={album}
+                  isDragging={draggingUrl === album.url}
+                  onDragStart={() => setDraggingUrl(album.url)}
+                  onDragEnd={() => setDraggingUrl(null)}
+                  onDrop={() => handleDrop(album.url)}
                 />
               </li>
             ))}
           </ul>
         )}
 
-        {sortedAlbums && sortedAlbums.length === 0 && !readmeMissing && (
+        {albums && albums.length === 0 && !readmeMissing && (
           <div className="empty-block">
             <p>This gallery has no albums yet.</p>
           </div>
@@ -304,21 +353,66 @@ function AlbumCard({
   galleryId,
   adapter,
   album,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onDrop,
 }: {
   galleryId: string;
   adapter: StorageAdapter | null;
   album: Album;
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
 }) {
+  const router = useRouter();
+  const [hovered, setHovered] = useState(false);
   // README.yml's `cover` is the path from repo root (matches the web flow's
   // `${thumbnail_url}/${album.cover}`), not a filename relative to album.url.
   const coverPath = album.cover || null;
   const { src, error } = useAdapterImage(adapter, coverPath);
   const albumHref = `/desktop/galleries/${encodeURIComponent(galleryId)}/${encodeURIComponent(album.url)}`;
 
+  // Plain div + onClick instead of <Link> so the HTML5 drag handlers don't
+  // fight the browser's default link drag behaviour. router.push gives us
+  // the same SPA navigation a Link would.
   return (
-    <Link href={albumHref as any} className="picg-album-card">
+    <div
+      className={`picg-album-card ${isDragging ? 'is-dragging' : ''} ${hovered ? 'is-drop-target' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(albumHref as any)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          router.push(albumHref as any);
+        }
+      }}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', album.url);
+        onDragStart();
+      }}
+      onDragEnd={() => {
+        setHovered(false);
+        onDragEnd();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDragEnter={() => setHovered(true)}
+      onDragLeave={() => setHovered(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setHovered(false);
+        onDrop();
+      }}
+    >
       <div className="picg-album-cover">
-        {src && <img src={src} alt="" loading="lazy" />}
+        {src && <img src={src} alt="" loading="lazy" draggable={false} />}
         {!src && !error && <div className="picg-album-cover-placeholder" />}
         {error && <div className="picg-album-cover-error">{error}</div>}
       </div>
@@ -332,6 +426,6 @@ function AlbumCard({
           </>
         )}
       </div>
-    </Link>
+    </div>
   );
 }
