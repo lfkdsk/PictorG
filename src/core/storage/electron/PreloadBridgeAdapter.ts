@@ -226,6 +226,10 @@ export type PreloadUpdaterBridge = {
   onUpdateDownloaded(
     handler: (info: { version?: string }) => void
   ): () => void;
+  getPending(): Promise<{ version?: string } | null>;
+  checkNow(): Promise<
+    { ok: true; version?: string } | { ok: false; error: string }
+  >;
 };
 
 export type PicgBridge = {

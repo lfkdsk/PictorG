@@ -26,6 +26,13 @@ function log(...parts: unknown[]): void {
 
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
+// Module-level cache of the most recent "downloaded" event. Replayed to
+// any renderer that mounts a listener AFTER the broadcast already
+// fired — without this, the Topbar pill silently misses an update if
+// the user happened to be navigating between pages at the moment
+// download finished.
+let pendingDownloadedUpdate: { version?: string } | null = null;
+
 export function initAutoUpdater(): void {
   if (!app.isPackaged) {
     log('updater: skipped (dev mode)');
@@ -63,7 +70,8 @@ export function initAutoUpdater(): void {
   });
   autoUpdater.on('update-downloaded', (info) => {
     log('update-downloaded', info?.version);
-    broadcastChan(CHANNELS.updater.updateDownloaded, { version: info?.version });
+    pendingDownloadedUpdate = { version: info?.version };
+    broadcastChan(CHANNELS.updater.updateDownloaded, pendingDownloadedUpdate);
   });
 
   // Renderer-driven "Install now" — quitAndInstall closes all windows,
@@ -72,6 +80,27 @@ export function initAutoUpdater(): void {
   // the lazy path (next normal quit installs).
   ipcMain.handle(CHANNELS.updater.installNow, () => {
     autoUpdater.quitAndInstall();
+  });
+
+  // Renderer query: "is there already a downloaded update I missed?"
+  // Topbar calls this on mount; if we have a cached event, the pill
+  // shows immediately without waiting for the next broadcast.
+  ipcMain.handle(CHANNELS.updater.getPending, () => pendingDownloadedUpdate);
+
+  // Manual check trigger from the avatar menu — useful when you want
+  // to verify update plumbing without waiting for the 4 h poll. Just
+  // re-runs the same checkForUpdates() the boot path uses; resolves
+  // to whatever electron-updater reports.
+  ipcMain.handle(CHANNELS.updater.checkNow, async () => {
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      return {
+        ok: true,
+        version: r?.updateInfo?.version,
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
   });
   autoUpdater.on('error', (err) => {
     log('updater error', err?.message ?? String(err));

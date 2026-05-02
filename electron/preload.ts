@@ -36,6 +36,8 @@ const bridge: PicgBridge = {
       ipcRenderer.on(CHANNELS.updater.updateDownloaded, listener);
       return () => ipcRenderer.off(CHANNELS.updater.updateDownloaded, listener);
     },
+    getPending: () => ipcRenderer.invoke(CHANNELS.updater.getPending),
+    checkNow: () => ipcRenderer.invoke(CHANNELS.updater.checkNow),
   },
 
   gallery: {

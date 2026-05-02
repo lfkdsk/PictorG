@@ -23,14 +23,25 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     null
   );
 
-  // Subscribe to updater "downloaded" broadcasts from the main process.
-  // electron-updater pulls latest-mac.yml from GitHub Releases on
-  // launch + every 4h; the moment a newer .dmg finishes downloading
-  // we surface the "Update ready" pill so the user can click to
-  // restart-and-install instead of waiting for a natural quit.
+  // Subscribe to updater "downloaded" broadcasts from the main process,
+  // AND replay any update that was already downloaded before this
+  // Topbar mounted. The replay matters because electron-updater fires
+  // `update-downloaded` exactly once per session — if the user happened
+  // to be navigating between pages at the moment download finished,
+  // the listener wasn't attached yet and the broadcast was lost. Now
+  // Topbar asks main on mount: "is there a pending update?", and
+  // fills the pill from that cached state.
   useEffect(() => {
     const bridge = getPicgBridge();
     if (!bridge?.updater) return;
+    bridge.updater
+      .getPending()
+      .then((pending) => {
+        if (pending) setUpdateReady(pending);
+      })
+      .catch(() => {
+        /* old preload without getPending — fall back to live event */
+      });
     const off = bridge.updater.onUpdateDownloaded((info) => {
       setUpdateReady({ version: info?.version });
     });
@@ -41,6 +52,27 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     const bridge = getPicgBridge();
     if (!bridge?.updater) return;
     await bridge.updater.installNow();
+  }
+
+  async function handleManualCheck() {
+    const bridge = getPicgBridge();
+    if (!bridge?.updater) return;
+    setMenuOpen(false);
+    try {
+      const r = await bridge.updater.checkNow();
+      if (r.ok) {
+        // If a new version is available, electron-updater starts the
+        // download and `onUpdateDownloaded` will fire shortly. If we're
+        // already on the latest, no event fires — let the user know.
+        if (!r.version) {
+          alert('You are on the latest version.');
+        }
+      } else {
+        alert(`Update check failed: ${r.error}`);
+      }
+    } catch (err) {
+      alert(`Update check failed: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   // Boot order:
@@ -171,6 +203,14 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
                 >
                   Settings
                 </Link>
+                <button
+                  type="button"
+                  className="picg-menu-item"
+                  onClick={handleManualCheck}
+                  role="menuitem"
+                >
+                  Check for updates…
+                </button>
                 <div className="picg-menu-divider" />
                 <button
                   type="button"

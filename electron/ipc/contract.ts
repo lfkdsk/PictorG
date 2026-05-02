@@ -33,6 +33,13 @@ export const CHANNELS = {
     // Main → renderer broadcast: a new version finished downloading
     // and will install on next quit (or now via installNow).
     updateDownloaded: 'updater:update-downloaded',
+    // Renderer → main: replay the most recent update-downloaded event
+    // if one fired before the renderer's listener was attached. Used
+    // by the Topbar on mount.
+    getPending: 'updater:get-pending',
+    // Renderer → main: force an out-of-cycle update check. Avatar menu
+    // entry uses this so the user doesn't have to wait for the 4 h poll.
+    checkNow: 'updater:check-now',
   },
   gallery: {
     list: 'gallery:list',
@@ -176,6 +183,8 @@ export interface PicgBridge {
   updater: {
     installNow(): Promise<void>;
     onUpdateDownloaded(handler: (info: { version?: string }) => void): () => void;
+    getPending(): Promise<{ version?: string } | null>;
+    checkNow(): Promise<{ ok: true; version?: string } | { ok: false; error: string }>;
   };
   gallery: {
     list(): Promise<LocalGallery[]>;
