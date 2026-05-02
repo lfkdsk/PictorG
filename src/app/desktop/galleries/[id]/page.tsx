@@ -166,17 +166,27 @@ export default function GalleryDetailPage() {
         </Link>
 
         <section className="hero">
-          <h1>{gallery.fullName}</h1>
-          <p className="meta">
-            {defaultBranch && <><span>{defaultBranch}</span><span className="dot">•</span></>}
-            <span>{formatBytes(gallery.sizeBytes)}</span>
-            <span className="dot">•</span>
-            <span>
-              {sortedAlbums == null
-                ? 'loading albums…'
-                : `${sortedAlbums.length} album${sortedAlbums.length === 1 ? '' : 's'}`}
-            </span>
-          </p>
+          <div className="hero-row">
+            <div>
+              <h1>{gallery.fullName}</h1>
+              <p className="meta">
+                {defaultBranch && <><span>{defaultBranch}</span><span className="dot">•</span></>}
+                <span>{formatBytes(gallery.sizeBytes)}</span>
+                <span className="dot">•</span>
+                <span>
+                  {sortedAlbums == null
+                    ? 'loading albums…'
+                    : `${sortedAlbums.length} album${sortedAlbums.length === 1 ? '' : 's'}`}
+                </span>
+              </p>
+            </div>
+            <Link
+              href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/new-album` as any}
+              className="btn primary"
+            >
+              + New album
+            </Link>
+          </div>
         </section>
 
         {loadError && (
@@ -218,6 +228,10 @@ export default function GalleryDetailPage() {
         main { padding: 24px 40px 64px; max-width: 1200px; margin: 0 auto; }
 
         .hero { margin-bottom: 32px; }
+        .hero-row {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 24px;
+        }
         .hero h1 {
           font-family: var(--serif);
           font-size: 48px;

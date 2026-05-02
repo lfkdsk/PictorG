@@ -329,6 +329,10 @@ export function DesktopTheme() {
         width: 100%; height: 100%;
         background: linear-gradient(135deg, var(--bg-card-hover), var(--bg-card));
       }
+      .picg-thumb.is-cover {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(232, 160, 74, 0.32);
+      }
 
       /* Lightbox */
       .picg-lightbox {
