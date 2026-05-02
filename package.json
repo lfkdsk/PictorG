@@ -21,8 +21,10 @@
     "url": "https://github.com/your-username/PicG/issues"
   },
   "private": true,
+  "main": "electron/dist/electron/main.js",
   "scripts": {
     "dev": "next dev",
+    "dev:turbo": "next dev --turbo",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -30,16 +32,25 @@
     "test": "jest",
     "test:ci": "jest --ci --coverage --watchAll=false",
     "docker:build": "docker build -t picg .",
-    "docker:run": "docker run -p 3000:3000 picg"
+    "docker:run": "docker run -p 3000:3000 picg",
+    "electron:build": "tsc -p electron",
+    "electron:start": "electron electron/dist/electron/main.js",
+    "electron:dev": "npm run electron:build && npm run electron:start",
+    "next:build:packaging": "PICG_PACKAGING=1 next build && node scripts/stage-standalone.js",
+    "pack:dir": "npm run electron:build && npm run next:build:packaging && electron-builder --dir",
+    "dist:mac": "npm run electron:build && npm run next:build:packaging && electron-builder --mac"
   },
   "dependencies": {
     "@lfkdsk/exif-library": "^2.0.3",
     "@types/js-yaml": "^4.0.9",
     "@yireen/squoosh-browser": "^1.0.7",
+    "electron-updater": "^6.8.3",
     "js-yaml": "^4.1.0",
     "next": "14.2.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "sharp": "^0.34.5",
+    "simple-git": "^3.27.0",
     "sql.js": "^1.14.1",
     "styled-jsx": "^5.1.7"
   },
@@ -51,6 +62,8 @@
     "@types/react": "18.3.9",
     "@types/react-dom": "18.3.0",
     "@types/sql.js": "^1.4.11",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
     "eslint": "8.57.1",
     "eslint-config-next": "14.2.5",
     "jest": "29.7.0",

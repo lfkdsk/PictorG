@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    PicG app icon, v2 — simplified per feedback. macOS icons since Big
+    Sur expect a rounded "squircle" shape (22% radius); the inktype
+    spec's square-corner rule applies to UI affordances, not the app
+    tile, so we follow Apple HIG here.
+    Color tokens still come from inktype.lfkdsk.org/docs:
+      bg     #1A1614  (warm near-black)
+      accent #D97757  (warm orange)
+      text   #EDE4D3  (cream)
+    One glyph (a serif "P"), one accent (a small dot under it).
+    Nothing else.
+  -->
+  <defs>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="1024" height="1024" fill="#1A1614"/>
+    <text x="512" y="700"
+          text-anchor="middle"
+          font-family="'Fraunces', 'Times New Roman', Georgia, serif"
+          font-weight="500"
+          font-style="normal"
+          font-size="640"
+          fill="#EDE4D3">P</text>
+    <!--
+      Accent dot at the lower-right of the P, sized to read like a
+      typographic period. Placed slightly outside the glyph so it stays
+      visible against the cream stem at any scale.
+    -->
+    <circle cx="700" cy="700" r="42" fill="#D97757"/>
+  </g>
+</svg>
