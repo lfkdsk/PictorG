@@ -19,6 +19,29 @@ import { getPicgBridge } from '@/core/storage';
 export function Topbar({ actions }: { actions?: ReactNode }) {
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(
+    null
+  );
+
+  // Subscribe to updater "downloaded" broadcasts from the main process.
+  // electron-updater pulls latest-mac.yml from GitHub Releases on
+  // launch + every 4h; the moment a newer .dmg finishes downloading
+  // we surface the "Update ready" pill so the user can click to
+  // restart-and-install instead of waiting for a natural quit.
+  useEffect(() => {
+    const bridge = getPicgBridge();
+    if (!bridge?.updater) return;
+    const off = bridge.updater.onUpdateDownloaded((info) => {
+      setUpdateReady({ version: info?.version });
+    });
+    return off;
+  }, []);
+
+  async function handleInstallUpdate() {
+    const bridge = getPicgBridge();
+    if (!bridge?.updater) return;
+    await bridge.updater.installNow();
+  }
 
   // Boot order:
   //   1. Cached gh_user → avatar pill straight away.
@@ -109,6 +132,23 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         <span className="brand-name">Pictor</span>
       </div>
       {actions && <div className="topbar-actions">{actions}</div>}
+      {updateReady && (
+        <button
+          type="button"
+          className="picg-update-pill"
+          onClick={handleInstallUpdate}
+          title={
+            updateReady.version
+              ? `Update ${updateReady.version} downloaded — click to restart and install`
+              : 'Update downloaded — click to restart and install'
+          }
+        >
+          <span className="picg-update-pill-dot" aria-hidden="true" />
+          <span className="picg-update-pill-text">
+            Update ready{updateReady.version ? ` · ${updateReady.version}` : ''}
+          </span>
+        </button>
+      )}
       {user && (
         <div className="picg-menu-anchor">
           <button
@@ -211,6 +251,38 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
           background: var(--bg-card-hover);
         }
         .user-login { font-family: var(--mono); font-size: 12px; }
+
+        .picg-update-pill {
+          display: flex; align-items: center; gap: 8px;
+          padding: 4px 12px;
+          background: rgba(217, 119, 87, 0.12);
+          border: 1px solid rgba(217, 119, 87, 0.45);
+          border-radius: 999px;
+          color: var(--accent);
+          cursor: pointer;
+          font-family: var(--mono);
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .picg-update-pill:hover {
+          background: rgba(217, 119, 87, 0.22);
+          border-color: var(--accent);
+        }
+        .picg-update-pill-dot {
+          width: 6px; height: 6px;
+          border-radius: 50%;
+          background: var(--accent);
+          flex-shrink: 0;
+          /* Tiny pulse so users notice it land in the topbar */
+          animation: picg-update-pulse 2s ease-in-out infinite;
+        }
+        @keyframes picg-update-pulse {
+          0%, 100% { opacity: 1; }
+          50%      { opacity: 0.45; }
+        }
+        .picg-update-pill-text { white-space: nowrap; }
       `}</style>
     </header>
   );

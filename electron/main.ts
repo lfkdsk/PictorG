@@ -11,19 +11,20 @@ import { promises as fs, existsSync } from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
 
-import { logToFile } from './log';
 import { initAutoUpdater } from './updater';
+
+// Surface unhandled errors via console.log so they're visible when the
+// app is launched from a terminal (and via Console.app's process logs
+// for `open`-launched bundles). These are cheap insurance — without
+// them an uncaught exception in the main process exits silently with 0.
 process.on('uncaughtException', (err) => {
-  logToFile('uncaughtException', err?.stack ?? String(err));
+  console.error('[picg] uncaughtException', err?.stack ?? String(err));
 });
 process.on('unhandledRejection', (reason) => {
-  logToFile('unhandledRejection', reason instanceof Error ? reason.stack : String(reason));
-});
-logToFile('main.ts boot', {
-  isPackaged: app.isPackaged,
-  resourcesPath: process.resourcesPath,
-  execPath: process.execPath,
-  cwd: process.cwd(),
+  console.error(
+    '[picg] unhandledRejection',
+    reason instanceof Error ? reason.stack : String(reason)
+  );
 });
 
 import { GalleryRegistry } from './galleries/GalleryRegistry';
@@ -56,24 +57,60 @@ const DEV_URL = process.env.PICG_DEV_URL ?? 'http://localhost:3000/desktop/galle
 // module scope so app.on('quit') can SIGTERM it cleanly.
 let nextServer: ChildProcess | null = null;
 
-// Find a free localhost port by binding 0 and reading what the OS hands
-// us back. Used in packaged mode to avoid hard-coding a port that might
-// already be in use.
-function findFreePort(): Promise<number> {
+// Try to bind a specific port; resolves to that port if free, rejects
+// otherwise. Used to validate a persisted port before spawning the
+// Next server against it.
+function tryBindPort(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
     srv.unref();
     srv.on('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
+    srv.listen(port, '127.0.0.1', () => {
       const addr = srv.address();
       if (addr && typeof addr === 'object') {
-        const { port } = addr;
-        srv.close(() => resolve(port));
+        srv.close(() => resolve(addr.port));
       } else {
-        srv.close(() => reject(new Error('Could not get port from server.address()')));
+        srv.close(() => reject(new Error('Could not read server.address()')));
       }
     });
   });
+}
+
+// Pick a port for the local Next server, persisting the choice across
+// runs.
+//
+// Why this matters: localStorage is keyed by origin (host:port). If we
+// pick a fresh free port on every cold launch, every run gets a fresh
+// localStorage — meaning the user's `gh_token` and `gh_user` cache
+// vanish each time and they have to sign in again. Persisting the
+// port stabilizes the origin and the cache survives.
+//
+// Strategy: read <userData>/picg-port. If present and the port is
+// still free, reuse it. Otherwise pick a free port and persist it.
+async function pickStablePort(): Promise<number> {
+  const portFile = path.join(app.getPath('userData'), 'picg-port');
+  try {
+    const raw = await fs.readFile(portFile, 'utf-8');
+    const stored = parseInt(raw.trim(), 10);
+    if (Number.isFinite(stored) && stored > 0 && stored < 65536) {
+      try {
+        return await tryBindPort(stored);
+      } catch {
+        // Persisted port no longer free (another app grabbed it,
+        // probably). Fall through and rebind.
+      }
+    }
+  } catch {
+    /* file missing on first run */
+  }
+  const fresh = await tryBindPort(0);
+  try {
+    await fs.mkdir(path.dirname(portFile), { recursive: true });
+    await fs.writeFile(portFile, String(fresh), 'utf-8');
+  } catch {
+    /* non-fatal — we'll just pick again next launch */
+  }
+  return fresh;
 }
 
 // Poll a localhost URL until it responds with any HTTP status, or we time
@@ -103,10 +140,14 @@ async function resolveAppUrl(): Promise<string> {
   // bundled node_modules).
   const standaloneDir = path.join(process.resourcesPath, 'standalone');
   const serverScript = path.join(standaloneDir, 'server.js');
-  logToFile('resolveAppUrl', { standaloneDir, serverScript, exists: existsSync(serverScript) });
+  if (!existsSync(serverScript)) {
+    throw new Error(
+      `Packaged Next standalone server.js missing at ${serverScript} — packaging is misconfigured.`
+    );
+  }
 
-  const port = await findFreePort();
-  logToFile(`spawning Next standalone server on port ${port}`);
+  const port = await pickStablePort();
+  console.log(`[picg] spawning Next standalone server on port ${port}`);
   nextServer = fork(serverScript, [], {
     cwd: standaloneDir,
     // ELECTRON_RUN_AS_NODE makes Electron act like plain node — required

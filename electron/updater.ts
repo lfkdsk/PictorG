@@ -15,16 +15,20 @@
 // Skipped on dev (`!app.isPackaged`) — no asar to swap, and the dev
 // channel doesn't have a GitHub release tied to it.
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
-import { logToFile } from './log';
+import { CHANNELS } from './ipc/contract';
+
+function log(...parts: unknown[]): void {
+  console.log('[picg updater]', ...parts);
+}
 
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
 export function initAutoUpdater(): void {
   if (!app.isPackaged) {
-    logToFile('updater: skipped (dev mode)');
+    log('updater: skipped (dev mode)');
     return;
   }
 
@@ -32,10 +36,10 @@ export function initAutoUpdater(): void {
   // triage "user reports they didn't get an update" without asking
   // them to open a terminal.
   autoUpdater.logger = {
-    info: (m: unknown) => logToFile('updater info', m),
-    warn: (m: unknown) => logToFile('updater warn', m),
-    error: (m: unknown) => logToFile('updater error', m),
-    debug: (m: unknown) => logToFile('updater debug', m),
+    info: (m: unknown) => log('updater info', m),
+    warn: (m: unknown) => log('updater warn', m),
+    error: (m: unknown) => log('updater error', m),
+    debug: (m: unknown) => log('updater debug', m),
   } as any;
 
   // Don't auto-restart mid-session. We download in the background but
@@ -46,11 +50,11 @@ export function initAutoUpdater(): void {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info) => {
-    logToFile('update-available', info?.version);
+    log('update-available', info?.version);
     broadcast('update-available', { version: info?.version });
   });
   autoUpdater.on('update-not-available', () => {
-    logToFile('update-not-available');
+    log('update-not-available');
   });
   autoUpdater.on('download-progress', (progress) => {
     broadcast('update-download-progress', {
@@ -58,30 +62,45 @@ export function initAutoUpdater(): void {
     });
   });
   autoUpdater.on('update-downloaded', (info) => {
-    logToFile('update-downloaded', info?.version);
-    broadcast('update-downloaded', { version: info?.version });
+    log('update-downloaded', info?.version);
+    broadcastChan(CHANNELS.updater.updateDownloaded, { version: info?.version });
+  });
+
+  // Renderer-driven "Install now" — quitAndInstall closes all windows,
+  // exits the app, and re-launches into the new version. We don't
+  // hook this onto Cmd+Q because autoInstallOnAppQuit already covers
+  // the lazy path (next normal quit installs).
+  ipcMain.handle(CHANNELS.updater.installNow, () => {
+    autoUpdater.quitAndInstall();
   });
   autoUpdater.on('error', (err) => {
-    logToFile('updater error', err?.message ?? String(err));
+    log('updater error', err?.message ?? String(err));
   });
 
   // Initial check + a recurring poll. checkForUpdatesAndNotify shows
   // a native notification on completion, which we don't want; use the
   // bare check instead.
   autoUpdater.checkForUpdates().catch((err) => {
-    logToFile('updater initial check failed', err?.message ?? String(err));
+    log('updater initial check failed', err?.message ?? String(err));
   });
   setInterval(() => {
     autoUpdater.checkForUpdates().catch((err) => {
-      logToFile('updater poll failed', err?.message ?? String(err));
+      log('updater poll failed', err?.message ?? String(err));
     });
   }, FOUR_HOURS);
 }
 
-function broadcast(channel: string, payload: unknown): void {
+function broadcast(suffix: string, payload: unknown): void {
+  // Legacy helper for the progress / available events we don't yet wire
+  // through the renderer. Kept the namespaced name (updater:*) so the
+  // log output is readable.
+  broadcastChan(`updater:${suffix}`, payload);
+}
+
+function broadcastChan(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     try {
-      win.webContents.send(`updater:${channel}`, payload);
+      win.webContents.send(channel, payload);
     } catch {
       /* renderer may be gone */
     }

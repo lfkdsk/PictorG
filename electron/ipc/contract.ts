@@ -26,6 +26,14 @@ export const CHANNELS = {
   compress: {
     image: 'compress:image',
   },
+  updater: {
+    // Renderer → main: quit the app and install the downloaded update
+    // immediately. Triggered by the Topbar "Update ready" button.
+    installNow: 'updater:install-now',
+    // Main → renderer broadcast: a new version finished downloading
+    // and will install on next quit (or now via installNow).
+    updateDownloaded: 'updater:update-downloaded',
+  },
   gallery: {
     list: 'gallery:list',
     resolve: 'gallery:resolve',
@@ -164,6 +172,10 @@ export interface PicgBridge {
   };
   compress: {
     image(request: CompressImageRequest): Promise<CompressImageResult>;
+  };
+  updater: {
+    installNow(): Promise<void>;
+    onUpdateDownloaded(handler: (info: { version?: string }) => void): () => void;
   };
   gallery: {
     list(): Promise<LocalGallery[]>;

@@ -28,6 +28,16 @@ const bridge: PicgBridge = {
     image: (request) => ipcRenderer.invoke(CHANNELS.compress.image, request),
   },
 
+  updater: {
+    installNow: () => ipcRenderer.invoke(CHANNELS.updater.installNow),
+    onUpdateDownloaded: (handler) => {
+      const listener = (_e: unknown, payload: { version?: string }) =>
+        handler(payload);
+      ipcRenderer.on(CHANNELS.updater.updateDownloaded, listener);
+      return () => ipcRenderer.off(CHANNELS.updater.updateDownloaded, listener);
+    },
+  },
+
   gallery: {
     list: () => ipcRenderer.invoke(CHANNELS.gallery.list),
     resolve: (id) => ipcRenderer.invoke(CHANNELS.gallery.resolve, id),

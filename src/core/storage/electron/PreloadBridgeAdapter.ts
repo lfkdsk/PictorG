@@ -221,10 +221,18 @@ export type PreloadGalleryBridge = {
   onCloneProgress(handler: (event: CloneProgress) => void): () => void;
 };
 
+export type PreloadUpdaterBridge = {
+  installNow(): Promise<void>;
+  onUpdateDownloaded(
+    handler: (info: { version?: string }) => void
+  ): () => void;
+};
+
 export type PicgBridge = {
   pickGalleryDir(): Promise<string | null>;
   auth: PreloadAuthBridge;
   compress: PreloadCompressBridge;
+  updater?: PreloadUpdaterBridge;
   gallery: PreloadGalleryBridge;
   storage: PreloadStorageBridge;
 };
