@@ -59,7 +59,7 @@ export function Topbar() {
         <span className="brand-name">Pictor</span>
       </div>
       {user && (
-        <div className="user-wrap">
+        <div className="picg-menu-anchor">
           <button
             className="user-pill"
             onClick={() => setMenuOpen((v) => !v)}
@@ -70,17 +70,23 @@ export function Topbar() {
           </button>
           {menuOpen && (
             <>
-              <div className="menu-overlay" onClick={() => setMenuOpen(false)} />
-              <div className="menu">
+              <div className="picg-menu-overlay" onClick={() => setMenuOpen(false)} />
+              <div className="picg-menu" role="menu">
                 <Link
                   href="/desktop/settings"
-                  className="menu-item"
+                  className="picg-menu-item"
                   onClick={() => setMenuOpen(false)}
+                  role="menuitem"
                 >
                   Settings
                 </Link>
-                <div className="menu-divider" />
-                <button className="menu-item" onClick={() => logout()}>
+                <div className="picg-menu-divider" />
+                <button
+                  type="button"
+                  className="picg-menu-item"
+                  onClick={() => logout()}
+                  role="menuitem"
+                >
                   Sign out
                 </button>
               </div>
@@ -104,8 +110,8 @@ export function Topbar() {
         .topbar :global(button),
         .topbar :global(a),
         .topbar :global(input),
-        .topbar :global(.menu),
-        .topbar :global(.menu-overlay) {
+        .topbar :global(.picg-menu),
+        .topbar :global(.picg-menu-overlay) {
           -webkit-app-region: no-drag;
         }
         .brand { display: flex; align-items: center; gap: 10px; }
@@ -126,7 +132,6 @@ export function Topbar() {
           letter-spacing: -0.01em;
           color: var(--text);
         }
-        .user-wrap { position: relative; }
         .user-pill {
           display: flex; align-items: center; gap: 8px;
           padding: 4px 12px 4px 4px;
@@ -149,39 +154,6 @@ export function Topbar() {
           background: var(--bg-card-hover);
         }
         .user-login { font-family: var(--mono); font-size: 12px; }
-        .menu-overlay {
-          position: fixed; inset: 0; z-index: 100;
-        }
-        .menu {
-          position: absolute; top: calc(100% + 6px); right: 0;
-          min-width: 140px;
-          background: var(--bg-card);
-          border: 1px solid var(--border-strong);
-          border-radius: 8px;
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-          padding: 4px;
-          z-index: 101;
-        }
-        .menu-item {
-          display: block;
-          width: 100%;
-          padding: 8px 12px;
-          background: transparent;
-          border: 0;
-          color: var(--text);
-          font-family: inherit;
-          font-size: 13px;
-          text-align: left;
-          cursor: pointer;
-          border-radius: 6px;
-          text-decoration: none;
-        }
-        .menu-item:hover { background: var(--bg-card-hover); }
-        .menu-divider {
-          height: 1px;
-          background: var(--border);
-          margin: 4px 0;
-        }
       `}</style>
     </header>
   );
