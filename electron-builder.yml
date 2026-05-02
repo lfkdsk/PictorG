@@ -169,7 +169,7 @@ dmg:
 publish:
   - provider: github
     owner: lfkdsk
-    repo: PicG
+    repo: PictorG
 
 directories:
   output: dist-electron
