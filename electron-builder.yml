@@ -140,11 +140,20 @@ afterPack: scripts/after-pack.js
 mac:
   category: public.app-category.photography
   icon: build/icon.icns
+  # Two distinct dmg targets, one per architecture, so the Release page
+  # gets two separate downloads:
+  #   PicG-<version>-arm64.dmg
+  #   PicG-<version>-x64.dmg
+  # Putting both arches under a SINGLE dmg target collapses to a single
+  # universal DMG (a fat binary that bundles both arches). That's about
+  # ~2× the size and shows up as "Universal" in Finder. Splitting them
+  # lets Apple Silicon users download a smaller arm64-only DMG, and
+  # electron-updater picks the right one via latest-mac.yml regardless.
   target:
     - target: dmg
-      arch:
-        - arm64
-        - x64
+      arch: arm64
+    - target: dmg
+      arch: x64
   # No `identity` set in CI — produces an unsigned build. Users will
   # see "unidentified developer" on first open and need to right-click
   # → Open. Locally, electron-builder picks up the developer cert
