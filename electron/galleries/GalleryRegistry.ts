@@ -222,28 +222,34 @@ export class GalleryRegistry {
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
     const git = simpleGit(gallery.localPath);
     const branch = await currentBranch(git);
-    // Push using a one-shot tokenized URL. We deliberately *don't* fall
-    // back to the persisted origin URL (which we de-tokenized after clone)
-    // — that path triggers the OS credential helper on every push, which
-    // adds 5–30s of stall on macOS even when the keychain entry exists.
+
+    // Push through the `origin` *name*, not a bare URL. Pushing to a bare
+    // URL does the upload but skips updating `refs/remotes/origin/<branch>`,
+    // so a follow-up `git status` keeps reporting ahead > 0 — which makes
+    // the Topbar badge look stuck even after a successful push.
     //
-    // The two `-c` flags fix two common GitHub transport failures we hit
-    // with photo galleries (commits that include many MB of binaries):
+    // We override `remote.origin.url` ephemerally with `-c` so the push
+    // sees the tokenized URL but the persisted .git/config (de-tokenized
+    // after clone) stays untouched.
+    //
+    // The other two `-c` flags fix two common GitHub transport failures
+    // we hit with photo galleries (commits that include many MB of
+    // binaries):
     //   - http.postBuffer=524288000 (500 MB): default is 1 MB, way too
     //     small. Symptom is HTTP 400 + "send-pack: unexpected disconnect
     //     while reading sideband packet".
     //   - http.version=HTTP/1.1: GitHub's HTTP/2 occasionally drops large
     //     chunked uploads with the same sideband error. Forcing 1.1 is a
     //     stable workaround that costs nothing here.
-    // Both are scoped to this single invocation via -c, so we don't
-    // mutate the repo's persisted .git/config.
     await git.raw([
+      '-c',
+      `remote.origin.url=${this.tokenizedUrl(gallery)}`,
       '-c',
       'http.postBuffer=524288000',
       '-c',
       'http.version=HTTP/1.1',
       'push',
-      this.tokenizedUrl(gallery),
+      'origin',
       branch,
     ]);
   }
