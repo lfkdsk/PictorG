@@ -201,7 +201,8 @@ export class GalleryRegistry {
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
 
     const git = simpleGit(gallery.localPath);
-    await git.pull();
+    const branch = await currentBranch(git);
+    await git.pull(this.tokenizedUrl(gallery), branch);
 
     const sizeBytes = await measureDirSize(gallery.localPath).catch(() => 0);
     const updated: LocalGallery = {
@@ -218,7 +219,28 @@ export class GalleryRegistry {
   async push(id: string): Promise<void> {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
-    await simpleGit(gallery.localPath).push();
+    const git = simpleGit(gallery.localPath);
+    const branch = await currentBranch(git);
+    // Push using a one-shot tokenized URL. We deliberately *don't* fall
+    // back to the persisted origin URL (which we de-tokenized after clone)
+    // — that path triggers the OS credential helper on every push, which
+    // adds 5–30s of stall on macOS even when the keychain entry exists.
+    await git.push(this.tokenizedUrl(gallery), branch);
+  }
+
+  // Build a one-shot https://oauth2:<token>@github.com/... URL. Never
+  // persisted to .git/config — only passed inline to push/pull.
+  private tokenizedUrl(gallery: LocalGallery): string {
+    const token = getStoredToken();
+    if (!token) {
+      throw new Error(
+        'Not signed in — open Pictor and complete GitHub sign-in before syncing.'
+      );
+    }
+    return gallery.cloneUrl.replace(
+      'https://',
+      `https://oauth2:${encodeURIComponent(token)}@`
+    );
   }
 
   // ahead/behind reflect local-vs-last-known-remote, no fetch involved.
@@ -248,4 +270,13 @@ function normalizeStage(stage: string): CloneProgress['stage'] {
   if (s.includes('writ')) return 'writing';
   if (s.includes('compress')) return 'compressing';
   return 'other';
+}
+
+async function currentBranch(git: ReturnType<typeof simpleGit>): Promise<string> {
+  // simple-git's `branch()` returns { current, ...all } — `current` is the
+  // checked-out branch name. Default to 'HEAD' so push/pull still works
+  // on a freshly-cloned repo where the branch metadata isn't fully
+  // populated yet (rare, but cheap to guard against).
+  const info = await git.branch();
+  return info.current || 'HEAD';
 }
