@@ -140,6 +140,14 @@ afterPack: scripts/after-pack.js
 mac:
   category: public.app-category.photography
   icon: build/icon.icns
+  # Always include the arch suffix in the DMG filename. Default
+  # electron-builder template emits `${productName}-${version}.${ext}`
+  # for the primary arch and `...-${arch}.${ext}` for others, which
+  # ends up giving us `PicG-0.1.0.dmg` for x64 and `PicG-0.1.0-arm64.dmg`
+  # for arm64 — confusing on the release page. Forcing `-${arch}` on
+  # both keeps the filenames symmetric and makes electron-updater's
+  # latest-mac.yml unambiguous about which file is for which arch.
+  artifactName: ${productName}-${version}-${arch}.${ext}
   # Two distinct dmg targets, one per architecture, so the Release page
   # gets two separate downloads:
   #   PicG-<version>-arm64.dmg
