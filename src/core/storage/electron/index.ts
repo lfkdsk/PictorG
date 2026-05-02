@@ -1,6 +1,7 @@
 export {
   PreloadBridgeAdapter,
   getPicgBridge,
+  CLONE_CANCELLED_MESSAGE,
 } from './PreloadBridgeAdapter';
 export type {
   PreloadStorageBridge,

@@ -29,6 +29,11 @@ const GALLERIES_DIR = 'galleries';
 // don't use a bundle id — iCloud Drive shows the literal folder name.
 const ICLOUD_PICG_DIR = 'PicG';
 
+// Marker thrown when clone() is cancelled by cancelClone(). Crosses IPC
+// as the error message; the renderer matches on this string to dismiss
+// the cloning card silently instead of surfacing an error banner.
+export const CLONE_CANCELLED_MESSAGE = 'PICG_CLONE_CANCELLED';
+
 function galleryIdFor(owner: string, repo: string): string {
   // owner__repo — `__` is rare in GitHub slugs and stays filesystem-safe.
   return `${owner}__${repo}`;
@@ -75,6 +80,11 @@ export class GalleryRegistry {
   // for a gallery that's already moving — the half-copied destination
   // would race the in-progress copy and corrupt one or both.
   private readonly migrating = new Set<string>();
+  // AbortController per in-flight clone so cancelClone() can kill the
+  // underlying simple-git child process. Separate map (not on the
+  // InFlightClone struct) because controllers aren't structured-clone
+  // safe and InFlightClone crosses IPC.
+  private readonly cloneAborts = new Map<string, AbortController>();
 
   constructor() {
     const userData = app.getPath('userData');
@@ -186,6 +196,9 @@ export class GalleryRegistry {
       htmlUrl: request.htmlUrl,
     });
 
+    const abortController = new AbortController();
+    this.cloneAborts.set(id, abortController);
+
     const token = getStoredToken();
     if (!token) {
       throw new Error(
@@ -201,9 +214,15 @@ export class GalleryRegistry {
     );
 
     const git = simpleGit({
+      abort: abortController.signal,
       progress: ({ method, stage, progress, processed, total }) => {
         // simple-git emits progress for both clone and other methods; filter.
         if (method !== 'clone') return;
+        // Once cancelled, swallow any in-flight progress callbacks the
+        // child may still emit before its process exits. Otherwise the
+        // renderer would see post-cancel ticks land on a card it just
+        // dismissed and bootstrap a fresh one from the event payload.
+        if (abortController.signal.aborted) return;
         const evt: CloneProgress = {
           galleryId: id,
           stage: normalizeStage(stage),
@@ -232,6 +251,14 @@ export class GalleryRegistry {
       // Clean up partial directory so retry works cleanly.
       await fs.rm(localPath, { recursive: true, force: true }).catch(() => {});
       this.inFlight.delete(id);
+      const wasCancelled = abortController.signal.aborted;
+      this.cloneAborts.delete(id);
+      if (wasCancelled) {
+        // Throw a marker the renderer can recognize so the picker UI
+        // dismisses the card silently instead of surfacing an error
+        // banner for a user-initiated cancellation.
+        throw new Error(CLONE_CANCELLED_MESSAGE);
+      }
       throw err;
     }
 
@@ -262,6 +289,7 @@ export class GalleryRegistry {
     const items = await this.readManifest();
     await this.writeManifest([...items, gallery]);
     this.inFlight.delete(id);
+    this.cloneAborts.delete(id);
     return this.decorate(gallery);
   }
 
@@ -271,6 +299,17 @@ export class GalleryRegistry {
   // entries from this list and resume listening for progress events.
   listInFlight(): InFlightClone[] {
     return [...this.inFlight.values()].map((entry) => ({ ...entry }));
+  }
+
+  // Cancel an in-flight clone. Idempotent — a no-op if the clone has
+  // already finished or was never started. Aborting fires the simple-git
+  // abort plugin, which kills the underlying child process; the catch
+  // block in clone() then handles directory cleanup and rejects the
+  // pending IPC response with CLONE_CANCELLED_MESSAGE.
+  cancelClone(id: string): void {
+    const controller = this.cloneAborts.get(id);
+    if (!controller) return;
+    controller.abort();
   }
 
   // --- remove / sync ---

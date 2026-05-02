@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import {
+  CLONE_CANCELLED_MESSAGE,
   getPicgBridge,
   listRepos,
   type CloneProgress,
@@ -87,6 +88,12 @@ export default function GalleriesPage() {
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  // Galleries the user just cancelled. Used to (1) suppress late-arriving
+  // CloneProgress events that would otherwise re-bootstrap a card the
+  // user dismissed, and (2) silence the pickRepo() catch when its clone
+  // promise rejects with the cancellation marker. Lives in a ref so the
+  // progress listener and async catch read the freshest set.
+  const cancelledIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     // Re-read after hydration so SSR's null doesn't stick. Cheap.
@@ -129,6 +136,11 @@ export default function GalleriesPage() {
   useEffect(() => {
     if (!bridge) return;
     const unsub = bridge.gallery.onCloneProgress((evt) => {
+      // Belt-and-suspenders against post-cancel ticks. Main also drops
+      // events once the AbortSignal fires, but if the renderer cancels
+      // and a stray event slips through we don't want to bootstrap a
+      // fresh card from it via the no-prior-entry branch below.
+      if (cancelledIdsRef.current.has(evt.galleryId)) return;
       setCloning((prev) => {
         const entry = prev[evt.galleryId];
         if (entry) {
@@ -204,12 +216,20 @@ export default function GalleriesPage() {
       const fresh = await bridge.gallery.list();
       setGalleries(fresh);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // User-initiated cancel — handleCancelClone already removed the
+      // card. Just clear the marker so a future re-clone of the same
+      // repo isn't permanently muted.
+      if (
+        cancelledIdsRef.current.has(id) ||
+        message.includes(CLONE_CANCELLED_MESSAGE)
+      ) {
+        cancelledIdsRef.current.delete(id);
+        return;
+      }
       setCloning((prev) => ({
         ...prev,
-        [id]: {
-          ...prev[id],
-          error: err instanceof Error ? err.message : String(err),
-        },
+        [id]: { ...prev[id], error: message },
       }));
       return;
     }
@@ -217,6 +237,23 @@ export default function GalleriesPage() {
       const { [id]: _removed, ...rest } = prev;
       return rest;
     });
+  }
+
+  async function handleCancelClone(id: string) {
+    if (!bridge) return;
+    // Mark first so any in-flight progress event is dropped before we
+    // touch state, and so the pickRepo() catch knows this rejection is
+    // a cancel rather than a real failure.
+    cancelledIdsRef.current.add(id);
+    setCloning((prev) => {
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    try {
+      await bridge.gallery.cancelClone(id);
+    } catch {
+      /* idempotent on the main side; nothing to surface */
+    }
   }
 
   async function handleSync(id: string) {
@@ -393,6 +430,14 @@ export default function GalleriesPage() {
                           <span>{entry.progress.processed.toLocaleString()}/{entry.progress.total.toLocaleString()}</span>
                         </>
                       )}
+                    </div>
+                    <div className="card-actions">
+                      <button
+                        onClick={() => handleCancelClone(id)}
+                        className="btn ghost small"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </>
                 )}

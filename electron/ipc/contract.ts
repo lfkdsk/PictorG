@@ -56,6 +56,7 @@ export const CHANNELS = {
     listInFlight: 'gallery:list-in-flight',
     resolve: 'gallery:resolve',
     clone: 'gallery:clone',
+    cancelClone: 'gallery:cancel-clone',
     remove: 'gallery:remove',
     sync: 'gallery:sync',
     push: 'gallery:push',
@@ -232,6 +233,10 @@ export interface PicgBridge {
     listInFlight(): Promise<InFlightClone[]>;
     resolve(id: string): Promise<LocalGallery | null>;
     clone(...args: GalleryCloneArgs): Promise<LocalGallery>;
+    // Cancel an in-flight clone by gallery id. Idempotent. The pending
+    // clone() promise rejects with CLONE_CANCELLED_MESSAGE; the renderer
+    // matches on that string to dismiss the card without an error.
+    cancelClone(id: string): Promise<void>;
     remove(id: string): Promise<void>;
     sync(id: string): Promise<LocalGallery>;
     push(id: string): Promise<void>;

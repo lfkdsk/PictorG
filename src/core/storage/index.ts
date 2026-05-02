@@ -32,6 +32,7 @@ export type { GitHubStorageAdapterConfig, TokenPermissions } from './github';
 export {
   PreloadBridgeAdapter,
   getPicgBridge,
+  CLONE_CANCELLED_MESSAGE,
 } from './electron';
 export type {
   PreloadStorageBridge,

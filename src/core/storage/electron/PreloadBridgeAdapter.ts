@@ -210,6 +210,11 @@ export type UndoResult =
   | { ok: true; reverted: string }
   | { ok: false; refused: 'already-pushed' | 'no-prior-commit' | 'dirty' };
 
+// Marker thrown across IPC when an in-flight clone is cancelled by the
+// user via cancelClone(). Renderer matches on this string to dismiss the
+// card silently rather than surface an error banner.
+export const CLONE_CANCELLED_MESSAGE = 'PICG_CLONE_CANCELLED';
+
 export type PreloadGalleryBridge = {
   list(): Promise<LocalGallery[]>;
   // Snapshot of clones currently running in main. Used by the
@@ -225,6 +230,10 @@ export type PreloadGalleryBridge = {
     cloneUrl: string;
     defaultBranch?: string;
   }): Promise<LocalGallery>;
+  // Cancel an in-flight clone. Idempotent. The pending clone() promise
+  // rejects with CLONE_CANCELLED_MESSAGE so the caller can distinguish
+  // a cancellation from a real failure.
+  cancelClone(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   sync(id: string): Promise<LocalGallery>;
   push(id: string): Promise<void>;

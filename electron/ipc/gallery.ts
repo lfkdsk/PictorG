@@ -44,6 +44,10 @@ export function registerGalleryIpcHandlers(): void {
     }
   );
 
+  ipcMain.handle(CHANNELS.gallery.cancelClone, async (_e, id: string) => {
+    getRegistry().cancelClone(id);
+  });
+
   ipcMain.handle(CHANNELS.gallery.remove, async (_e, id: string) => {
     await getRegistry().remove(id);
   });
