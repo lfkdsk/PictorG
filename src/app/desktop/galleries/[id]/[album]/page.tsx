@@ -286,9 +286,18 @@ export default function AlbumPage() {
         }
       }
 
-      router.push(
-        `/desktop/galleries/${encodeURIComponent(gallery.id)}?t=${Date.now()}` as any
-      );
+      // Hard navigate instead of router.push: jumping back to the parent
+      // route in Next 14 dev sometimes hits a stale webpack runtime
+      // ("__webpack_require__.C is not a function" / "Cannot find module
+      // './948.js'"). Forcing a full page reload through the renderer
+      // sidesteps it. The destructive work above already finished, so
+      // even if SPA nav had failed, the data is consistent.
+      const href = `/desktop/galleries/${encodeURIComponent(gallery.id)}?t=${Date.now()}`;
+      if (typeof window !== 'undefined') {
+        window.location.assign(href);
+      } else {
+        router.push(href as any);
+      }
     } catch (err) {
       setDeleteAlbumError(err instanceof Error ? err.message : String(err));
       setDeleteAlbumBusy(false);
@@ -389,12 +398,16 @@ export default function AlbumPage() {
       setEditOpen(false);
 
       // If the slug moved, the URL we're sitting on no longer matches the
-      // YAML — redirect to the new one. Files on disk stay where they are
-      // (renaming the directory is a separate, riskier op we don't do here).
+      // YAML — redirect to the new one via hard nav (cross-route SPA push
+      // can land on a stale webpack runtime in Next 14 dev). Files on disk
+      // stay where they are; renaming the directory is a separate op.
       if (trimmedUrl !== albumMeta.url) {
-        router.replace(
-          `/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(trimmedUrl)}` as any
-        );
+        const newHref = `/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(trimmedUrl)}`;
+        if (typeof window !== 'undefined') {
+          window.location.assign(newHref);
+        } else {
+          router.replace(newHref as any);
+        }
       }
     } catch (err) {
       setEditError(err instanceof Error ? err.message : String(err));

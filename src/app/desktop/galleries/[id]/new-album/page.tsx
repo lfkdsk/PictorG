@@ -276,7 +276,15 @@ export default function NewAlbumPage() {
       );
 
       setPhase('done');
-      router.push(`/desktop/galleries/${encodeURIComponent(gallery.id)}` as any);
+      // Hard nav: see the same comment in the album-delete handler.
+      // Jumping cross-route in Next 14 dev sometimes hits a stale webpack
+      // runtime; full page reload sidesteps it.
+      const href = `/desktop/galleries/${encodeURIComponent(gallery.id)}?t=${Date.now()}`;
+      if (typeof window !== 'undefined') {
+        window.location.assign(href);
+      } else {
+        router.push(href as any);
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err));
       setPhase('form');
