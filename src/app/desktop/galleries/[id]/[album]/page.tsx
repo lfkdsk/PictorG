@@ -33,8 +33,7 @@ type EditForm = {
   date: string;
   style: string;
   cover: string;
-  lat: string;
-  lng: string;
+  location: string; // "lat, lng" — same shape as the create-album form
 };
 
 function isImage(name: string): boolean {
@@ -89,9 +88,16 @@ function toEditForm(meta: AlbumMeta): EditForm {
     date: meta.date ?? '',
     style: meta.style ?? 'fullscreen',
     cover: meta.cover ?? '',
-    lat: meta.location ? String(meta.location[0]) : '',
-    lng: meta.location ? String(meta.location[1]) : '',
+    location: meta.location ? `${meta.location[0]}, ${meta.location[1]}` : '',
   };
+}
+
+function parseLocation(raw: string): [number, number] | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(',').map((s) => parseFloat(s.trim()));
+  if (parts.length !== 2 || parts.some((n) => Number.isNaN(n))) return null;
+  return [parts[0], parts[1]];
 }
 
 export default function AlbumPage() {
@@ -115,6 +121,7 @@ export default function AlbumPage() {
   const [lightboxPath, setLightboxPath] = useState<string | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
+  const [editPhase, setEditPhase] = useState<'form' | 'pickCover'>('form');
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -184,6 +191,7 @@ export default function AlbumPage() {
     if (!albumMeta) return;
     setEditForm(toEditForm(albumMeta));
     setEditError(null);
+    setEditPhase('form');
     setEditOpen(true);
   }
 
@@ -204,13 +212,12 @@ export default function AlbumPage() {
     if (!editForm.cover.trim()) return setEditError('Cover path is required.');
 
     let location: [number, number] | undefined;
-    if (editForm.lat || editForm.lng) {
-      const lat = parseFloat(editForm.lat);
-      const lng = parseFloat(editForm.lng);
-      if (Number.isNaN(lat) || Number.isNaN(lng)) {
-        return setEditError('Location must be two numbers (or both empty).');
+    if (editForm.location.trim()) {
+      const parsed = parseLocation(editForm.location);
+      if (!parsed) {
+        return setEditError('Location must be "lat, lng" with two numbers.');
       }
-      location = [lat, lng];
+      location = parsed;
     }
 
     setSaving(true);
@@ -390,93 +397,111 @@ export default function AlbumPage() {
         <div className="picg-modal-backdrop" onClick={() => !saving && closeEdit()}>
           <div className="picg-modal picg-modal-wide" onClick={(e) => e.stopPropagation()}>
             <header className="picg-modal-header">
-              <h2>Edit album</h2>
+              <div className="picg-modal-title-wrap">
+                {editPhase === 'pickCover' && (
+                  <button
+                    className="btn ghost icon"
+                    onClick={() => setEditPhase('form')}
+                    aria-label="Back"
+                  >
+                    ←
+                  </button>
+                )}
+                <h2>{editPhase === 'pickCover' ? 'Choose cover' : 'Edit album'}</h2>
+              </div>
               <button className="btn ghost icon" onClick={closeEdit} disabled={saving}>✕</button>
             </header>
-            <div className="picg-fields">
-              <label className="picg-field">
-                <span>Name</span>
-                <input
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  disabled={saving}
-                />
-              </label>
-              <div className="picg-field-row">
-                <label className="picg-field">
-                  <span>URL slug</span>
-                  <input
-                    value={editForm.url}
-                    onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
-                    disabled={saving}
-                  />
-                </label>
-                <label className="picg-field">
-                  <span>Date</span>
-                  <input
-                    type="date"
-                    value={editForm.date}
-                    onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                    disabled={saving}
-                  />
-                </label>
-              </div>
-              <label className="picg-field">
-                <span>Style</span>
-                <select
-                  value={editForm.style}
-                  onChange={(e) => setEditForm({ ...editForm, style: e.target.value })}
-                  disabled={saving}
-                >
-                  <option value="fullscreen">Fullscreen</option>
-                  <option value="default">Default</option>
-                </select>
-              </label>
-              <label className="picg-field">
-                <span>Cover (path from repo root)</span>
-                <input
-                  value={editForm.cover}
-                  onChange={(e) => setEditForm({ ...editForm, cover: e.target.value })}
-                  placeholder={`${albumMeta.url}/somefile.webp`}
-                  disabled={saving}
-                />
-              </label>
-              <div className="picg-field-row">
-                <label className="picg-field">
-                  <span>Latitude</span>
-                  <input
-                    value={editForm.lat}
-                    onChange={(e) => setEditForm({ ...editForm, lat: e.target.value })}
-                    placeholder="optional"
-                    disabled={saving}
-                  />
-                </label>
-                <label className="picg-field">
-                  <span>Longitude</span>
-                  <input
-                    value={editForm.lng}
-                    onChange={(e) => setEditForm({ ...editForm, lng: e.target.value })}
-                    placeholder="optional"
-                    disabled={saving}
-                  />
-                </label>
-              </div>
-              {editForm.url.trim() !== albumMeta.url && editForm.url.trim() && (
-                <div className="picg-warning">
-                  Changing the URL slug leaves files in <code>{albumMeta.url}/</code> orphaned —
-                  the directory is not renamed automatically.
+
+            {editPhase === 'form' ? (
+              <>
+                <div className="picg-fields">
+                  <label className="picg-field">
+                    <span>Name</span>
+                    <input
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      disabled={saving}
+                    />
+                  </label>
+                  <div className="picg-field-row">
+                    <label className="picg-field">
+                      <span>URL slug</span>
+                      <input
+                        value={editForm.url}
+                        onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
+                        disabled={saving}
+                      />
+                    </label>
+                    <label className="picg-field">
+                      <span>Date</span>
+                      <input
+                        type="date"
+                        value={editForm.date}
+                        onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                        disabled={saving}
+                      />
+                    </label>
+                  </div>
+                  <div className="picg-field-row">
+                    <label className="picg-field">
+                      <span>Style</span>
+                      <select
+                        value={editForm.style}
+                        onChange={(e) => setEditForm({ ...editForm, style: e.target.value })}
+                        disabled={saving}
+                      >
+                        <option value="fullscreen">Fullscreen</option>
+                        <option value="default">Default</option>
+                      </select>
+                    </label>
+                    <label className="picg-field">
+                      <span>Location</span>
+                      <input
+                        value={editForm.location}
+                        onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                        placeholder="37.4159, -118.7717"
+                        disabled={saving}
+                      />
+                    </label>
+                  </div>
+                  <div className="picg-field">
+                    <span>Cover</span>
+                    <CoverField
+                      adapter={adapter}
+                      cover={editForm.cover}
+                      onPick={() => setEditPhase('pickCover')}
+                      disabled={saving || !images || images.length === 0}
+                    />
+                  </div>
+                  {editForm.url.trim() !== albumMeta.url && editForm.url.trim() && (
+                    <div className="picg-warning">
+                      Changing the URL slug leaves files in <code>{albumMeta.url}/</code> orphaned —
+                      the directory is not renamed automatically.
+                    </div>
+                  )}
+                  {editError && <div className="picg-banner">{editError}</div>}
                 </div>
-              )}
-              {editError && <div className="picg-banner">{editError}</div>}
-            </div>
-            <div className="picg-modal-actions">
-              <button className="btn ghost" onClick={closeEdit} disabled={saving}>
-                Cancel
-              </button>
-              <button className="btn primary" onClick={saveEdit} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
+                <div className="picg-modal-actions">
+                  <button className="btn ghost" onClick={closeEdit} disabled={saving}>
+                    Cancel
+                  </button>
+                  <button className="btn primary" onClick={saveEdit} disabled={saving}>
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <CoverPicker
+                adapter={adapter}
+                albumUrl={albumUrl}
+                images={images ?? []}
+                currentCover={editForm.cover}
+                onSelect={(path) => {
+                  setEditForm({ ...editForm, cover: path });
+                  setEditPhase('form');
+                }}
+              />
+            )}
           </div>
         </div>
       )}
@@ -581,5 +606,106 @@ function Lightbox({
         <span>{filename}</span>
       </div>
     </div>
+  );
+}
+
+function CoverField({
+  adapter,
+  cover,
+  onPick,
+  disabled,
+}: {
+  adapter: StorageAdapter | null;
+  cover: string;
+  onPick: () => void;
+  disabled: boolean;
+}) {
+  const { src } = useAdapterImage(adapter, cover || null);
+  return (
+    <div className="picg-cover-field">
+      <div className="picg-cover-preview">
+        {src ? (
+          <img src={src} alt="" />
+        ) : (
+          <div className="picg-cover-empty">no cover</div>
+        )}
+      </div>
+      <div className="picg-cover-meta">
+        <div className="picg-cover-path">{cover || 'No cover selected'}</div>
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={onPick}
+          disabled={disabled}
+        >
+          {cover ? 'Change…' : 'Choose…'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CoverPicker({
+  adapter,
+  albumUrl,
+  images,
+  currentCover,
+  onSelect,
+}: {
+  adapter: StorageAdapter | null;
+  albumUrl: string;
+  images: DirectoryEntry[];
+  currentCover: string;
+  onSelect: (path: string) => void;
+}) {
+  if (images.length === 0) {
+    return (
+      <div className="picg-modal-loading">No images in this album to choose from.</div>
+    );
+  }
+  return (
+    <div className="picg-cover-picker">
+      <ul className="picg-thumbs">
+        {images.map((img) => {
+          const path = `${albumUrl}/${img.name}`;
+          return (
+            <CoverPickerThumb
+              key={img.path}
+              adapter={adapter}
+              path={path}
+              isCurrent={currentCover === path}
+              onSelect={() => onSelect(path)}
+            />
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function CoverPickerThumb({
+  adapter,
+  path,
+  isCurrent,
+  onSelect,
+}: {
+  adapter: StorageAdapter | null;
+  path: string;
+  isCurrent: boolean;
+  onSelect: () => void;
+}) {
+  const { src } = useAdapterImage(adapter, path);
+  const filename = path.split('/').pop() ?? path;
+  return (
+    <li>
+      <button
+        type="button"
+        className={`picg-thumb ${isCurrent ? 'is-cover' : ''}`}
+        onClick={onSelect}
+        aria-label={`Use ${filename} as cover`}
+      >
+        {src ? <img src={src} alt={filename} /> : <div className="picg-thumb-placeholder" />}
+      </button>
+    </li>
   );
 }

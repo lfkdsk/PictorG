@@ -524,6 +524,64 @@ export function DesktopTheme() {
         padding: 1px 6px;
         border-radius: 4px;
       }
+
+      /* Modal-header layout adjustment for the back-arrow case (e.g. cover
+         picker inside the edit-album modal). */
+      .picg-modal-title-wrap {
+        display: flex; align-items: center; gap: 6px; min-width: 0;
+      }
+      .picg-modal-title-wrap h2 { margin: 0; }
+
+      /* Cover field: small thumbnail + path + Change button */
+      .picg-cover-field {
+        display: flex; align-items: center; gap: 12px;
+        padding: 8px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      .picg-cover-preview {
+        width: 56px; height: 56px;
+        flex-shrink: 0;
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--bg-card-hover);
+      }
+      .picg-cover-preview img { width: 100%; height: 100%; object-fit: cover; }
+      .picg-cover-empty {
+        width: 100%; height: 100%;
+        display: grid; place-items: center;
+        color: var(--text-faint);
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .picg-cover-meta {
+        flex: 1; min-width: 0;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px;
+      }
+      .picg-cover-path {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1; min-width: 0;
+      }
+
+      /* Cover picker view inside the edit-album modal */
+      .picg-cover-picker {
+        overflow-y: auto;
+        max-height: 56vh;
+        margin: -4px;
+        padding: 4px;
+      }
+      .picg-cover-picker .picg-thumbs {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      }
     `}</style>
   );
 }
