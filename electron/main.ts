@@ -248,6 +248,18 @@ async function createWindow(): Promise<void> {
         win.webContents.reloadIgnoringCache();
       });
     }
+    // Cmd/Ctrl+Opt+I → toggle DevTools, even in packaged builds.
+    // Without this you'd need to relaunch from terminal with
+    // PICG_DEVTOOLS=1 to inspect the renderer when something goes
+    // wrong.
+    const isDevToolsToggle =
+      (input.meta || input.control) &&
+      input.alt &&
+      input.key.toLowerCase() === 'i';
+    if (isDevToolsToggle) {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+    }
   });
 
   win.webContents.on('did-fail-load', (_e, code, desc, url) => {
@@ -454,17 +466,48 @@ app.whenReady().then(async () => {
 
     try {
       if (thumbWidth) {
-        const buf = await getOrCreateThumbnail(resolvedPath, thumbWidth);
-        const view = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-        return new Response(view, {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/webp',
-            // Long cache: the URL changes when the source mtime changes
-            // (key includes mtimeMs), so an immutable cache is safe.
-            'Cache-Control': 'public, max-age=86400, immutable',
-          },
-        });
+        try {
+          const buf = await getOrCreateThumbnail(resolvedPath, thumbWidth);
+          const view = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+          return new Response(view, {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/webp',
+              // Long cache: the URL changes when the source mtime changes
+              // (key includes mtimeMs), so an immutable cache is safe.
+              'Cache-Control': 'public, max-age=86400, immutable',
+            },
+          });
+        } catch (thumbErr: any) {
+          if (thumbErr?.code === 'ENOENT') throw thumbErr;
+          // Don't silently fall back to the original — we want the
+          // failure to be surfaceable. Log to stderr (Console.app
+          // shows it under PicG) and return a structured error
+          // response the renderer can read via fetch() to overlay on
+          // the broken card.
+          console.warn(
+            `[picg] thumbnail failed: ${resolvedPath} @ ${thumbWidth}px:`,
+            thumbErr?.stack ?? thumbErr?.message ?? thumbErr
+          );
+          const body = JSON.stringify({
+            error: 'thumbnail-failed',
+            path: relPath,
+            width: thumbWidth,
+            message: thumbErr?.message ?? String(thumbErr),
+            code: thumbErr?.code,
+          });
+          return new Response(body, {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache',
+              // Custom header so the renderer can spot a thumb failure
+              // without parsing the body (handy for the <img onerror>
+              // path where you only get a boolean).
+              'X-Picg-Thumb-Error': '1',
+            },
+          });
+        }
       }
 
       const data = await fs.readFile(resolvedPath);
@@ -477,10 +520,27 @@ app.whenReady().then(async () => {
         },
       });
     } catch (err: any) {
-      if (err?.code === 'ENOENT') {
-        return new Response('Not found', { status: 404 });
-      }
-      return new Response(`Read error: ${err?.message ?? err}`, { status: 500 });
+      // Structured body so the renderer's error overlay can show
+      // something useful — most common reasons we hit this branch:
+      //   - README.yml's `cover:` points to a file that doesn't exist
+      //     locally (album rename without re-committing the cover, a
+      //     partial git pull, an LFS pointer that wasn't fetched)
+      //   - permissions on the gallery dir (rare)
+      const isMissing = err?.code === 'ENOENT';
+      const body = JSON.stringify({
+        error: isMissing ? 'file-missing' : 'read-failed',
+        path: relPath,
+        message: err?.message ?? String(err),
+        code: err?.code,
+      });
+      return new Response(body, {
+        status: isMissing ? 404 : 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'X-Picg-Error': '1',
+        },
+      });
     }
   });
 
