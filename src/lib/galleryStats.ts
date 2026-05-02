@@ -7,7 +7,7 @@ import type { Database } from 'sql.js';
 //   exifdata(id, date, maker, lens_model, focal_length, exposure_time, f_number)
 //   location(id, country)
 
-export type CountRow = { label: string; count: number };
+export type CountRow = { label: string; subLabel?: string; count: number };
 
 export type TodayPhoto = {
   path: string;

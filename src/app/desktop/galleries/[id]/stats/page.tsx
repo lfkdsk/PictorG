@@ -24,6 +24,7 @@ import {
   type GalleryStatsSnapshot,
   type HeatmapYear,
 } from '@/lib/galleryStats';
+import { loadAnimalCounts } from '@/lib/galleryAnimals';
 
 export default function GalleryStatsPage() {
   const params = useParams<{ id: string }>();
@@ -34,6 +35,7 @@ export default function GalleryStatsPage() {
   const [adapter, setAdapter] = useState<StorageAdapter | null>(null);
   const [stats, setStats] = useState<GalleryStatsSnapshot | null>(null);
   const [cfg, setCfg] = useState<GalleryUrlConfig | null>(null);
+  const [animals, setAnimals] = useState<CountRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,6 +71,25 @@ export default function GalleryStatsPage() {
         }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [adapter]);
+
+  // Animals load independently from the sqlite path — the JSON lives in
+  // the local clone, so it works even when the gallery hasn't been
+  // deployed yet (and conversely, a missing/old JSON doesn't block the
+  // sqlite-backed stats above).
+  useEffect(() => {
+    if (!adapter) return;
+    let cancelled = false;
+    loadAnimalCounts(adapter)
+      .then((rows) => {
+        if (!cancelled) setAnimals(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setAnimals([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -194,6 +215,15 @@ export default function GalleryStatsPage() {
                 </ul>
               </section>
             )}
+
+            {animals.length > 0 && (
+              <div className="species">
+                <StatList
+                  title={`Species · ${animals.length}`}
+                  rows={animals}
+                />
+              </div>
+            )}
           </>
         )}
       </main>
@@ -259,6 +289,7 @@ export default function GalleryStatsPage() {
         }
 
         .today { margin-top: 8px; }
+        .species { margin-top: 8px; }
         .today h2 {
           font-family: var(--serif);
           font-size: 24px;
@@ -343,6 +374,9 @@ function Card({ label, value }: { label: string; value: number }) {
 
 function StatList({ title, rows }: { title: string; rows: CountRow[] }) {
   const max = rows.reduce((m, r) => (r.count > m ? r.count : m), 0);
+  // Stack label/count vertically when any row carries a subLabel — gives
+  // the secondary text room to breathe without forcing the count to wrap.
+  const stacked = rows.some((r) => r.subLabel);
   return (
     <section className="stat-list">
       <h2>{title}</h2>
@@ -352,10 +386,14 @@ function StatList({ title, rows }: { title: string; rows: CountRow[] }) {
         <ul>
           {rows.map((r) => {
             const pct = max > 0 ? Math.max(2, Math.round((r.count / max) * 100)) : 0;
+            const titleText = r.subLabel ? `${r.label} · ${r.subLabel}` : r.label;
             return (
               <li key={r.label}>
-                <div className="row">
-                  <span className="label" title={r.label}>{r.label}</span>
+                <div className={`row${stacked ? ' stacked' : ''}`}>
+                  <span className="label" title={titleText}>
+                    <span className="primary">{r.label}</span>
+                    {r.subLabel && <span className="secondary">{r.subLabel}</span>}
+                  </span>
                   <span className="count">{r.count.toLocaleString()}</span>
                 </div>
                 <div className="bar"><span style={{ width: `${pct}%` }} /></div>
@@ -393,6 +431,11 @@ function StatList({ title, rows }: { title: string; rows: CountRow[] }) {
           display: flex; align-items: baseline; justify-content: space-between;
           gap: 12px; margin-bottom: 4px;
         }
+        .row.stacked {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 2px;
+        }
         .label {
           font-size: 13px;
           color: var(--text);
@@ -400,6 +443,16 @@ function StatList({ title, rows }: { title: string; rows: CountRow[] }) {
           text-overflow: ellipsis;
           white-space: nowrap;
           flex: 1;
+          min-width: 0;
+        }
+        .label .primary { color: var(--text); }
+        .label .secondary {
+          margin-left: 6px;
+          font-family: var(--mono);
+          font-size: 11px;
+          color: var(--text-muted);
+          font-style: italic;
+          letter-spacing: 0.02em;
         }
         .count {
           font-family: var(--mono);
@@ -407,6 +460,7 @@ function StatList({ title, rows }: { title: string; rows: CountRow[] }) {
           color: var(--text-muted);
           letter-spacing: 0.04em;
         }
+        .row.stacked .count { font-size: 13px; color: var(--text); }
         .bar {
           height: 3px;
           background: var(--border);
@@ -416,7 +470,7 @@ function StatList({ title, rows }: { title: string; rows: CountRow[] }) {
         .bar span {
           display: block;
           height: 100%;
-          background: var(--text);
+          background: var(--text-muted);
           transition: width 0.3s ease;
         }
       `}</style>
@@ -453,19 +507,34 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 function Heatmap({ year }: { year: HeatmapYear }) {
   const total = year.days.reduce((s, d) => s + d.count, 0);
-  const cells = year.days
-    .map((d) => {
-      const pos = gridPosition(d.date);
-      if (!pos) return null;
-      return {
-        date: d.date,
-        count: d.count,
-        col: pos.col,
-        row: pos.row,
-        level: intensityLevel(d.count, year.max),
-      };
-    })
-    .filter((c): c is NonNullable<typeof c> => c !== null);
+  // Render every day of the year (not just days with photos) so the
+  // empty grid is visible — users can read "no photo on this day"
+  // from the outlined empty cells. For the current year, stop at
+  // today; future days don't get rendered.
+  const counts = new Map(year.days.map((d) => [d.date, d.count]));
+  const yearNum = Number(year.year);
+  const todayMs = Date.now();
+  const start = new Date(Date.UTC(yearNum, 0, 1));
+  const startDow = start.getUTCDay();
+  type Cell = { date: string; count: number; col: number; row: number; level: number };
+  const cells: Cell[] = [];
+  for (let mo = 0; mo < 12; mo++) {
+    const daysIn = new Date(Date.UTC(yearNum, mo + 1, 0)).getUTCDate();
+    for (let d = 1; d <= daysIn; d++) {
+      const date = new Date(Date.UTC(yearNum, mo, d));
+      if (date.getTime() > todayMs) continue;
+      const dayOfYear = Math.floor((date.getTime() - start.getTime()) / 86400000);
+      const dateStr = `${yearNum}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const count = counts.get(dateStr) ?? 0;
+      cells.push({
+        date: dateStr,
+        count,
+        col: Math.floor((dayOfYear + startDow) / 7),
+        row: date.getUTCDay(),
+        level: intensityLevel(count, year.max),
+      });
+    }
+  }
   const maxCol = cells.reduce((m, c) => (c.col > m ? c.col : m), 0);
   const cols = maxCol + 1;
 
@@ -563,12 +632,26 @@ function Heatmap({ year }: { year: HeatmapYear }) {
           width: 12px;
           height: 12px;
           border-radius: 2px;
-          background: var(--border);
+          box-sizing: border-box;
+          border: 1px solid var(--border-strong);
+          background: transparent;
         }
-        .cell.lvl1 { background: rgba(232, 160, 74, 0.28); }
-        .cell.lvl2 { background: rgba(232, 160, 74, 0.5); }
-        .cell.lvl3 { background: rgba(232, 160, 74, 0.75); }
-        .cell.lvl4 { background: rgba(232, 160, 74, 1); }
+        .cell.lvl1 {
+          background: rgba(232, 160, 74, 0.28);
+          border-color: rgba(232, 160, 74, 0.4);
+        }
+        .cell.lvl2 {
+          background: rgba(232, 160, 74, 0.5);
+          border-color: rgba(232, 160, 74, 0.6);
+        }
+        .cell.lvl3 {
+          background: rgba(232, 160, 74, 0.75);
+          border-color: rgba(232, 160, 74, 0.85);
+        }
+        .cell.lvl4 {
+          background: rgba(232, 160, 74, 1);
+          border-color: rgba(232, 160, 74, 1);
+        }
       `}</style>
     </div>
   );
