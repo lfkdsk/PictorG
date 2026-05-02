@@ -9,6 +9,8 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14.2.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-blue?style=flat-square&logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![Electron](https://img.shields.io/badge/Electron-31-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![macOS](https://img.shields.io/badge/macOS-arm64%20%7C%20x64-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/lfkdsk/PicG/releases)
 [![GitHub OAuth](https://img.shields.io/badge/GitHub-OAuth-green?style=flat-square&logo=github)](https://docs.github.com/en/developers/apps/building-oauth-apps)
 
 [在线演示](https://pictor-g.vercel.app) • [快速开始](#-快速开始) • [功能特性](#-功能特性) • [部署指南](#-部署)
@@ -30,6 +32,36 @@ PicG 是一个基于GitHub的现代化相册管理系统，让你可以轻松地
 - 🗂️ **相册管理** - 创建、编辑、删除相册
 - 🏷️ **YAML配置** - 灵活的相册元数据管理
 - 🌍 **国际化** - 支持中英文界面
+
+## 🖥️ 桌面端（Beta）
+
+![PicG Desktop](design/desktop.png)
+
+PicG 还提供基于 Electron 的 macOS 桌面端，与 Web 端共享同一套 UI 和业务逻辑，差异只在数据层：
+
+- 📦 **本地优先** - 相册仓库 clone 到应用数据目录，编辑直接落到本地工作区
+- 💾 **离线可用** - 写文件、压缩、改 YAML 全程不依赖网络，下次联网再同步
+- 🔁 **Git 工作流** - 每次写入都生成本地 commit；推送到 GitHub 是独立动作（默认不自动 push）
+- ⚡ **原生体验** - 多窗口、系统级文件操作、独立的压缩 Worker 进程，批量上传不卡顿
+- 🔄 **共用页面** - `/desktop/*` 路由复用 Web 端组件，新功能两端同步上线
+
+### 下载与安装
+
+发布产物（macOS DMG，含 arm64 / x64）见 [Releases](https://github.com/lfkdsk/PicG/releases)。
+
+> 当前签名/公证仍在筹备中，首次启动若被 Gatekeeper 拦截，DMG 内附带了一份 `Fix Gatekeeper` 助手，按提示放行即可。
+
+### 本地构建
+
+```bash
+# 开发模式（启动 Next.js dev server + Electron）
+npm run electron:dev
+
+# 打包 macOS DMG
+npm run dist:mac
+```
+
+更详细的桌面端架构、约定与已知坑见 [`docs/desktop-development.md`](docs/desktop-development.md)。
 
 ## 🚀 快速开始
 
