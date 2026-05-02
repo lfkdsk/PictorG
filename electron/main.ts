@@ -3,7 +3,7 @@
 // (PICG_DEV_URL, default http://localhost:3000) or — eventually — a packaged
 // static export. Production packaging is out of scope for this spike.
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, session } from 'electron';
 import * as path from 'node:path';
 
 import { registerGalleryIpcHandlers } from './ipc/gallery';
@@ -20,6 +20,10 @@ async function createWindow(): Promise<void> {
     height: 800,
     title: 'PicG',
     show: false, // show after first paint to avoid a white flash
+    // macOS: keep the traffic lights, drop the system title bar so our
+    // Topbar can paint up to the top edge. On Windows/Linux this falls
+    // back to the platform default — cross-platform polish is a follow-up.
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -38,6 +42,25 @@ async function createWindow(): Promise<void> {
     win.focus();
   });
 
+  // Reload-with-cache-clear shortcut. Next 14 dev sometimes serves a stale
+  // page.js whose webpack chunks have been replaced (`Cannot find module
+  // './948.js'`); clearing the renderer HTTP cache before reloading is the
+  // reliable way out. Default reload (Cmd+R) leaves cache; this shortcut
+  // mirrors what a browser hard-reload does.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isHardReload =
+      (input.meta || input.control) &&
+      input.shift &&
+      input.key.toLowerCase() === 'r';
+    if (isHardReload) {
+      event.preventDefault();
+      win.webContents.session.clearCache().then(() => {
+        win.webContents.reloadIgnoringCache();
+      });
+    }
+  });
+
   win.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error(`[picg] failed to load ${url}: ${desc} (${code}). Is "npm run dev" running on :3000?`);
   });
@@ -54,7 +77,11 @@ async function createWindow(): Promise<void> {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Wipe HTTP cache on every cold launch so a Next dev rebuild that
+  // changed chunk hashes can't strand us on a stale page.js.
+  await session.defaultSession.clearCache();
+
   registerGalleryIpcHandlers();
   registerStorageIpcHandlers();
   createWindow();

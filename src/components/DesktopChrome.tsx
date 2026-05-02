@@ -82,8 +82,22 @@ export function Topbar() {
       <style jsx>{`
         .topbar {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 18px 40px;
+          /* Left padding clears the macOS traffic lights that the
+             titleBarStyle: 'hiddenInset' window leaves floating over our
+             content. Right side keeps the regular margin. */
+          padding: 14px 24px 14px 86px;
           border-bottom: 1px solid var(--border);
+          /* Whole bar is the window drag handle. Buttons inside opt out so
+             they remain clickable. */
+          -webkit-app-region: drag;
+          user-select: none;
+        }
+        .topbar :global(button),
+        .topbar :global(a),
+        .topbar :global(input),
+        .topbar :global(.menu),
+        .topbar :global(.menu-overlay) {
+          -webkit-app-region: no-drag;
         }
         .brand { display: flex; align-items: center; gap: 10px; }
         .brand-mark {
