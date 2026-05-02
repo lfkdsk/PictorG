@@ -1,0 +1,152 @@
+appId: com.lfkdsk.picg
+productName: PicG
+copyright: Copyright © 2026 lfkdsk
+
+# Maximum 7-Zip-ultra asar compression. Adds ~30s to a clean build but
+# trims 30-40% off the asar bundle in exchange.
+compression: maximum
+
+# Strip the package.json's `scripts` and `devDependencies` blocks from
+# the copy that ends up inside the asar — they're build-time concerns
+# the runtime never reads.
+removePackageScripts: true
+removePackageKeywords: true
+
+# Chromium ships .pak files for ~50 locales (~25 MB total). PicG's UI
+# is en + zh-CN; the rest is dead weight in the bundle.
+electronLanguages:
+  - en
+  - en-US
+  - zh-CN
+  - zh-TW
+
+# Layout we ship inside PicG.app/Contents/Resources/:
+#
+#   app.asar               — Electron main + preload + IPC handlers
+#                            (transpiled from electron/dist/electron/)
+#                            and the npm prod-deps electron-builder
+#                            auto-resolves from package.json.
+#   standalone/            — Next standalone server bundle. Must sit
+#                            OUTSIDE the asar because server.js does
+#                            relative require() into its own bundled
+#                            node_modules tree, which doesn't work
+#                            through asar.
+#   app.asar.unpacked/     — sharp + @napi-rs/keyring native binaries.
+#                            dlopen() can't load .node files from asar.
+
+# Files included in the asar bundle. Keep this minimal — electron-
+# builder auto-includes prod dependencies from package.json via its
+# default file inclusion logic, so we DON'T list node_modules/<dep>
+# explicitly. Listing them explicitly would (a) double the asar size
+# by also pulling the whole `node_modules/electron` tree (Electron
+# framework is already in Contents/Frameworks, no need for the npm
+# package copy), and (b) bypass electron-builder's prune step.
+files:
+  - electron/dist/**/*
+  - package.json
+  # Excludes — these are noise that creep into prod deps:
+  - "!node_modules/**/{*.md,*.markdown,LICENSE,LICENSE.md,license,*.test.js,*.spec.js}"
+  - "!node_modules/**/{test,tests,docs,doc,example,examples,__tests__,coverage,benchmark,benchmarks}/**"
+  - "!node_modules/**/*.d.ts"
+  - "!node_modules/**/*.map"
+  - "!node_modules/**/*.markdown"
+  - "!node_modules/**/{.github,.vscode,.idea,.husky}/**"
+  - "!node_modules/**/{CHANGELOG,CHANGES,HISTORY,AUTHORS,CONTRIBUTORS,CONTRIBUTING,SECURITY}*"
+  - "!node_modules/**/{.eslintrc,.prettierrc,.babelrc,jest.config,tsconfig}*"
+  - "!node_modules/**/{*.flow,*.ts,!*.d.ts}"
+  - "!**/.git/**"
+  - "!**/.DS_Store"
+  # The Next standalone bundle is shipped separately via extraResources
+  # — no need to ALSO pack the renderer-side React tree into the asar.
+  # @next/swc-* is the build-time SWC native compiler (110 MB on
+  # macOS arm64); the runtime never reaches for it once `next build`
+  # has already produced the standalone output.
+  - "!node_modules/next/**"
+  - "!node_modules/@next/**"
+  - "!node_modules/react/**"
+  - "!node_modules/react-dom/**"
+  - "!node_modules/styled-jsx/**"
+  - "!node_modules/sql.js/**"
+  - "!node_modules/@yireen/**"
+  - "!node_modules/@types/**"
+  # caniuse-lite ships the world's browser version matrix as JSON; only
+  # used at build-time by Next/Babel, not at runtime in our split.
+  - "!node_modules/caniuse-lite/**"
+  # @swc/helpers gets pulled by Next's compiled output via runtime
+  # require, but only if you actually run code generated for older
+  # JS targets — which our standalone bundle doesn't.
+  - "!node_modules/@swc/**"
+  # Sharp ships a libvips binary per platform-arch combo. We only need
+  # the host's. The other prebuilds ride along under @img/sharp-*.
+  - "!node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**"
+  - "!node_modules/@img/sharp-{linux,linuxmusl,win32}-*/**"
+
+# Native modules (.node binaries) that need to live on the real
+# filesystem, not inside the asar archive. dlopen() can't read .node
+# files from inside asar, so these get extracted to app.asar.unpacked.
+asarUnpack:
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/@img/**/*"
+
+# Anything copied into Contents/Resources/ outside the asar. The Next
+# standalone bundle goes here so the forked server process can require
+# its own node_modules tree.
+extraResources:
+  - from: .next/standalone
+    to: standalone
+    filter:
+      - "**/*"
+      # Standalone bundles its own copy of @img — the platform-specific
+      # libvips bindings sharp depends on. We already ship those via
+      # asarUnpack from the top-level node_modules, so dropping them
+      # here saves ~16MB without breaking anything (the runtime fork
+      # uses the standalone copy when sharp is required from the
+      # server bundle, but sharp isn't actually called from the server
+      # — it's only called from the main process).
+      - "!node_modules/@img/**"
+      - "!node_modules/sharp/**"
+
+# Rebuild native modules against the packaged Electron's node-abi.
+# Without this, sharp's prebuilt binaries are for system Node and crash
+# when loaded inside Electron with a "Module did not self-register" or
+# similar mismatch error.
+npmRebuild: true
+
+# macOS-specific
+mac:
+  category: public.app-category.photography
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  # No `identity` set in CI — produces an unsigned build. Users will
+  # see "unidentified developer" on first open and need to right-click
+  # → Open. Locally, electron-builder picks up the developer cert
+  # from the keychain automatically. Set DD_TEAM + cert in CI secrets
+  # once distribution starts and turn on notarization.
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Auto-update publishing target. `electron-builder --publish always`
+# will upload the .dmg + latest-mac.yml manifest to the matching
+# GitHub Release; electron-updater in main reads the manifest off
+# api.github.com to check for new versions.
+publish:
+  - provider: github
+    owner: lfkdsk
+    repo: PicG
+
+directories:
+  output: dist-electron
+  buildResources: build

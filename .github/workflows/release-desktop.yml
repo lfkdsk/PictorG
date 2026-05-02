@@ -1,0 +1,81 @@
+# Builds the macOS PicG.app and publishes the .dmg + auto-update
+# manifest (latest-mac.yml) to a GitHub Release.
+#
+# Trigger: pushing a tag like `v0.2.0`. We deliberately key off tags
+# rather than every push to main so dev branches don't burn macOS
+# runner minutes (those are 10x billed compared to ubuntu).
+#
+# Requires no secrets for the unsigned build (current default). Once
+# you have an Apple Developer ID Application cert:
+#   - Export it as a .p12, base64-encode → secret `MAC_CERT_P12_BASE64`
+#   - Cert password → `MAC_CERT_PASSWORD`
+#   - Apple ID + app-specific pwd + team ID for notarization →
+#     `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`
+# Then flip `mac.identity` in electron-builder.yml from null and turn
+# on `mac.notarize: true` (electron-builder reads APPLE_* env vars).
+
+name: Release desktop build
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual run for testing without cutting a tag. Produces an artifact
+  # but doesn't publish — handy for verifying CI changes.
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to upload to the Release
+
+jobs:
+  build-mac:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build Electron main + Next standalone
+        run: |
+          npm run electron:build
+          npm run next:build:packaging
+
+      - name: Generate icon
+        run: node scripts/build-icon.js
+
+      - name: Package + publish DMG
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tagged release: publish to GitHub. electron-builder reads
+            # GH_TOKEN to upload artifacts to the matching Release.
+            npx electron-builder --mac --publish always
+          else
+            # Manual dispatch: just produce the .dmg, don't publish.
+            npx electron-builder --mac --publish never
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Uncomment once you've added the cert/notarize secrets:
+          # CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload artifact (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PicG-mac
+          path: |
+            dist-electron/*.dmg
+            dist-electron/latest-mac.yml
+          retention-days: 14

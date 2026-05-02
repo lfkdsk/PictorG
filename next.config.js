@@ -5,6 +5,17 @@ const nextConfig = {
     typedRoutes: true
   },
 
+  // Standalone output: produces .next/standalone/server.js + a trimmed
+  // node_modules tree — a self-contained server we can spawn from
+  // inside Electron's main process at runtime. This is what makes the
+  // packaged .app work without static-export limitations (we have
+  // dynamic routes like [id]/[album]/[year] that depend on user data,
+  // so output: 'export' isn't viable).
+  //
+  // Gated on PICG_PACKAGING=1 so `next dev` and the regular web `next
+  // build` aren't affected.
+  output: process.env.PICG_PACKAGING === '1' ? 'standalone' : undefined,
+
   // 图片优化配置
   images: {
     unoptimized: true // 为了兼容性，禁用图片优化

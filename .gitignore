@@ -4,7 +4,12 @@ out/
 coverage/
 .env*
 dist/
+dist-electron/
 *.tsbuildinfo
 *.log
 *.tmp
 .DS_Store
+
+# Generated from build/icon.svg by scripts/build-icon.js
+build/icon.icns
+build/icon.png

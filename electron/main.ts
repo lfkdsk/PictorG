@@ -1,11 +1,30 @@
 // Electron main process entry. Boots the BrowserWindow, registers IPC
-// handlers, and wires the renderer to either the running Next dev server
-// (PICG_DEV_URL, default http://localhost:3000) or — eventually — a packaged
-// static export. Production packaging is out of scope for this spike.
+// handlers, and wires the renderer to:
+//   - dev mode: a running `next dev` on PICG_DEV_URL (default :3000)
+//   - packaged mode: a forked Next standalone server we spawn at startup
+//     against `app.getAppPath()/.next/standalone/server.js`. The server
+//     listens on a random free port; we discover it, then loadURL.
 
 import { app, BrowserWindow, ipcMain, protocol, session, shell } from 'electron';
-import { promises as fs } from 'node:fs';
+import { ChildProcess, fork } from 'node:child_process';
+import { promises as fs, existsSync } from 'node:fs';
+import * as net from 'node:net';
 import * as path from 'node:path';
+
+import { logToFile } from './log';
+import { initAutoUpdater } from './updater';
+process.on('uncaughtException', (err) => {
+  logToFile('uncaughtException', err?.stack ?? String(err));
+});
+process.on('unhandledRejection', (reason) => {
+  logToFile('unhandledRejection', reason instanceof Error ? reason.stack : String(reason));
+});
+logToFile('main.ts boot', {
+  isPackaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  execPath: process.execPath,
+  cwd: process.cwd(),
+});
 
 import { GalleryRegistry } from './galleries/GalleryRegistry';
 
@@ -33,8 +52,86 @@ let pendingOAuthUrl: string | null = null;
 // if you override PICG_DEV_URL.
 const DEV_URL = process.env.PICG_DEV_URL ?? 'http://localhost:3000/desktop/galleries';
 
+// Handle to the forked Next standalone server in packaged mode. Kept at
+// module scope so app.on('quit') can SIGTERM it cleanly.
+let nextServer: ChildProcess | null = null;
+
+// Find a free localhost port by binding 0 and reading what the OS hands
+// us back. Used in packaged mode to avoid hard-coding a port that might
+// already be in use.
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      if (addr && typeof addr === 'object') {
+        const { port } = addr;
+        srv.close(() => resolve(port));
+      } else {
+        srv.close(() => reject(new Error('Could not get port from server.address()')));
+      }
+    });
+  });
+}
+
+// Poll a localhost URL until it responds with any HTTP status, or we time
+// out. Used after spawning the Next server to know when we can loadURL.
+async function waitForServer(url: string, timeoutMs = 20_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url, { method: 'HEAD' });
+      if (res.status > 0) return;
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw new Error(`Next server did not start within ${timeoutMs}ms`);
+}
+
+// Resolve to the URL we should loadURL: either dev or a freshly-spawned
+// packaged Next standalone server.
+async function resolveAppUrl(): Promise<string> {
+  if (!app.isPackaged) return DEV_URL;
+
+  // electron-builder copies .next/standalone next to the app code; the
+  // resourcesPath is the canonical location for asar-extra-resources
+  // (we ship .next/standalone outside the asar so it can require its
+  // bundled node_modules).
+  const standaloneDir = path.join(process.resourcesPath, 'standalone');
+  const serverScript = path.join(standaloneDir, 'server.js');
+  logToFile('resolveAppUrl', { standaloneDir, serverScript, exists: existsSync(serverScript) });
+
+  const port = await findFreePort();
+  logToFile(`spawning Next standalone server on port ${port}`);
+  nextServer = fork(serverScript, [], {
+    cwd: standaloneDir,
+    // ELECTRON_RUN_AS_NODE makes Electron act like plain node — required
+    // for fork() since Electron's binary doubles as both runtimes.
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PORT: String(port),
+      HOSTNAME: '127.0.0.1',
+      NODE_ENV: 'production',
+    },
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  });
+  nextServer.on('exit', (code, signal) => {
+    console.log(`[picg] Next server exited code=${code} signal=${signal}`);
+  });
+
+  const baseUrl = `http://127.0.0.1:${port}`;
+  await waitForServer(baseUrl);
+  return `${baseUrl}/desktop/galleries`;
+}
+
 async function createWindow(): Promise<void> {
-  console.log(`[picg] creating window, loading ${DEV_URL}`);
+  const appUrl = await resolveAppUrl();
+  console.log(`[picg] creating window, loading ${appUrl}`);
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -86,8 +183,8 @@ async function createWindow(): Promise<void> {
   });
 
   try {
-    await win.loadURL(DEV_URL);
-    console.log(`[picg] loaded ${DEV_URL}`);
+    await win.loadURL(appUrl);
+    console.log(`[picg] loaded ${appUrl}`);
   } catch (err) {
     console.error(`[picg] loadURL threw:`, err);
   }
@@ -229,6 +326,7 @@ app.whenReady().then(async () => {
   registerStorageIpcHandlers();
   registerCompressIpcHandlers();
   registerAuthIpcHandlers();
+  initAutoUpdater();
 
   // OAuth IPC is small enough to inline rather than its own module.
   ipcMain.handle(CHANNELS.auth.openExternal, async (_e, url: string) => {
@@ -320,4 +418,10 @@ app.on('window-all-closed', () => {
   // macOS apps typically stay alive after closing all windows; quitting
   // matches user expectation on Linux/Windows.
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  if (nextServer && !nextServer.killed) {
+    nextServer.kill('SIGTERM');
+  }
 });
