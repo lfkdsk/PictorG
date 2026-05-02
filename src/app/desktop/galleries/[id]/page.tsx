@@ -380,6 +380,14 @@ export default function GalleryDetailPage() {
                       >
                         Statistics
                       </Link>
+                      <Link
+                        href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/rescue` as any}
+                        className="picg-menu-item"
+                        onClick={() => setMoreMenuOpen(false)}
+                        role="menuitem"
+                      >
+                        Rescue oversized photos
+                      </Link>
                     </div>
                   </>
                 )}
