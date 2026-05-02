@@ -1,36 +1,43 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!--
-    PicG app icon, v2 — simplified per feedback. macOS icons since Big
-    Sur expect a rounded "squircle" shape (22% radius); the inktype
-    spec's square-corner rule applies to UI affordances, not the app
-    tile, so we follow Apple HIG here.
-    Color tokens still come from inktype.lfkdsk.org/docs:
+    PicG app icon — sizing tuned to the dock norm.
+    macOS icons are 1024×1024 but the visible squircle 3rd-party apps
+    actually draw (Chrome / Claude / Cursor) is closer to 920×920 with
+    ~52 px of outer padding. Filling the whole 1024 canvas (the
+    earlier version of this file) made PicG read ~12 % larger than
+    every other dock icon.
+
+    Apple HIG's design template puts the *safe content area* at
+    824×824 and the visible tile at ~920×920 — we follow the latter
+    here so the dock looks balanced.
+
+    Color tokens from inktype.lfkdsk.org/docs:
       bg     #1A1614  (warm near-black)
       accent #D97757  (warm orange)
       text   #EDE4D3  (cream)
-    One glyph (a serif "P"), one accent (a small dot under it).
-    Nothing else.
+    One glyph (a serif "P"), one accent dot at the lower-right.
+    Corner radius 205 ≈ 22 % of 920 (macOS squircle ratio).
   -->
   <defs>
     <clipPath id="squircle">
-      <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225"/>
+      <rect x="52" y="52" width="920" height="920" rx="205" ry="205"/>
     </clipPath>
   </defs>
 
   <g clip-path="url(#squircle)">
-    <rect x="0" y="0" width="1024" height="1024" fill="#1A1614"/>
-    <text x="512" y="700"
+    <rect x="52" y="52" width="920" height="920" fill="#1A1614"/>
+    <text x="512" y="680"
           text-anchor="middle"
           font-family="'Fraunces', 'Times New Roman', Georgia, serif"
           font-weight="500"
           font-style="normal"
-          font-size="640"
+          font-size="580"
           fill="#EDE4D3">P</text>
     <!--
       Accent dot at the lower-right of the P, sized to read like a
-      typographic period. Placed slightly outside the glyph so it stays
-      visible against the cream stem at any scale.
+      typographic period. Placed slightly outside the glyph so it
+      stays visible against the cream stem at any scale.
     -->
-    <circle cx="700" cy="700" r="42" fill="#D97757"/>
+    <circle cx="720" cy="680" r="38" fill="#D97757"/>
   </g>
 </svg>
