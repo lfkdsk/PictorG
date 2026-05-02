@@ -153,18 +153,28 @@ export default function GalleryDetailPage() {
     }
   }
 
-  function handleDrop(targetUrl: string) {
+  // Live reorder on dragover so the grid follows the cursor instead of
+  // jumping only at drop. The "move dragging item into target's slot" pass
+  // is idempotent — re-firing on the same target after a swap is a no-op
+  // because findIndex picks up the post-swap positions, so this is stable
+  // even though dragover fires every mouse move.
+  function handleDragOver(targetUrl: string) {
     if (!albums || !draggingUrl || draggingUrl === targetUrl) return;
     const fromIdx = albums.findIndex((a) => a.url === draggingUrl);
-    let toIdx = albums.findIndex((a) => a.url === targetUrl);
+    const toIdx = albums.findIndex((a) => a.url === targetUrl);
     if (fromIdx < 0 || toIdx < 0) return;
+    const insertIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    if (insertIdx === fromIdx) return;
     const next = [...albums];
     const [moved] = next.splice(fromIdx, 1);
-    if (fromIdx < toIdx) toIdx -= 1;
-    next.splice(toIdx, 0, moved);
+    next.splice(insertIdx, 0, moved);
     setAlbums(next);
+  }
+
+  function handleDrop() {
+    if (!albums) return;
     setDraggingUrl(null);
-    void persistOrder(next);
+    void persistOrder(albums);
   }
 
   if (!bridge) {
@@ -258,7 +268,8 @@ export default function GalleryDetailPage() {
                   isDragging={draggingUrl === album.url}
                   onDragStart={() => setDraggingUrl(album.url)}
                   onDragEnd={() => setDraggingUrl(null)}
-                  onDrop={() => handleDrop(album.url)}
+                  onDragOver={() => handleDragOver(album.url)}
+                  onDrop={() => handleDrop()}
                 />
               </li>
             ))}
@@ -356,6 +367,7 @@ function AlbumCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  onDragOver,
   onDrop,
 }: {
   galleryId: string;
@@ -364,10 +376,10 @@ function AlbumCard({
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
+  onDragOver: () => void;
   onDrop: () => void;
 }) {
   const router = useRouter();
-  const [hovered, setHovered] = useState(false);
   // README.yml's `cover` is the path from repo root (matches the web flow's
   // `${thumbnail_url}/${album.cover}`), not a filename relative to album.url.
   const coverPath = album.cover || null;
@@ -379,7 +391,7 @@ function AlbumCard({
   // the same SPA navigation a Link would.
   return (
     <div
-      className={`picg-album-card ${isDragging ? 'is-dragging' : ''} ${hovered ? 'is-drop-target' : ''}`}
+      className={`picg-album-card ${isDragging ? 'is-dragging' : ''}`}
       role="button"
       tabIndex={0}
       onClick={() => router.push(albumHref as any)}
@@ -395,19 +407,14 @@ function AlbumCard({
         e.dataTransfer.setData('text/plain', album.url);
         onDragStart();
       }}
-      onDragEnd={() => {
-        setHovered(false);
-        onDragEnd();
-      }}
+      onDragEnd={onDragEnd}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+        onDragOver();
       }}
-      onDragEnter={() => setHovered(true)}
-      onDragLeave={() => setHovered(false)}
       onDrop={(e) => {
         e.preventDefault();
-        setHovered(false);
         onDrop();
       }}
     >
