@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import yaml from 'js-yaml';
 
 import {
@@ -50,6 +50,13 @@ function formatDate(value?: string): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function findKeyByUrl(data: Record<string, any>, url: string): string | undefined {
+  for (const [k, v] of Object.entries(data)) {
+    if (v?.url === url) return k;
+  }
+  return undefined;
 }
 
 function findAlbum(yamlText: string, url: string): AlbumMeta | null {
@@ -103,6 +110,8 @@ function parseLocation(raw: string): [number, number] | null {
 export default function AlbumPage() {
   const router = useRouter();
   const params = useParams<{ id: string; album: string }>();
+  const searchParams = useSearchParams();
+  const refreshKey = searchParams?.get('t');
   const galleryId = params?.id;
   const albumUrl = useMemo(() => {
     try {
@@ -125,6 +134,13 @@ export default function AlbumPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false);
+  const [deleteAlbumBusy, setDeleteAlbumBusy] = useState(false);
+  const [deleteAlbumError, setDeleteAlbumError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -168,7 +184,7 @@ export default function AlbumPage() {
     return () => {
       cancelled = true;
     };
-  }, [adapter, albumUrl]);
+  }, [adapter, albumUrl, refreshKey]);
 
   // Close lightbox on Escape, navigate with arrow keys.
   useEffect(() => {
@@ -186,6 +202,97 @@ export default function AlbumPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxPath, images, albumUrl]);
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+
+  function toggleSelected(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  async function deleteSelectedPhotos() {
+    if (!adapter || !albumUrl) return;
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} photo${selected.size === 1 ? '' : 's'}? This cannot be undone.`)) return;
+
+    setDeleting(true);
+    setLoadError(null);
+    try {
+      const paths = Array.from(selected).map((name) => `${albumUrl}/${name}`);
+      await adapter.deleteFiles(
+        paths,
+        `Delete ${paths.length} photo${paths.length === 1 ? '' : 's'} from ${albumUrl}`
+      );
+      const entries = await adapter.listDirectory(albumUrl);
+      setImages(entries.filter((e) => e.type === 'file' && isImage(e.name)));
+      exitSelectMode();
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function deleteEntireAlbum() {
+    if (!adapter || !albumUrl || !gallery) return;
+    setDeleteAlbumBusy(true);
+    setDeleteAlbumError(null);
+    try {
+      // Two commits intentionally — neither GitHub nor LocalGit adapter
+      // exposes "remove dir + rewrite README" as one atomic operation, and
+      // splitting them keeps each commit readable in git log.
+      try {
+        await adapter.deleteDirectory(
+          albumUrl,
+          `Delete album files: ${albumMeta?.name ?? albumUrl}`
+        );
+      } catch (err) {
+        // Directory might already be empty or missing on disk; if so we
+        // still want to drop the README entry.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/不存在|empty|没有/.test(msg)) throw err;
+      }
+
+      const meta = await adapter.readFileMetadata('README.yml');
+      if (meta) {
+        const file = await adapter.readFile('README.yml');
+        const data = (yaml.load(file.text(), {
+          schema: yaml.CORE_SCHEMA,
+          json: true,
+        }) ?? {}) as Record<string, any>;
+        const yamlKey = albumMeta?.name ?? findKeyByUrl(data, albumUrl);
+        if (yamlKey && yamlKey in data) {
+          delete data[yamlKey];
+          const yamlText = yaml.dump(data, {
+            indent: 2,
+            lineWidth: -1,
+            noRefs: true,
+            quotingType: '"',
+            forceQuotes: false,
+          });
+          await adapter.writeFile(
+            'README.yml',
+            yamlText,
+            `Remove album entry: ${yamlKey}`
+          );
+        }
+      }
+
+      router.push(
+        `/desktop/galleries/${encodeURIComponent(gallery.id)}?t=${Date.now()}` as any
+      );
+    } catch (err) {
+      setDeleteAlbumError(err instanceof Error ? err.message : String(err));
+      setDeleteAlbumBusy(false);
+    }
+  }
 
   function openEdit() {
     if (!albumMeta) return;
@@ -354,9 +461,28 @@ export default function AlbumPage() {
                 )}
               </p>
             </div>
-            {albumMeta && (
-              <button className="btn ghost" onClick={openEdit}>Edit</button>
-            )}
+            <div className="hero-actions">
+              <Link
+                href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(albumUrl)}/add` as any}
+                className="btn primary"
+              >
+                + Add photos
+              </Link>
+              {albumMeta && (
+                <button className="btn ghost" onClick={openEdit}>Edit</button>
+              )}
+              {albumMeta && (
+                <button
+                  className="btn ghost danger"
+                  onClick={() => {
+                    setDeleteAlbumError(null);
+                    setDeleteAlbumOpen(true);
+                  }}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
@@ -371,17 +497,61 @@ export default function AlbumPage() {
         )}
 
         {images && images.length > 0 && (
-          <ul className="picg-thumbs">
-            {images.map((img) => (
-              <Thumb
-                key={img.path}
-                adapter={adapter}
-                albumUrl={albumUrl}
-                name={img.name}
-                onOpen={() => setLightboxPath(`${albumUrl}/${img.name}`)}
-              />
-            ))}
-          </ul>
+          <>
+            <div className="photos-toolbar">
+              {selectMode ? (
+                <>
+                  <span className="selected-count">
+                    {selected.size} selected
+                  </span>
+                  <div className="toolbar-spacer" />
+                  <button
+                    className="btn ghost danger"
+                    onClick={deleteSelectedPhotos}
+                    disabled={deleting || selected.size === 0}
+                  >
+                    {deleting ? 'Deleting…' : `Delete ${selected.size}`}
+                  </button>
+                  <button
+                    className="btn ghost"
+                    onClick={exitSelectMode}
+                    disabled={deleting}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="photos-count">
+                    {images.length} photo{images.length === 1 ? '' : 's'}
+                  </span>
+                  <div className="toolbar-spacer" />
+                  <button
+                    className="btn ghost"
+                    onClick={() => setSelectMode(true)}
+                  >
+                    Select
+                  </button>
+                </>
+              )}
+            </div>
+            <ul className="picg-thumbs">
+              {images.map((img) => (
+                <Thumb
+                  key={img.path}
+                  adapter={adapter}
+                  albumUrl={albumUrl}
+                  name={img.name}
+                  selectMode={selectMode}
+                  selected={selected.has(img.name)}
+                  onOpen={() => {
+                    if (selectMode) toggleSelected(img.name);
+                    else setLightboxPath(`${albumUrl}/${img.name}`);
+                  }}
+                />
+              ))}
+            </ul>
+          </>
         )}
       </main>
 
@@ -506,6 +676,58 @@ export default function AlbumPage() {
         </div>
       )}
 
+      {deleteAlbumOpen && (
+        <div
+          className="picg-modal-backdrop"
+          onClick={() => !deleteAlbumBusy && setDeleteAlbumOpen(false)}
+        >
+          <div className="picg-modal" onClick={(e) => e.stopPropagation()}>
+            <header className="picg-modal-header">
+              <div className="picg-modal-title-wrap">
+                <h2>Delete album</h2>
+              </div>
+              <button
+                className="btn ghost icon"
+                onClick={() => setDeleteAlbumOpen(false)}
+                disabled={deleteAlbumBusy}
+              >
+                ✕
+              </button>
+            </header>
+            <div className="picg-fields">
+              <p className="picg-confirm-text">
+                Delete <strong>{albumMeta?.name ?? albumUrl}</strong>?
+              </p>
+              <div className="picg-warning">
+                Removes the album entry from <code>README.yml</code> and deletes
+                all {images?.length ?? 0} photo{images?.length === 1 ? '' : 's'} from disk.
+                Two commits land locally; auto-push is off unless
+                <code> PICG_AUTOPUSH=1</code>.
+              </div>
+              {deleteAlbumError && (
+                <div className="picg-banner">{deleteAlbumError}</div>
+              )}
+            </div>
+            <div className="picg-modal-actions">
+              <button
+                className="btn ghost"
+                onClick={() => setDeleteAlbumOpen(false)}
+                disabled={deleteAlbumBusy}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn primary danger"
+                onClick={deleteEntireAlbum}
+                disabled={deleteAlbumBusy}
+              >
+                {deleteAlbumBusy ? 'Deleting…' : 'Delete album'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 1200px; margin: 0 auto; }
@@ -515,6 +737,22 @@ export default function AlbumPage() {
           display: flex; align-items: flex-start; justify-content: space-between;
           gap: 24px;
         }
+        .hero-actions {
+          display: flex; gap: 8px; flex-shrink: 0;
+        }
+        .photos-toolbar {
+          display: flex; align-items: center; gap: 8px;
+          margin-bottom: 12px;
+        }
+        .toolbar-spacer { flex: 1; }
+        .photos-count, .selected-count {
+          font-family: var(--mono);
+          font-size: 11px;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          color: var(--text-muted);
+        }
+        .selected-count { color: var(--accent); }
         .hero h1 {
           font-family: var(--serif);
           font-size: 40px;
@@ -569,18 +807,28 @@ function Thumb({
   adapter,
   albumUrl,
   name,
+  selectMode,
+  selected,
   onOpen,
 }: {
   adapter: StorageAdapter | null;
   albumUrl: string;
   name: string;
+  selectMode: boolean;
+  selected: boolean;
   onOpen: () => void;
 }) {
   const { src } = useAdapterImage(adapter, `${albumUrl}/${name}`);
   return (
     <li>
-      <button className="picg-thumb" onClick={onOpen} aria-label={name}>
+      <button
+        className={`picg-thumb ${selectMode && selected ? 'is-selected' : ''}`}
+        onClick={onOpen}
+        aria-label={name}
+        aria-pressed={selectMode ? selected : undefined}
+      >
         {src ? <img src={src} alt={name} loading="lazy" /> : <div className="picg-thumb-placeholder" />}
+        {selectMode && selected && <span className="picg-thumb-check">✓</span>}
       </button>
     </li>
   );

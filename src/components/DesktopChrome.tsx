@@ -237,7 +237,30 @@ export function DesktopTheme() {
         font-family: var(--mono);
       }
       .btn.ghost.icon { padding: 4px 10px; font-size: 14px; }
+      .btn.danger {
+        color: #f0857b;
+        border-color: rgba(216, 90, 70, 0.4);
+      }
+      .btn.danger:hover {
+        color: #ff7b72;
+        border-color: rgba(216, 90, 70, 0.6);
+        background: rgba(216, 90, 70, 0.08);
+      }
+      .btn.primary.danger {
+        background: #c84a44;
+        color: #fff;
+      }
+      .btn.primary.danger:hover { background: #d65a55; }
       .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .picg-confirm-text {
+        margin: 0;
+        font-size: 14px;
+        color: var(--text);
+      }
+      .picg-confirm-text strong {
+        font-family: var(--serif);
+        font-weight: 600;
+      }
 
       /* Back link — global because styled-jsx occasionally misses next/link's
          rendered <a> when the page also has many scoped rules. */
@@ -356,6 +379,22 @@ export function DesktopTheme() {
       .picg-thumb.is-cover {
         border-color: var(--accent);
         box-shadow: 0 0 0 2px rgba(232, 160, 74, 0.32);
+      }
+      .picg-thumb.is-selected {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(232, 160, 74, 0.32);
+      }
+      .picg-thumb-check {
+        position: absolute;
+        top: 8px; right: 8px;
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: var(--accent-text);
+        font-size: 13px;
+        font-weight: 700;
+        display: grid; place-items: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
       }
 
       /* Lightbox */
