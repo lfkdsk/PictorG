@@ -70,7 +70,7 @@ export default function NewAlbumPage() {
   const params = useParams<{ id: string }>();
   const galleryId = params?.id;
 
-  const [bridge, setBridge] = useState<PicgBridge | null>(null);
+  const [bridge, setBridge] = useState<PicgBridge | null>(() => getPicgBridge());
   const [gallery, setGallery] = useState<LocalGallery | null>(null);
   const [adapter, setAdapter] = useState<StorageAdapter | null>(null);
 
