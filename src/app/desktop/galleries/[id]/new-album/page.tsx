@@ -396,7 +396,7 @@ export default function NewAlbumPage() {
             Photos
             {photos.length > 0 && (
               <span className="size-summary">
-                {photos.length} · {formatBytes(totalOriginal)}
+                {photos.filter((p) => p.status === 'ready').length}/{photos.length} compressed · {formatBytes(totalOriginal)}
                 {totalCompressed > 0 && (
                   <>
                     {' → '}
@@ -409,6 +409,17 @@ export default function NewAlbumPage() {
               </span>
             )}
           </h2>
+
+          {photos.length > 0 && (
+            <div className="picg-progress-bar">
+              <div
+                className="picg-progress-fill"
+                style={{
+                  width: `${(photos.filter((p) => p.status === 'ready').length / photos.length) * 100}%`,
+                }}
+              />
+            </div>
+          )}
 
           <DropZone
             dragOver={dragOver}

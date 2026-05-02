@@ -278,6 +278,20 @@ export function DesktopTheme() {
         animation: picg-spin 0.9s linear infinite;
       }
       @keyframes picg-spin { to { transform: rotate(360deg); } }
+      /* Thin progress bar for batch operations (compression queue, etc) */
+      .picg-progress-bar {
+        height: 3px;
+        background: rgba(232, 220, 196, 0.08);
+        border-radius: 2px;
+        overflow: hidden;
+        margin: 0 0 14px;
+      }
+      .picg-progress-fill {
+        height: 100%;
+        background: var(--accent);
+        transition: width 0.25s ease;
+      }
+
       .picg-badge-count {
         position: absolute;
         top: -2px;
