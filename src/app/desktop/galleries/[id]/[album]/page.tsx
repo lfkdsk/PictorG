@@ -122,7 +122,7 @@ export default function AlbumPage() {
     }
   }, [params?.album]);
 
-  const [bridge, setBridge] = useState<PicgBridge | null>(null);
+  const [bridge, setBridge] = useState<PicgBridge | null>(() => getPicgBridge());
   const [gallery, setGallery] = useState<LocalGallery | null>(null);
   const [adapter, setAdapter] = useState<StorageAdapter | null>(null);
   const [albumMeta, setAlbumMeta] = useState<AlbumMeta | null>(null);

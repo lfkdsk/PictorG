@@ -52,7 +52,11 @@ function cloneUrlFor(fullName: string): string {
 }
 
 export default function GalleriesPage() {
-  const [bridge, setBridge] = useState<PicgBridge | null>(null);
+  // Lazy init reads window.picgBridge synchronously on first render so
+  // SPA navigations don't flash the "Desktop only" gate while a useEffect
+  // catches up. SSR returns null (no window), which still produces a
+  // brief flash on the very first cold load — that's a one-time hit.
+  const [bridge, setBridge] = useState<PicgBridge | null>(() => getPicgBridge());
   const [token, setToken] = useState<string | null>(null);
   const [galleries, setGalleries] = useState<LocalGallery[]>([]);
   const [cloning, setCloning] = useState<
@@ -65,6 +69,7 @@ export default function GalleriesPage() {
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
+    // Re-read after hydration so SSR's null doesn't stick. Cheap.
     setBridge(getPicgBridge());
     setToken(getGitHubToken());
   }, []);

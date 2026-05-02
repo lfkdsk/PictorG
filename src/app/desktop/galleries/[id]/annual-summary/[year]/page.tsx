@@ -56,7 +56,7 @@ export default function AnnualSummaryPicker() {
   const galleryId = params?.id;
   const year = params?.year;
 
-  const [bridge, setBridge] = useState<PicgBridge | null>(null);
+  const [bridge, setBridge] = useState<PicgBridge | null>(() => getPicgBridge());
   const [gallery, setGallery] = useState<LocalGallery | null>(null);
   const [adapter, setAdapter] = useState<StorageAdapter | null>(null);
   const [candidates, setCandidates] = useState<MonthlyCandidates | null>(null);
