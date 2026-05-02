@@ -171,13 +171,32 @@ mac:
   gatekeeperAssess: false
 
 dmg:
+  # Window size big enough to fit the app, the /Applications symlink,
+  # and the Gatekeeper-fix .command underneath without overlapping.
+  window:
+    width: 540
+    height: 420
   contents:
     - x: 130
-      y: 220
+      y: 180
     - x: 410
-      y: 220
+      y: 180
       type: link
       path: /Applications
+    # Bundled helper that runs `xattr -c /Applications/PicG.app` to
+    # clear the quarantine flag macOS adds to downloaded files. Without
+    # this, the unsigned build trips Gatekeeper's "PicG.app is damaged"
+    # error on first launch. The .command itself ALSO carries the
+    # quarantine flag (it came from the same DMG), so users see the
+    # standard "are you sure you want to open?" prompt the first time
+    # they double-click it — clicking Open trusts it, then the xattr -c
+    # below trusts the app. Best UX we can offer until we sign +
+    # notarize (see desktop-development.md §8.2).
+    - x: 270
+      y: 320
+      type: file
+      path: build/fix-gatekeeper.command
+      name: Fix Gatekeeper.command
 
 # Auto-update publishing target. `electron-builder --publish always`
 # will upload the .dmg + latest-mac.yml manifest to the matching

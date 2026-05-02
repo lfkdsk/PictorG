@@ -487,11 +487,22 @@ without tagging. Workflow only fires on tag push.
 ### 8.2 Signing / notarization
 
 Currently unsigned. Users see "PicG is damaged" on first open
-(quarantine flag → Gatekeeper reject for unsigned). Workarounds in
-the release notes:
+(quarantine flag → Gatekeeper reject for unsigned).
+
+Mitigation we ship today: the DMG includes
+`build/fix-gatekeeper.command`, dropped into the DMG window next to
+the app + Applications symlink as **"Fix Gatekeeper.command"**. After
+dragging PicG to Applications the user double-clicks it — macOS shows
+the standard "are you sure you want to open this?" prompt (the
+.command inherited the same quarantine flag), they click Open, the
+script runs `xattr -c /Applications/PicG.app`, and PicG launches
+normally from then on. Trade-off vs. doing nothing: one less-scary
+prompt instead of "is damaged → move to Trash."
+
+Manual fallback in the release notes for users who prefer Terminal:
 
 ```bash
-xattr -cr /Applications/PicG.app
+xattr -c /Applications/PicG.app
 ```
 
 To actually sign:
