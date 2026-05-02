@@ -223,6 +223,21 @@ export class GalleryRegistry {
     const git = simpleGit(gallery.localPath);
     const branch = await currentBranch(git);
 
+    // Squash all unpushed commits into one before pushing. The renderer
+    // commits per individual operation (drag reorder → 1, edit album →
+    // 1, batch photo upload → 1, …) so the Undo toast can `git reset
+    // --hard HEAD~1` a single step at a time. That granularity shows
+    // up in `git log` as 5+ commits per editing session — noisy on the
+    // remote. We collapse the whole un-pushed range into a single
+    // commit at push time so origin's history stays readable while
+    // local Undo keeps working session-internal.
+    //
+    // Safety: stash the pre-squash SHA so we can restore the granular
+    // history if anything below fails (squash itself, or the actual
+    // push). User loses no work — the commits are still reachable
+    // from reflog even after a hard reset.
+    const preSquashSha = await this.maybeSquash(git, branch);
+
     // Push through the `origin` *name*, not a bare URL. Pushing to a bare
     // URL does the upload but skips updating `refs/remotes/origin/<branch>`,
     // so a follow-up `git status` keeps reporting ahead > 0 — which makes
@@ -241,17 +256,73 @@ export class GalleryRegistry {
     //   - http.version=HTTP/1.1: GitHub's HTTP/2 occasionally drops large
     //     chunked uploads with the same sideband error. Forcing 1.1 is a
     //     stable workaround that costs nothing here.
-    await git.raw([
-      '-c',
-      `remote.origin.url=${this.tokenizedUrl(gallery)}`,
-      '-c',
-      'http.postBuffer=524288000',
-      '-c',
-      'http.version=HTTP/1.1',
-      'push',
-      'origin',
-      branch,
-    ]);
+    try {
+      await git.raw([
+        '-c',
+        `remote.origin.url=${this.tokenizedUrl(gallery)}`,
+        '-c',
+        'http.postBuffer=524288000',
+        '-c',
+        'http.version=HTTP/1.1',
+        'push',
+        'origin',
+        branch,
+      ]);
+    } catch (err) {
+      if (preSquashSha) {
+        // Push failed — undo the squash so the user keeps the
+        // per-operation Undo grain. The next Push attempt re-squashes.
+        await git.raw(['reset', '--hard', preSquashSha]).catch(() => {});
+      }
+      throw err;
+    }
+  }
+
+  // Returns the pre-squash SHA if a squash happened, null if no-op.
+  // A no-op means: no upstream tracking ref yet, or fewer than 2
+  // commits ahead (nothing to collapse).
+  private async maybeSquash(
+    git: ReturnType<typeof simpleGit>,
+    branch: string
+  ): Promise<string | null> {
+    const upstream = `origin/${branch}`;
+    let aheadCount: number;
+    try {
+      const out = await git.raw(['rev-list', '--count', `${upstream}..HEAD`]);
+      aheadCount = parseInt(out.trim(), 10) || 0;
+    } catch {
+      // No upstream branch → first push, nothing to squash against.
+      return null;
+    }
+    if (aheadCount < 2) return null;
+
+    const headSha = (await git.revparse(['HEAD'])).trim();
+
+    // Build a single commit message that lists each squashed subject
+    // line in chronological order. Keeps the squashed history
+    // self-documenting on the remote.
+    const log = await git.log({
+      from: upstream,
+      to: 'HEAD',
+    });
+    const subjects = log.all
+      .map((c) => c.message.split('\n')[0])
+      .reverse()
+      .map((s) => `- ${s}`)
+      .join('\n');
+    const message = `Update from PicG · ${aheadCount} ops\n\n${subjects}`;
+
+    try {
+      // Soft reset preserves working tree + index — staging stays
+      // exactly as it was at HEAD. Then a single commit re-records it.
+      await git.raw(['reset', '--soft', upstream]);
+      await git.commit(message);
+    } catch (err) {
+      // Squash itself failed — restore and bail.
+      await git.raw(['reset', '--hard', headSha]).catch(() => {});
+      throw err;
+    }
+    return headSha;
   }
 
   // Build a one-shot https://oauth2:<token>@github.com/... URL. Never
