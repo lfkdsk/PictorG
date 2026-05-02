@@ -4,12 +4,20 @@
 // through to "no compression" when squoosh's dynamic imports failed
 // inside the worker context.
 //
-// Sharp wraps libvips, which natively preserves EXIF and auto-rotates
-// based on EXIF orientation — so we don't need the manual EXIF
-// load/dump/insert dance that compress-image.ts (the web path) does.
+// Sharp wraps libvips and emits its own EXIF on output. In practice the
+// fields it copies are a subset of the originals (some camera-specific
+// makernotes, GPS sub-IFDs, etc. drop out depending on the libvips
+// build). The web path doesn't have this problem because it does the
+// load→strip-orientation→dump→insert dance against the original bytes,
+// which is byte-for-byte exact apart from the orientation tag we
+// deliberately drop. We mirror that flow here so desktop and web
+// produce equivalent metadata.
 
 import { ipcMain } from 'electron';
 import sharp from 'sharp';
+// @lfkdsk/exif-library is CJS and ships type definitions for these
+// symbols; the top-level `insert` auto-detects JPEG/WebP/PNG by header.
+import { dump, insert, load, TagNumbers } from '@lfkdsk/exif-library';
 
 import { CHANNELS } from './contract';
 import type { CompressImageRequest, CompressImageResult } from './contract';
@@ -17,6 +25,56 @@ import type { CompressImageRequest, CompressImageResult } from './contract';
 function basenameWithoutExt(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.substring(0, dot) : name;
+}
+
+// Mirror src/lib/compress-image.ts: pull EXIF off the original bytes,
+// drop the Orientation tag (sharp.rotate() already baked it into pixels,
+// keeping the tag would make viewers double-rotate), then re-inject the
+// segment into the freshly-encoded output. Returns the original output
+// unchanged if the input has no EXIF segment we can read.
+function supplementExif(
+  inputBuffer: Buffer,
+  outputBuffer: Buffer
+): Buffer {
+  // exif-library works in binary strings (one char = one byte). Buffer's
+  // 'binary' / 'latin1' encoding does that conversion both ways without
+  // any bit munging.
+  const inputStr = inputBuffer.toString('binary');
+  let exif: any;
+  try {
+    exif = load(inputStr);
+  } catch {
+    return outputBuffer;
+  }
+  if (!exif || typeof exif !== 'object') return outputBuffer;
+  // Empty IFDs would dump to a near-empty segment — pointless to inject.
+  const hasAny =
+    Object.keys(exif['0th'] ?? {}).length > 0 ||
+    Object.keys(exif['Exif'] ?? {}).length > 0 ||
+    Object.keys(exif['GPS'] ?? {}).length > 0 ||
+    Object.keys(exif['1st'] ?? {}).length > 0 ||
+    Object.keys(exif['Interop'] ?? {}).length > 0;
+  if (!hasAny) return outputBuffer;
+
+  if (exif['0th'] && TagNumbers.ImageIFD.Orientation in exif['0th']) {
+    delete exif['0th'][TagNumbers.ImageIFD.Orientation];
+  }
+
+  let exifBytes: string;
+  try {
+    exifBytes = dump(exif);
+  } catch {
+    return outputBuffer;
+  }
+
+  const outputStr = outputBuffer.toString('binary');
+  let merged: string;
+  try {
+    merged = insert(exifBytes, outputStr);
+  } catch {
+    return outputBuffer;
+  }
+  return Buffer.from(merged, 'binary');
 }
 
 async function compressImage(
@@ -30,8 +88,6 @@ async function compressImage(
   let pipeline = sharp(input, { failOn: 'none' });
 
   // Diagnostic: log whether the source actually has EXIF before we touch it.
-  // Some pipelines / cameras store metadata only in XMP, in which case
-  // .keepMetadata() won't have an EXIF segment to copy.
   const inMeta = await sharp(input, { failOn: 'none' }).metadata();
   console.log('[picg compress] input', {
     format: inMeta.format,
@@ -42,18 +98,9 @@ async function compressImage(
   });
 
   // .rotate() with no args reads EXIF orientation, applies it, and resets
-  // orientation to 1 in the output. Doing this before keepMetadata() makes
-  // sure the saved orientation tag matches the actual pixel layout
-  // (otherwise viewers double-rotate).
+  // orientation to 1 in the output. Doing this here means the supplement
+  // step can safely drop the Orientation tag without leaving a mismatch.
   pipeline = pipeline.rotate();
-
-  if (request.preserveExif) {
-    // .keepMetadata() is the post-0.32 sharp API for "copy all metadata
-    // (EXIF + ICC + XMP) from input to output". The older .withMetadata()
-    // alias still exists but its behaviour around modern metadata chunks
-    // is inconsistent across libvips versions.
-    pipeline = pipeline.keepMetadata();
-  }
 
   let outBuffer: Buffer;
   let extension: string;
@@ -67,6 +114,10 @@ async function compressImage(
     outBuffer = await pipeline.webp({ quality: 75 }).toBuffer();
     extension = '.webp';
     mimeType = 'image/webp';
+  }
+
+  if (request.preserveExif) {
+    outBuffer = supplementExif(input, outBuffer);
   }
 
   // Diagnostic: confirm metadata round-tripped to the output.
