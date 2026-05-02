@@ -6,13 +6,16 @@
 // classes live in the global theme block so styled-jsx scoping can't
 // accidentally break their layout.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 
 import { getGitHubToken, logout } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
 
-export function Topbar() {
+// Topbar accepts an optional `actions` slot rendered between the brand
+// and the user pill. Per-page chrome (sync icons, etc.) goes here so
+// the page hero stays focused on content.
+export function Topbar({ actions }: { actions?: ReactNode }) {
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -58,6 +61,7 @@ export function Topbar() {
         <span className="brand-mark">P</span>
         <span className="brand-name">Pictor</span>
       </div>
+      {actions && <div className="topbar-actions">{actions}</div>}
       {user && (
         <div className="picg-menu-anchor">
           <button
@@ -96,11 +100,11 @@ export function Topbar() {
       )}
       <style jsx>{`
         .topbar {
-          display: flex; align-items: center; justify-content: space-between;
+          display: flex; align-items: center; gap: 12px;
           /* Left padding clears the macOS traffic lights that the
              titleBarStyle: 'hiddenInset' window leaves floating over our
              content. Right side keeps the regular margin. */
-          padding: 14px 24px 14px 86px;
+          padding: 10px 24px 10px 86px;
           border-bottom: 1px solid var(--border);
           /* Whole bar is the window drag handle. Buttons inside opt out so
              they remain clickable. */
@@ -114,7 +118,13 @@ export function Topbar() {
         .topbar :global(.picg-menu-overlay) {
           -webkit-app-region: no-drag;
         }
-        .brand { display: flex; align-items: center; gap: 10px; }
+        .brand {
+          display: flex; align-items: center; gap: 10px;
+          margin-right: auto;
+        }
+        .topbar-actions {
+          display: flex; align-items: center; gap: 4px;
+        }
         .brand-mark {
           width: 28px; height: 28px;
           display: grid; place-items: center;

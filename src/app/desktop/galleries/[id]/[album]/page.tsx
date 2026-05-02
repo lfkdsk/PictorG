@@ -492,9 +492,35 @@ export default function AlbumPage() {
 
   const galleryHref = `/desktop/galleries/${encodeURIComponent(gallery.id)}`;
 
+  const topbarActions = (
+    <>
+      <button
+        type="button"
+        className="picg-icon-btn"
+        aria-label="Pull from remote"
+        title="Pull from remote (git pull)"
+        onClick={handlePull}
+        disabled={pulling || pushing}
+      >
+        <span className={pulling ? 'picg-spin' : ''}>↓</span>
+      </button>
+      <button
+        type="button"
+        className="picg-icon-btn"
+        aria-label={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} to remote` : 'Push to remote'}
+        title={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} (git push)` : 'Push to remote (git push)'}
+        onClick={handlePush}
+        disabled={pulling || pushing}
+      >
+        <span className={pushing ? 'picg-spin' : ''}>↑</span>
+        {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
+      </button>
+    </>
+  );
+
   return (
     <div className="page">
-      <Topbar />
+      <Topbar actions={topbarActions} />
 
       <main>
         <Link href={galleryHref as any} className="picg-back-link">
@@ -534,27 +560,6 @@ export default function AlbumPage() {
                 >
                   + Add photos
                 </Link>
-                <button
-                  type="button"
-                  className="picg-icon-btn"
-                  aria-label="Pull from remote"
-                  title="Pull from remote (git pull)"
-                  onClick={handlePull}
-                  disabled={pulling || pushing}
-                >
-                  <span className={pulling ? 'picg-spin' : ''}>↓</span>
-                </button>
-                <button
-                  type="button"
-                  className="picg-icon-btn"
-                  aria-label={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} to remote` : 'Push to remote'}
-                  title={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} (git push)` : 'Push to remote (git push)'}
-                  onClick={handlePush}
-                  disabled={pulling || pushing}
-                >
-                  <span className={pushing ? 'picg-spin' : ''}>↑</span>
-                  {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
-                </button>
                 <div className="picg-menu-anchor">
                   <button
                     type="button"
