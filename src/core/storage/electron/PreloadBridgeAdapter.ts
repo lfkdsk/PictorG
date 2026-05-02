@@ -9,7 +9,7 @@ import type {
   WriteOptions,
 } from '../types';
 import { bytesToBase64, bytesToUtf8 } from '../encoding';
-import type { CloneProgress, LocalGallery } from './galleryTypes';
+import type { CloneProgress, InFlightClone, LocalGallery } from './galleryTypes';
 
 // Renderer-side adapter that forwards every StorageAdapter call to the
 // Electron preload bridge. Used in the desktop app; on web the import is
@@ -203,6 +203,10 @@ export type UndoResult =
 
 export type PreloadGalleryBridge = {
   list(): Promise<LocalGallery[]>;
+  // Snapshot of clones currently running in main. Used by the
+  // galleries page on mount to rebuild progress UI when the user
+  // navigated away and came back mid-clone.
+  listInFlight(): Promise<InFlightClone[]>;
   resolve(id: string): Promise<LocalGallery | null>;
   clone(request: {
     owner: string;

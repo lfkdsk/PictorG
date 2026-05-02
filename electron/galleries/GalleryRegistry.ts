@@ -10,7 +10,11 @@ import simpleGit from 'simple-git';
 
 import { getStoredToken } from '../ipc/auth';
 import type { UndoResult } from '../ipc/contract';
-import type { CloneProgress, LocalGallery } from '../../src/core/storage/electron/galleryTypes';
+import type {
+  CloneProgress,
+  InFlightClone,
+  LocalGallery,
+} from '../../src/core/storage/electron/galleryTypes';
 
 const MANIFEST_FILE = 'galleries.json';
 const GALLERIES_DIR = 'galleries';
@@ -50,6 +54,12 @@ export class GalleryRegistry {
   private readonly manifestPath: string;
   private readonly galleriesRoot: string;
   private cache: LocalGallery[] | null = null;
+  // In-flight clones, keyed by galleryId. Lives only in memory: clones
+  // don't survive an app restart anyway (the simple-git child process
+  // dies with main), so reconstructing this from disk on boot would be
+  // misleading. Used by listInFlight() so a renderer that mounts after
+  // navigating back to /desktop/galleries can rebuild its progress UI.
+  private readonly inFlight = new Map<string, InFlightClone>();
 
   constructor() {
     const userData = app.getPath('userData');
@@ -116,6 +126,15 @@ export class GalleryRegistry {
 
     await fs.mkdir(this.galleriesRoot, { recursive: true });
 
+    // Register the in-flight entry BEFORE the long-running clone work
+    // so a renderer asking listInFlight() between request and the first
+    // progress event still sees this clone.
+    this.inFlight.set(id, {
+      galleryId: id,
+      fullName: request.fullName,
+      htmlUrl: request.htmlUrl,
+    });
+
     const token = getStoredToken();
     if (!token) {
       throw new Error(
@@ -140,7 +159,14 @@ export class GalleryRegistry {
           percent: typeof progress === 'number' ? progress : 0,
           processed,
           total,
+          fullName: request.fullName,
+          htmlUrl: request.htmlUrl,
         };
+        // Cache last progress on the in-flight entry so a renderer that
+        // mounts mid-clone via listInFlight() shows the right bar/stage
+        // even before the next progress tick lands.
+        const entry = this.inFlight.get(id);
+        if (entry) entry.lastProgress = evt;
         try {
           sender.send('gallery:clone-progress', evt);
         } catch {
@@ -154,6 +180,7 @@ export class GalleryRegistry {
     } catch (err) {
       // Clean up partial directory so retry works cleanly.
       await fs.rm(localPath, { recursive: true, force: true }).catch(() => {});
+      this.inFlight.delete(id);
       throw err;
     }
 
@@ -183,7 +210,16 @@ export class GalleryRegistry {
 
     const items = await this.readManifest();
     await this.writeManifest([...items, gallery]);
+    this.inFlight.delete(id);
     return gallery;
+  }
+
+  // Snapshot of clones currently running. Used by the galleries page on
+  // mount to rebuild its progress UI after a navigation away+back: the
+  // page's useState is gone but main kept cloning, so we reconstruct
+  // entries from this list and resume listening for progress events.
+  listInFlight(): InFlightClone[] {
+    return [...this.inFlight.values()].map((entry) => ({ ...entry }));
   }
 
   // --- remove / sync ---

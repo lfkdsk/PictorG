@@ -12,7 +12,11 @@ import type {
   WriteContent,
   WriteOptions,
 } from '../../src/core/storage/types';
-import type { CloneProgress, LocalGallery } from '../../src/core/storage/electron/galleryTypes';
+import type {
+  CloneProgress,
+  InFlightClone,
+  LocalGallery,
+} from '../../src/core/storage/electron/galleryTypes';
 
 export const CHANNELS = {
   pickGalleryDir: 'gallery:pick-dir',
@@ -47,6 +51,7 @@ export const CHANNELS = {
   },
   gallery: {
     list: 'gallery:list',
+    listInFlight: 'gallery:list-in-flight',
     resolve: 'gallery:resolve',
     clone: 'gallery:clone',
     remove: 'gallery:remove',
@@ -206,6 +211,7 @@ export interface PicgBridge {
   };
   gallery: {
     list(): Promise<LocalGallery[]>;
+    listInFlight(): Promise<InFlightClone[]>;
     resolve(id: string): Promise<LocalGallery | null>;
     clone(...args: GalleryCloneArgs): Promise<LocalGallery>;
     remove(id: string): Promise<void>;

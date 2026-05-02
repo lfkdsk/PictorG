@@ -11,6 +11,7 @@ import {
   type PicgBridge,
   type Repo,
 } from '@/core/storage';
+import type { InFlightClone } from '@/core/storage';
 import { getGitHubToken } from '@/lib/github';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 
@@ -59,8 +60,16 @@ export default function GalleriesPage() {
   const [bridge, setBridge] = useState<PicgBridge | null>(() => getPicgBridge());
   const [token, setToken] = useState<string | null>(null);
   const [galleries, setGalleries] = useState<LocalGallery[]>([]);
+  // Cloning state is intentionally a minimal shape — fullName is enough
+  // for the card title, the rest of the Repo metadata isn't read here.
+  // Keeping it loose lets us bootstrap an entry from either a user-driven
+  // pickRepo() call OR a CloneProgress event whose galleryId we don't
+  // yet know about (e.g. user navigated away mid-clone and came back).
   const [cloning, setCloning] = useState<
-    Record<string, { repo: Repo; progress?: CloneProgress; error?: string }>
+    Record<
+      string,
+      { fullName: string; htmlUrl?: string; progress?: CloneProgress; error?: string }
+    >
   >({});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [repos, setRepos] = useState<Repo[] | null>(null);
@@ -77,6 +86,33 @@ export default function GalleriesPage() {
   useEffect(() => {
     if (!bridge) return;
     bridge.gallery.list().then(setGalleries).catch((err) => setError(String(err)));
+    // Also fetch any clones currently running in main. The renderer's
+    // useState is local to the page instance, so navigating away while
+    // a clone is in progress strands the UI even though main keeps
+    // working. listInFlight() lets us rebuild the progress cards on
+    // remount; subsequent progress events will then update them.
+    bridge.gallery
+      .listInFlight()
+      .then((inFlight: InFlightClone[]) => {
+        if (inFlight.length === 0) return;
+        setCloning((prev) => {
+          const next = { ...prev };
+          for (const item of inFlight) {
+            // Don't clobber a fresher entry the user just added in this
+            // session — only seed ids we don't already know about.
+            if (next[item.galleryId]) continue;
+            next[item.galleryId] = {
+              fullName: item.fullName,
+              htmlUrl: item.htmlUrl,
+              progress: item.lastProgress,
+            };
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        /* listInFlight is a best-effort UI nicety; failure is non-fatal */
+      });
   }, [bridge]);
 
   useEffect(() => {
@@ -84,8 +120,22 @@ export default function GalleriesPage() {
     const unsub = bridge.gallery.onCloneProgress((evt) => {
       setCloning((prev) => {
         const entry = prev[evt.galleryId];
-        if (!entry) return prev;
-        return { ...prev, [evt.galleryId]: { ...entry, progress: evt } };
+        if (entry) {
+          return { ...prev, [evt.galleryId]: { ...entry, progress: evt } };
+        }
+        // No prior entry means the page mounted after a clone was
+        // already running and the listInFlight() seed hasn't landed
+        // yet (or the clone was started in another window). The event
+        // carries enough metadata to bootstrap a card on its own.
+        if (!evt.fullName) return prev;
+        return {
+          ...prev,
+          [evt.galleryId]: {
+            fullName: evt.fullName,
+            htmlUrl: evt.htmlUrl,
+            progress: evt,
+          },
+        };
       });
     });
     return unsub;
@@ -115,7 +165,10 @@ export default function GalleriesPage() {
     setPickerOpen(false);
     const [owner, name] = repo.full_name.split('/');
     const id = `${owner}__${name}`;
-    setCloning((prev) => ({ ...prev, [id]: { repo } }));
+    setCloning((prev) => ({
+      ...prev,
+      [id]: { fullName: repo.full_name, htmlUrl: repo.html_url },
+    }));
     setError(null);
 
     try {
@@ -256,7 +309,7 @@ export default function GalleriesPage() {
             const stage = entry.progress?.stage ?? 'other';
             return (
               <li key={`cloning:${id}`} className="card cloning">
-                <div className="card-title">{entry.repo.full_name}</div>
+                <div className="card-title">{entry.fullName}</div>
                 {entry.error ? (
                   <>
                     <div className="error-text">{entry.error}</div>

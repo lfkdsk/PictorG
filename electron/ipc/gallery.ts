@@ -28,6 +28,10 @@ export function registerGalleryIpcHandlers(): void {
     return getRegistry().list();
   });
 
+  ipcMain.handle(CHANNELS.gallery.listInFlight, async () => {
+    return getRegistry().listInFlight();
+  });
+
   ipcMain.handle(CHANNELS.gallery.resolve, async (_e, id: string) => {
     return getRegistry().resolve(id);
   });

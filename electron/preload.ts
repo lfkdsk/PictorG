@@ -48,6 +48,7 @@ const bridge: PicgBridge = {
 
   gallery: {
     list: () => ipcRenderer.invoke(CHANNELS.gallery.list),
+    listInFlight: () => ipcRenderer.invoke(CHANNELS.gallery.listInFlight),
     resolve: (id) => ipcRenderer.invoke(CHANNELS.gallery.resolve, id),
     clone: (...args) => ipcRenderer.invoke(CHANNELS.gallery.clone, ...args),
     remove: (id) => ipcRenderer.invoke(CHANNELS.gallery.remove, id),

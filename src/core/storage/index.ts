@@ -47,4 +47,5 @@ export type {
   LocalGallery,
   CloneProgress,
   CloneStage,
+  InFlightClone,
 } from './electron';
