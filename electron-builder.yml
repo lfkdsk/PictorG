@@ -187,6 +187,12 @@ publish:
   - provider: github
     owner: lfkdsk
     repo: PictorG
+    # electron-builder defaults to publishing as DRAFT releases, which
+    # were invisible to GitHub's `releases/latest` API → updater was
+    # reading latest-mac.yml from a stale published release (v0.0.2)
+    # and announcing 0.1.0 as "newer" than the actually-installed
+    # 0.1.7. Force published.
+    releaseType: release
 
 directories:
   output: dist-electron

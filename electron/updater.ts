@@ -17,6 +17,7 @@
 
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import semver from 'semver';
 
 import { CHANNELS } from './ipc/contract';
 
@@ -103,9 +104,19 @@ export function initAutoUpdater(): void {
       const r = await autoUpdater.checkForUpdates();
       const manifestVersion = r?.updateInfo?.version ?? null;
       const currentVersion = app.getVersion();
+      // Semver-aware: an update is "available" only when the manifest
+      // version is strictly *greater* than the running version. The
+      // earlier `manifestVersion !== currentVersion` check announced
+      // downgrades as updates — a real failure mode when GitHub's
+      // "latest release" auto-detection trails behind us (an old
+      // non-draft release wins over newer drafts, so its
+      // latest-mac.yml claims an older version is the latest).
       const updateAvailable =
         !!r?.downloadPromise ||
-        (manifestVersion != null && manifestVersion !== currentVersion);
+        (manifestVersion != null &&
+          semver.valid(manifestVersion) != null &&
+          semver.valid(currentVersion) != null &&
+          semver.gt(manifestVersion, currentVersion));
       return {
         ok: true,
         currentVersion,
