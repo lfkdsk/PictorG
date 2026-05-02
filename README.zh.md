@@ -11,6 +11,19 @@
 - 🎨 **主题切换** - 明暗主题随心选择
 - 📱 **响应式** - 完美适配手机和电脑
 
+## 🖥️ 桌面端（Beta）
+
+![PicG Desktop](design/desktop.png)
+
+基于 Electron 的 macOS 桌面端，与 Web 共用同一套页面，仅数据层不同：相册仓库 clone 到本地，编辑、压缩、改 YAML 全部走本地工作区，每次写入生成本地 commit，推送是独立动作。
+
+```bash
+npm run electron:dev   # 开发
+npm run dist:mac       # 打包 DMG（arm64 / x64）
+```
+
+详见 [`docs/desktop-development.md`](docs/desktop-development.md)，发布版本在 [Releases](https://github.com/lfkdsk/PicG/releases)。
+
 ## 🚀 快速开始
 
 ### 1. 安装依赖
