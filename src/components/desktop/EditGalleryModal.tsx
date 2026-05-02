@@ -214,6 +214,19 @@ export function EditGalleryModal({
         const next = meta
           ? parseConfig((await adapter.readFile(CONFIG_PATH)).text())
           : emptyResult();
+        // Diagnostic: log what modules the parser detected so users
+        // can paste it back when they hit "all unchecked even though
+        // CONFIG.yml clearly has nav entries". Strip when stable.
+        console.log('[picg edit-gallery] CONFIG.yml parsed', {
+          hasFile: !!meta,
+          basic: next.basic,
+          modules: next.modules.map((m) => ({
+            id: m.id,
+            link: m.link,
+            enabled: m.enabled,
+          })),
+          customNav: next.customNav.map(([label, v]) => ({ label, link: v?.link })),
+        });
         if (cancelled) return;
         setState(next);
         setBasic(next.basic);
