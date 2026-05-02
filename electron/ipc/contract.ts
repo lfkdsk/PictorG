@@ -173,6 +173,16 @@ export type CompressImageRequest = {
   // this flag (JPEG has no lossless mode). Set from the renderer's
   // CompressionSettings.lossless.
   lossless?: boolean;
+  // Encoder quality, 0–100. Applies to WebP lossy + JPEG. Ignored when
+  // lossless. Omitted = main-side default (75).
+  quality?: number;
+  // WebP encoder effort, 0–6. Omitted = main-side default (6). JPEG
+  // ignores this.
+  webpEffort?: number;
+  // Soft pixel cap in megapixels. null = no cap (equivalent to the
+  // lossless behaviour for cap purposes). Omitted = main-side default
+  // (50 MP).
+  maxMegapixels?: number | null;
 };
 
 export type CompressImageResult = {

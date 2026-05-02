@@ -68,6 +68,9 @@ export function useCompressIpc(): {
       outputFormat: settings.outputFormat,
       preserveExif: settings.preserveEXIF,
       lossless: settings.lossless,
+      quality: settings.quality,
+      webpEffort: settings.webpEffort,
+      maxMegapixels: settings.maxMegapixels,
     });
     return new File([result.buffer], result.name, { type: result.type });
   }, []);

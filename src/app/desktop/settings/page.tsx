@@ -94,28 +94,95 @@ export default function DesktopSettingsPage() {
             </div>
           </div>
 
-          <div className="row">
-            <div className="row-text">
-              <div className="row-title">Lossless mode</div>
-              <div className="row-desc">
-                Pixel-perfect WebP output — no quality loss, no resize cap.
-                Files are 5–10× larger than the default lossy mode but
-                typically still smaller than the source. JPEG output is
-                disabled while this is on.
+          <details className="advanced">
+            <summary>Advanced</summary>
+            <div className="advanced-body">
+              <div className="row">
+                <div className="row-text">
+                  <div className="row-title">Lossless mode</div>
+                  <div className="row-desc">
+                    Pixel-perfect WebP output — no quality loss, no resize cap.
+                    Files are 5–10× larger than the default lossy mode but
+                    typically still smaller than the source. JPEG output is
+                    disabled while this is on.
+                  </div>
+                </div>
+                <Toggle
+                  checked={settings.lossless}
+                  onChange={(v) =>
+                    update({
+                      lossless: v,
+                      // Lossless only makes sense for WebP — flip to webp on enable.
+                      ...(v ? { outputFormat: 'webp' as const } : {}),
+                    })
+                  }
+                  disabled={!settings.enableWebP}
+                />
+              </div>
+
+              <div className="row">
+                <div className="row-text">
+                  <div className="row-title">
+                    Quality <span className="row-value">{settings.quality}</span>
+                  </div>
+                  <div className="row-desc">
+                    Encoder quality for WebP-lossy and JPEG. 75 is the
+                    sweet-spot default. Below ~60 starts showing artefacts;
+                    above 85 file size grows fast for diminishing visible gain.
+                    Ignored in lossless mode.
+                  </div>
+                </div>
+                <Slider
+                  value={settings.quality}
+                  min={50}
+                  max={95}
+                  step={1}
+                  onChange={(v) => update({ quality: v })}
+                  disabled={!settings.enableWebP || settings.lossless}
+                />
+              </div>
+
+              <div className="row">
+                <div className="row-text">
+                  <div className="row-title">
+                    WebP effort <span className="row-value">{settings.webpEffort}</span>
+                  </div>
+                  <div className="row-desc">
+                    How hard libwebp searches for redundant patterns.
+                    6 = best size, ~30 % slower than 4. JPEG ignores
+                    this. Drop it if you're batch-uploading hundreds
+                    of photos and the encode wait bothers you.
+                  </div>
+                </div>
+                <Slider
+                  value={settings.webpEffort}
+                  min={0}
+                  max={6}
+                  step={1}
+                  onChange={(v) => update({ webpEffort: v })}
+                  disabled={!settings.enableWebP || settings.outputFormat !== 'webp'}
+                />
+              </div>
+
+              <div className="row">
+                <div className="row-text">
+                  <div className="row-title">Max output size</div>
+                  <div className="row-desc">
+                    Photos above this are scaled down before encoding;
+                    those at or below pass through at native resolution.
+                    50 MP catches medium-format and 100 MP mirrorless
+                    output without touching DSLRs or phones. "No cap"
+                    is equivalent to lossless mode for sizing purposes.
+                  </div>
+                </div>
+                <MaxMpSelect
+                  value={settings.maxMegapixels}
+                  onChange={(v) => update({ maxMegapixels: v })}
+                  disabled={!settings.enableWebP || settings.lossless}
+                />
               </div>
             </div>
-            <Toggle
-              checked={settings.lossless}
-              onChange={(v) =>
-                update({
-                  lossless: v,
-                  // Lossless only makes sense for WebP — flip to webp on enable.
-                  ...(v ? { outputFormat: 'webp' as const } : {}),
-                })
-              }
-              disabled={!settings.enableWebP}
-            />
-          </div>
+          </details>
         </section>
       </main>
 
@@ -178,6 +245,41 @@ export default function DesktopSettingsPage() {
           display: flex; flex-direction: column; gap: 6px;
           min-width: 200px;
         }
+
+        .row-value {
+          font-family: var(--mono);
+          font-size: 11px;
+          color: var(--text-muted);
+          margin-left: 6px;
+          letter-spacing: 0.04em;
+        }
+
+        .advanced {
+          border-top: 1px solid var(--border);
+          padding: 8px 0 0;
+          margin-top: 4px;
+        }
+        .advanced > summary {
+          font-family: var(--mono);
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          padding: 12px 0;
+          cursor: pointer;
+          list-style: none;
+          user-select: none;
+        }
+        .advanced > summary::-webkit-details-marker { display: none; }
+        .advanced > summary::before {
+          content: '›';
+          display: inline-block;
+          width: 14px;
+          color: var(--text-faint);
+          transition: transform 0.15s ease;
+        }
+        .advanced[open] > summary::before { transform: rotate(90deg); }
+        .advanced-body { padding-bottom: 8px; }
       `}</style>
     </div>
   );
@@ -225,6 +327,132 @@ function Toggle({
         .toggle.on .dot { transform: translateX(18px); background: var(--accent-text); }
       `}</style>
     </button>
+  );
+}
+
+function Slider({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="slider-wrap">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <div className="slider-bounds">
+        <span>{min}</span>
+        <span>{max}</span>
+      </div>
+      <style jsx>{`
+        .slider-wrap {
+          display: flex; flex-direction: column; gap: 2px;
+          min-width: 200px;
+        }
+        input[type='range'] {
+          appearance: none;
+          width: 100%;
+          height: 4px;
+          background: rgba(232, 220, 196, 0.12);
+          border-radius: 2px;
+          outline: none;
+          cursor: pointer;
+        }
+        input[type='range']:disabled { opacity: 0.4; cursor: not-allowed; }
+        input[type='range']::-webkit-slider-thumb {
+          appearance: none;
+          width: 14px; height: 14px;
+          border-radius: 50%;
+          background: var(--accent);
+          cursor: inherit;
+          border: 0;
+        }
+        .slider-bounds {
+          display: flex; justify-content: space-between;
+          font-family: var(--mono);
+          font-size: 10px;
+          color: var(--text-faint);
+          letter-spacing: 0.04em;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function MaxMpSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  disabled?: boolean;
+}) {
+  const options: Array<{ label: string; value: number | null }> = [
+    { label: '12 MP', value: 12 },
+    { label: '24 MP', value: 24 },
+    { label: '50 MP', value: 50 },
+    { label: '100 MP', value: 100 },
+    { label: 'No cap', value: null },
+  ];
+  return (
+    <div className="mp-options">
+      {options.map((opt) => {
+        const selected = value === opt.value;
+        return (
+          <button
+            key={opt.label}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+            className={`mp-opt ${selected ? 'selected' : ''}`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+      <style jsx>{`
+        .mp-options {
+          display: flex; gap: 4px; flex-wrap: wrap;
+          min-width: 200px;
+          justify-content: flex-end;
+        }
+        .mp-opt {
+          background: var(--bg);
+          border: 1px solid var(--border);
+          color: var(--text);
+          font-family: var(--mono);
+          font-size: 11px;
+          letter-spacing: 0.04em;
+          padding: 6px 10px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: border-color 0.15s ease, color 0.15s ease;
+        }
+        .mp-opt:hover:not(:disabled) { border-color: var(--border-strong); }
+        .mp-opt.selected {
+          border-color: var(--accent);
+          color: var(--accent);
+        }
+        .mp-opt:disabled { opacity: 0.4; cursor: not-allowed; }
+      `}</style>
+    </div>
   );
 }
 

@@ -29,12 +29,28 @@ import type { CompressImageRequest, CompressImageResult } from './contract';
 
 const execFileAsync = promisify(execFile);
 
-// Soft ceiling on output pixel count. Below it photos pass through at
-// native resolution (24 MP DSLR, 12 MP iPhone — no quality lost to
-// resampling). Above it (60 MP+ mirrorless / 100 MP medium-format)
-// the image is scaled down to exactly this — still way more than any
-// realistic display needs.
-const MAX_PIXELS = 50_000_000;
+// Defaults applied when the renderer's CompressImageRequest omits the
+// corresponding field. Keep these aligned with src/lib/settings.ts
+// DEFAULT_SETTINGS — this is the second seat of truth for
+// "what does PicG do out of the box?", load-bearing for older renderers
+// (or web path running with no localStorage entry yet) that send
+// requests without the advanced fields.
+const DEFAULT_QUALITY = 75;
+const DEFAULT_WEBP_EFFORT = 6;
+const DEFAULT_MAX_MP = 50;
+
+// Clamp helpers for encoder knobs. The renderer's settings page already
+// constrains the inputs, but values arrive over IPC from a process we
+// don't fully control (could be a stale build, web fallback, …) so
+// guard before handing to libvips. Out-of-range numbers either crash
+// sharp or silently no-op depending on the build.
+function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
+  if (value == null || !Number.isFinite(value)) return fallback;
+  const n = Math.round(value);
+  if (n < min) return min;
+  if (n > max) return max;
+  return n;
+}
 
 function basenameWithoutExt(name: string): string {
   const dot = name.lastIndexOf('.');
@@ -165,23 +181,38 @@ async function compressImage(
   // step can safely drop the Orientation tag without leaving a mismatch.
   pipeline = pipeline.rotate();
 
-  // Cap output at 50 MP. Below that, leave the image alone (24 MP DSLR,
-  // iPhone 12 MP, etc. all pass through untouched). Above it — typical
-  // 60–100 MP medium-format / high-res mirrorless cameras — scale the
-  // image down to exactly 50 MP, preserving aspect ratio.
+  // Resolve effective knob values now so the cap branch and the encode
+  // branch agree on the same numbers. `request.maxMegapixels === null`
+  // is a deliberate "no cap" signal from the user's Advanced settings;
+  // `undefined` means "use my default" — only one of the two should
+  // disable the cap.
+  const quality = clampInt(request.quality, 0, 100, DEFAULT_QUALITY);
+  const webpEffort = clampInt(request.webpEffort, 0, 6, DEFAULT_WEBP_EFFORT);
+  const maxPixels =
+    request.maxMegapixels === null
+      ? null
+      : (request.maxMegapixels ?? DEFAULT_MAX_MP) * 1_000_000;
+
+  // Cap output pixels per the resolved setting. Below the cap we leave
+  // the image alone (24 MP DSLR, iPhone 12 MP, etc. pass through
+  // untouched). Above it — typical 60–100 MP medium-format / high-res
+  // mirrorless cameras — scale the image down to exactly the cap,
+  // preserving aspect ratio.
   //
-  // Skipped entirely in lossless mode: the user's intent there is
-  // "preserve everything," and silently downsizing breaks that promise.
+  // Skipped entirely in lossless mode OR when maxPixels is null: both
+  // signal "preserve everything," and silently downsizing breaks that
+  // promise.
   const inWidth = inMeta.width ?? 0;
   const inHeight = inMeta.height ?? 0;
   const inPixels = inWidth * inHeight;
   if (
     !request.lossless &&
-    inPixels > MAX_PIXELS &&
+    maxPixels != null &&
+    inPixels > maxPixels &&
     inWidth > 0 &&
     inHeight > 0
   ) {
-    const scale = Math.sqrt(MAX_PIXELS / inPixels);
+    const scale = Math.sqrt(maxPixels / inPixels);
     const targetWidth = Math.round(inWidth * scale);
     pipeline = pipeline.resize({
       width: targetWidth,
@@ -195,7 +226,7 @@ async function compressImage(
 
   if (request.outputFormat === 'jpeg') {
     outBuffer = await pipeline
-      .jpeg({ mozjpeg: true, quality: 75 })
+      .jpeg({ mozjpeg: true, quality })
       .toBuffer();
     extension = '.jpg';
     mimeType = 'image/jpeg';
@@ -205,17 +236,13 @@ async function compressImage(
     // to find redundant patterns. Output is 5–10× larger than lossy
     // q=75 but typically still smaller than the source HEIC/JPEG.
     outBuffer = await pipeline
-      .webp({ lossless: true, effort: 6 })
+      .webp({ lossless: true, effort: webpEffort })
       .toBuffer();
     extension = '.webp';
     mimeType = 'image/webp';
   } else {
-    // effort: 6 is sharp's slowest/best WebP setting. ~30 % slower than
-    // the default 4, ~5 – 15 % smaller output for the same quality.
-    // For a desktop tool that compresses one photo at a time, the
-    // extra second is invisible — the bytes saved aren't.
     outBuffer = await pipeline
-      .webp({ quality: 75, effort: 6 })
+      .webp({ quality, effort: webpEffort })
       .toBuffer();
     extension = '.webp';
     mimeType = 'image/webp';

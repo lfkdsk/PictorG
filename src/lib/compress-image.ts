@@ -71,25 +71,35 @@ export const compressImage = async (file: File, customSettings?: CompressionSett
 
   const encoderType = settings.outputFormat === 'jpeg' ? 'mozJPEG' : 'webP';
 
-  // Build encoder options. Lossless WebP flips the lossless flag and
-  // ignores quality; squoosh's webP encoder option `lossless: 1` is the
-  // signal. JPEG ignores this — there's no JPEG lossless mode worth
-  // shipping, and the UI gates the toggle to webp output anyway.
-  let encoderOptions = { ...encoderMap[encoderType].meta.defaultOptions };
-  if (settings.lossless && encoderType === 'webP') {
-    encoderOptions = { ...encoderOptions, lossless: 1, exact: 1 };
+  // Build encoder options. Squoosh's encoder defaults already roughly
+  // match what we want (mozJPEG quality 75, WebP quality 75 effort 4).
+  // We override quality and — for WebP — effort with the user's
+  // Advanced settings so web matches the desktop's tunable behaviour.
+  // Lossless WebP flips the lossless flag and ignores quality; JPEG has
+  // no lossless mode and the UI gates the toggle to WebP output.
+  let encoderOptions: any = { ...encoderMap[encoderType].meta.defaultOptions };
+  encoderOptions.quality = settings.quality;
+  if (encoderType === 'webP') {
+    // squoosh exposes WebP `method` 0–6 as the effort knob (libwebp
+    // calls it "method", same numeric range as sharp's `effort`).
+    encoderOptions.method = settings.webpEffort;
+    if (settings.lossless) {
+      encoderOptions = { ...encoderOptions, lossless: 1, exact: 1 };
+    }
   }
 
-  // Mirror the desktop's 50 MP cap. Skipped in lossless mode so a user
-  // who explicitly opted into "preserve everything" doesn't get
-  // silently downsized. squoosh's resize processor takes width/height
-  // in target pixels and respects fitMethod='contain'.
+  // Mirror the desktop pixel cap. Skipped in lossless mode (user
+  // opted into "preserve everything") OR when the user removed the
+  // cap entirely via Advanced settings. squoosh's resize processor
+  // takes width/height in target pixels and respects fitMethod='contain'.
   let processorState = defaultProcessorState;
-  if (!settings.lossless) {
+  const maxPixels =
+    settings.maxMegapixels == null ? null : settings.maxMegapixels * 1_000_000;
+  if (!settings.lossless && maxPixels != null) {
     try {
       const dims = await readImageDimensions(file);
-      if (dims && dims.width * dims.height > 50_000_000) {
-        const scale = Math.sqrt(50_000_000 / (dims.width * dims.height));
+      if (dims && dims.width * dims.height > maxPixels) {
+        const scale = Math.sqrt(maxPixels / (dims.width * dims.height));
         processorState = {
           ...defaultProcessorState,
           resize: {
