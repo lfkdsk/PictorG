@@ -49,4 +49,8 @@ export function registerGalleryIpcHandlers(): void {
   ipcMain.handle(CHANNELS.gallery.status, async (_e, id: string) => {
     return getRegistry().status(id);
   });
+
+  ipcMain.handle(CHANNELS.gallery.undoLastCommit, async (_e, id: string) => {
+    return getRegistry().undoLastCommit(id);
+  });
 }

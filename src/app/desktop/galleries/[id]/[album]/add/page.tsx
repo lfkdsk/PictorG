@@ -14,6 +14,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
+import { fireUndoToast } from '@/components/desktop/UndoToast';
 
 type PhotoStatus = 'pending' | 'compressing' | 'ready' | 'error';
 
@@ -208,6 +209,10 @@ export default function AddPhotosPage() {
         fileEntries,
         `Add ${fileEntries.length} photo${fileEntries.length === 1 ? '' : 's'} to ${albumUrl}`
       );
+      fireUndoToast({
+        galleryId: gallery.id,
+        message: `Added ${fileEntries.length} photo${fileEntries.length === 1 ? '' : 's'} to ${albumUrl}`,
+      });
 
       const albumHref = `/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(albumUrl)}?t=${Date.now()}`;
       router.push(albumHref as any);

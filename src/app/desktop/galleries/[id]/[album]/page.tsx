@@ -15,6 +15,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
+import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp'];
 
@@ -141,6 +142,7 @@ export default function AlbumPage() {
   const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false);
   const [deleteAlbumBusy, setDeleteAlbumBusy] = useState(false);
   const [deleteAlbumError, setDeleteAlbumError] = useState<string | null>(null);
+  const [deleteAlbumConfirmText, setDeleteAlbumConfirmText] = useState('');
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [pushing, setPushing] = useState(false);
@@ -282,6 +284,12 @@ export default function AlbumPage() {
         paths,
         `Delete ${paths.length} photo${paths.length === 1 ? '' : 's'} from ${albumUrl}`
       );
+      if (gallery) {
+        fireUndoToast({
+          galleryId: gallery.id,
+          message: `Deleted ${paths.length} photo${paths.length === 1 ? '' : 's'}`,
+        });
+      }
       const entries = await adapter.listDirectory(albumUrl);
       setImages(entries.filter((e) => e.type === 'file' && isImage(e.name)));
       exitSelectMode();
@@ -437,6 +445,10 @@ export default function AlbumPage() {
         yamlText,
         `Update album: ${trimmedName}`
       );
+      fireUndoToast({
+        galleryId: gallery.id,
+        message: `Updated album: ${trimmedName}`,
+      });
 
       setAlbumMeta({
         name: trimmedName,
@@ -811,7 +823,11 @@ export default function AlbumPage() {
       {deleteAlbumOpen && (
         <div
           className="picg-modal-backdrop"
-          onClick={() => !deleteAlbumBusy && setDeleteAlbumOpen(false)}
+          onClick={() => {
+            if (deleteAlbumBusy) return;
+            setDeleteAlbumOpen(false);
+            setDeleteAlbumConfirmText('');
+          }}
         >
           <div className="picg-modal" onClick={(e) => e.stopPropagation()}>
             <header className="picg-modal-header">
@@ -820,7 +836,10 @@ export default function AlbumPage() {
               </div>
               <button
                 className="btn ghost icon"
-                onClick={() => setDeleteAlbumOpen(false)}
+                onClick={() => {
+                  setDeleteAlbumOpen(false);
+                  setDeleteAlbumConfirmText('');
+                }}
                 disabled={deleteAlbumBusy}
               >
                 ✕
@@ -836,6 +855,18 @@ export default function AlbumPage() {
                 Two commits land locally; auto-push is off unless
                 <code> PICG_AUTOPUSH=1</code>.
               </div>
+              <label className="picg-field">
+                <span>
+                  Type <code>{albumMeta?.name ?? albumUrl}</code> to confirm
+                </span>
+                <input
+                  value={deleteAlbumConfirmText}
+                  onChange={(e) => setDeleteAlbumConfirmText(e.target.value)}
+                  placeholder={albumMeta?.name ?? albumUrl}
+                  disabled={deleteAlbumBusy}
+                  autoFocus
+                />
+              </label>
               {deleteAlbumError && (
                 <div className="picg-banner">{deleteAlbumError}</div>
               )}
@@ -843,7 +874,10 @@ export default function AlbumPage() {
             <div className="picg-modal-actions">
               <button
                 className="btn ghost"
-                onClick={() => setDeleteAlbumOpen(false)}
+                onClick={() => {
+                  setDeleteAlbumOpen(false);
+                  setDeleteAlbumConfirmText('');
+                }}
                 disabled={deleteAlbumBusy}
               >
                 Cancel
@@ -851,7 +885,10 @@ export default function AlbumPage() {
               <button
                 className="btn primary danger"
                 onClick={deleteEntireAlbum}
-                disabled={deleteAlbumBusy}
+                disabled={
+                  deleteAlbumBusy ||
+                  deleteAlbumConfirmText.trim() !== (albumMeta?.name ?? albumUrl)
+                }
               >
                 {deleteAlbumBusy ? 'Deleting…' : 'Delete album'}
               </button>
@@ -860,6 +897,7 @@ export default function AlbumPage() {
         </div>
       )}
 
+      <UndoToastHost />
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 1200px; margin: 0 auto; }

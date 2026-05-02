@@ -13,6 +13,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
+import { fireUndoToast } from '@/components/desktop/UndoToast';
 import {
   loadAnnualSummary,
   openDeployedGalleryDb,
@@ -158,6 +159,10 @@ export default function AnnualSummaryPicker() {
     setSaveError(null);
     try {
       await saveAnnualSummary(adapter, year, selections);
+      fireUndoToast({
+        galleryId: gallery.id,
+        message: `Saved ${year} annual summary`,
+      });
       try {
         sessionStorage.removeItem(draftKey(galleryId, year));
       } catch {

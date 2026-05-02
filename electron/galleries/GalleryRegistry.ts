@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import simpleGit from 'simple-git';
 
 import { getStoredToken } from '../ipc/auth';
+import type { UndoResult } from '../ipc/contract';
 import type { CloneProgress, LocalGallery } from '../../src/core/storage/electron/galleryTypes';
 
 const MANIFEST_FILE = 'galleries.json';
@@ -225,7 +226,26 @@ export class GalleryRegistry {
     // back to the persisted origin URL (which we de-tokenized after clone)
     // — that path triggers the OS credential helper on every push, which
     // adds 5–30s of stall on macOS even when the keychain entry exists.
-    await git.push(this.tokenizedUrl(gallery), branch);
+    //
+    // The two `-c` flags fix two common GitHub transport failures we hit
+    // with photo galleries (commits that include many MB of binaries):
+    //   - http.postBuffer=524288000 (500 MB): default is 1 MB, way too
+    //     small. Symptom is HTTP 400 + "send-pack: unexpected disconnect
+    //     while reading sideband packet".
+    //   - http.version=HTTP/1.1: GitHub's HTTP/2 occasionally drops large
+    //     chunked uploads with the same sideband error. Forcing 1.1 is a
+    //     stable workaround that costs nothing here.
+    // Both are scoped to this single invocation via -c, so we don't
+    // mutate the repo's persisted .git/config.
+    await git.raw([
+      '-c',
+      'http.postBuffer=524288000',
+      '-c',
+      'http.version=HTTP/1.1',
+      'push',
+      this.tokenizedUrl(gallery),
+      branch,
+    ]);
   }
 
   // Build a one-shot https://oauth2:<token>@github.com/... URL. Never
@@ -241,6 +261,61 @@ export class GalleryRegistry {
       'https://',
       `https://oauth2:${encodeURIComponent(token)}@`
     );
+  }
+
+  // Roll back the last commit on the current branch. Used by the Undo
+  // toast that fires after each renderer-driven mutation.
+  //
+  // Refuses three cases:
+  //   - 'already-pushed': commit is at or below origin/<branch>.
+  //     Rewriting it now would mean force-push, which we never do
+  //     without explicit user intent.
+  //   - 'no-prior-commit': there's no HEAD~1 to reset to (fresh repo).
+  //   - 'dirty': uncommitted changes in the working tree. We'd lose them.
+  //
+  // Otherwise: `git reset --hard HEAD~1`. The commit's subject line is
+  // returned so the toast can surface "Reverted: <message>".
+  async undoLastCommit(id: string): Promise<UndoResult> {
+    const gallery = await this.resolve(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+    const git = simpleGit(gallery.localPath);
+
+    const status = await git.status();
+    if (!status.isClean()) return { ok: false, refused: 'dirty' };
+
+    // Confirm there's a commit before HEAD on this branch.
+    let priorSubject: string;
+    try {
+      priorSubject = (await git.raw(['log', '-1', '--pretty=%s', 'HEAD'])).trim();
+    } catch {
+      return { ok: false, refused: 'no-prior-commit' };
+    }
+    try {
+      await git.raw(['rev-parse', '--verify', 'HEAD~1']);
+    } catch {
+      return { ok: false, refused: 'no-prior-commit' };
+    }
+
+    // If origin/<branch> already contains HEAD, undoing means rewriting
+    // pushed history. Bail.
+    const branch = status.current ?? '';
+    if (branch) {
+      try {
+        const remoteSha = (
+          await git.raw(['rev-parse', `origin/${branch}`])
+        ).trim();
+        const isAncestor = await git
+          .raw(['merge-base', '--is-ancestor', 'HEAD', remoteSha])
+          .then(() => true)
+          .catch(() => false);
+        if (isAncestor) return { ok: false, refused: 'already-pushed' };
+      } catch {
+        // No origin/<branch> configured — that's fine, treat as un-pushed.
+      }
+    }
+
+    await git.raw(['reset', '--hard', 'HEAD~1']);
+    return { ok: true, reverted: priorSubject };
   }
 
   // ahead/behind reflect local-vs-last-known-remote, no fetch involved.

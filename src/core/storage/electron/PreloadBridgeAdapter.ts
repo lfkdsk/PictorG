@@ -193,6 +193,13 @@ export type PreloadAuthBridge = {
 // Bridge surface for the App-managed gallery library. The actual
 // implementation lives in main (electron/galleries/GalleryRegistry.ts) and
 // is exposed through preload.ts via contextBridge.
+// Result shape for gallery.undoLastCommit. Mirrors UndoResult in the
+// electron contract but defined here so renderer code doesn't need to
+// import from electron/.
+export type UndoResult =
+  | { ok: true; reverted: string }
+  | { ok: false; refused: 'already-pushed' | 'no-prior-commit' | 'dirty' };
+
 export type PreloadGalleryBridge = {
   list(): Promise<LocalGallery[]>;
   resolve(id: string): Promise<LocalGallery | null>;
@@ -208,6 +215,7 @@ export type PreloadGalleryBridge = {
   sync(id: string): Promise<LocalGallery>;
   push(id: string): Promise<void>;
   status(id: string): Promise<GalleryStatus>;
+  undoLastCommit(id: string): Promise<UndoResult>;
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
   // from a useEffect cleanup to avoid leaks.
   onCloneProgress(handler: (event: CloneProgress) => void): () => void;

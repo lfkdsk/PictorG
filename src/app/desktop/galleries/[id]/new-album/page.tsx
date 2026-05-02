@@ -15,6 +15,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
+import { fireUndoToast } from '@/components/desktop/UndoToast';
 
 const README_PATH = 'README.yml';
 
@@ -274,6 +275,10 @@ export default function NewAlbumPage() {
         fileEntries,
         `Add new album: ${form.name.trim()}`
       );
+      fireUndoToast({
+        galleryId: gallery.id,
+        message: `Created album: ${form.name.trim()}`,
+      });
 
       setPhase('done');
       // Hard nav: see the same comment in the album-delete handler.

@@ -15,6 +15,7 @@ import {
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { EditGalleryModal } from '@/components/desktop/EditGalleryModal';
+import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
 
 type Album = {
   name: string;        // YAML key — display name (often Chinese)
@@ -171,6 +172,7 @@ export default function GalleryDetailPage() {
       });
 
       await adapter.writeFile('README.yml', yamlText, 'Reorder albums');
+      if (gallery) fireUndoToast({ galleryId: gallery.id, message: 'Reordered albums' });
     } catch (err) {
       setReorderError(err instanceof Error ? err.message : String(err));
     }
@@ -198,6 +200,19 @@ export default function GalleryDetailPage() {
     if (!albums) return;
     setDraggingUrl(null);
     void persistOrder(albums);
+  }
+
+  // Hovering the trailing slot (rendered after the last card while
+  // dragging) snaps the dragged item to the end of the list. Same
+  // idempotent splice/insert pattern as handleDragOver.
+  function handleDragOverEnd() {
+    if (!albums || !draggingUrl) return;
+    const fromIdx = albums.findIndex((a) => a.url === draggingUrl);
+    if (fromIdx < 0 || fromIdx === albums.length - 1) return;
+    const next = [...albums];
+    const [moved] = next.splice(fromIdx, 1);
+    next.push(moved);
+    setAlbums(next);
   }
 
   async function handlePull() {
@@ -406,6 +421,27 @@ export default function GalleryDetailPage() {
                 />
               </li>
             ))}
+            {/* Trailing drop slot only renders during a drag, so the grid
+                doesn't have a phantom cell at rest. handleDragOverEnd
+                splices the dragged item to the end of the list. */}
+            {draggingUrl && (
+              <li
+                className="album-cell"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  handleDragOverEnd();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleDrop();
+                }}
+              >
+                <div className="album-end-drop" aria-hidden="true">
+                  Drop here to move to end
+                </div>
+              </li>
+            )}
           </ul>
         )}
 
@@ -422,6 +458,7 @@ export default function GalleryDetailPage() {
         onClose={() => setEditGalleryOpen(false)}
       />
 
+      <UndoToastHost />
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 1200px; margin: 0 auto; }
@@ -497,6 +534,25 @@ export default function GalleryDetailPage() {
           grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
         }
         .album-cell { display: contents; }
+        .album-end-drop {
+          aspect-ratio: 1 / 1;
+          border: 1px dashed var(--border-strong);
+          border-radius: 14px;
+          display: flex; align-items: center; justify-content: center;
+          padding: 16px;
+          text-align: center;
+          color: var(--text-faint);
+          font-family: var(--mono);
+          font-size: 11px;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+        }
+        .album-end-drop:hover {
+          border-color: var(--accent);
+          color: var(--accent);
+          background: rgba(255, 255, 255, 0.02);
+        }
       `}</style>
     </div>
   );

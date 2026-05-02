@@ -35,6 +35,7 @@ export const CHANNELS = {
     push: 'gallery:push',
     status: 'gallery:status',
     cloneProgress: 'gallery:clone-progress',
+    undoLastCommit: 'gallery:undo-last-commit',
   },
   storage: {
     getDefaultBranch: 'storage:get-default-branch',
@@ -122,6 +123,15 @@ export type GalleryStatus = {
   dirty: boolean;
 };
 
+// Returned by gallery.undoLastCommit. `reverted` is the subject line of
+// the commit we just rolled back, useful for the toast that confirms it.
+// `refused` means we declined to undo because the commit was already
+// pushed — undoing then would force-push, which we never do without
+// explicit consent.
+export type UndoResult =
+  | { ok: true; reverted: string }
+  | { ok: false; refused: 'already-pushed' | 'no-prior-commit' | 'dirty' };
+
 // Sent by main when picg://oauth/#... is dispatched to the app, after
 // extracting the fragment params. The renderer is responsible for
 // validating `state` against whatever it stored in sessionStorage when
@@ -163,6 +173,7 @@ export interface PicgBridge {
     sync(id: string): Promise<LocalGallery>;
     push(id: string): Promise<void>;
     status(id: string): Promise<GalleryStatus>;
+    undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
   };
   storage: {
