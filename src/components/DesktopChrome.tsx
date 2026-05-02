@@ -465,6 +465,65 @@ export function DesktopTheme() {
         letter-spacing: 0.05em;
         text-transform: uppercase;
       }
+      .picg-modal-wide { width: 600px; }
+      .picg-modal-actions {
+        display: flex; gap: 8px; justify-content: flex-end;
+        margin-top: 18px;
+      }
+
+      /* Form fields shared by modals + create-album page */
+      .picg-fields {
+        display: flex; flex-direction: column; gap: 14px;
+        overflow-y: auto;
+      }
+      .picg-field { display: flex; flex-direction: column; gap: 6px; }
+      .picg-field > span {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+      }
+      .picg-field input, .picg-field select {
+        padding: 10px 12px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      .picg-field input:focus, .picg-field select:focus { border-color: var(--accent); }
+      .picg-field input::placeholder { color: var(--text-faint); }
+      .picg-field input:disabled, .picg-field select:disabled { opacity: 0.6; }
+      .picg-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+      .picg-banner {
+        background: rgba(216, 90, 70, 0.12);
+        border: 1px solid rgba(216, 90, 70, 0.32);
+        color: #f0bfb6;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-family: var(--mono);
+      }
+      .picg-warning {
+        background: rgba(232, 160, 74, 0.10);
+        border: 1px solid rgba(232, 160, 74, 0.32);
+        color: var(--accent);
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .picg-warning code {
+        font-family: var(--mono);
+        background: rgba(0, 0, 0, 0.25);
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
     `}</style>
   );
 }

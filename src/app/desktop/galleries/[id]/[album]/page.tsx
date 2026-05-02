@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import yaml from 'js-yaml';
 
 import {
@@ -24,6 +24,17 @@ type AlbumMeta = {
   date?: string;
   style?: string;
   cover?: string;
+  location?: [number, number];
+};
+
+type EditForm = {
+  name: string;
+  url: string;
+  date: string;
+  style: string;
+  cover: string;
+  lat: string;
+  lng: string;
 };
 
 function isImage(name: string): boolean {
@@ -46,21 +57,45 @@ function findAlbum(yamlText: string, url: string): AlbumMeta | null {
   const data = yaml.load(yamlText, {
     schema: yaml.CORE_SCHEMA,
     json: true,
-  }) as Record<string, Omit<AlbumMeta, 'name'>> | null;
+  }) as Record<string, Record<string, unknown>> | null;
   if (!data) return null;
   for (const [name, fields] of Object.entries(data)) {
     if (fields?.url === url) {
+      const loc = Array.isArray(fields.location) && fields.location.length === 2
+        ? ([Number(fields.location[0]), Number(fields.location[1])] as [number, number])
+        : undefined;
       return {
         name: name.trim(),
-        ...fields,
-        date: typeof fields.date === 'string' ? fields.date : String(fields.date ?? ''),
+        url: String(fields.url),
+        date:
+          typeof fields.date === 'string'
+            ? fields.date
+            : fields.date != null
+              ? String(fields.date)
+              : undefined,
+        style: typeof fields.style === 'string' ? fields.style : undefined,
+        cover: typeof fields.cover === 'string' ? fields.cover : undefined,
+        location: loc && !Number.isNaN(loc[0]) && !Number.isNaN(loc[1]) ? loc : undefined,
       };
     }
   }
   return null;
 }
 
+function toEditForm(meta: AlbumMeta): EditForm {
+  return {
+    name: meta.name,
+    url: meta.url,
+    date: meta.date ?? '',
+    style: meta.style ?? 'fullscreen',
+    cover: meta.cover ?? '',
+    lat: meta.location ? String(meta.location[0]) : '',
+    lng: meta.location ? String(meta.location[1]) : '',
+  };
+}
+
 export default function AlbumPage() {
+  const router = useRouter();
   const params = useParams<{ id: string; album: string }>();
   const galleryId = params?.id;
   const albumUrl = useMemo(() => {
@@ -78,6 +113,11 @@ export default function AlbumPage() {
   const [images, setImages] = useState<DirectoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lightboxPath, setLightboxPath] = useState<string | null>(null);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -140,6 +180,114 @@ export default function AlbumPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxPath, images, albumUrl]);
 
+  function openEdit() {
+    if (!albumMeta) return;
+    setEditForm(toEditForm(albumMeta));
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  function closeEdit() {
+    setEditOpen(false);
+    setEditError(null);
+  }
+
+  async function saveEdit() {
+    if (!adapter || !editForm || !albumMeta || !gallery) return;
+
+    const trimmedName = editForm.name.trim();
+    const trimmedUrl = editForm.url.trim();
+    if (!trimmedName) return setEditError('Name is required.');
+    if (!trimmedUrl) return setEditError('URL slug is required.');
+    if (trimmedUrl.includes('/')) return setEditError('URL slug cannot contain "/".');
+    if (!editForm.date) return setEditError('Date is required.');
+    if (!editForm.cover.trim()) return setEditError('Cover path is required.');
+
+    let location: [number, number] | undefined;
+    if (editForm.lat || editForm.lng) {
+      const lat = parseFloat(editForm.lat);
+      const lng = parseFloat(editForm.lng);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) {
+        return setEditError('Location must be two numbers (or both empty).');
+      }
+      location = [lat, lng];
+    }
+
+    setSaving(true);
+    setEditError(null);
+    try {
+      const file = await adapter.readFile('README.yml');
+      const data = (yaml.load(file.text(), {
+        schema: yaml.CORE_SCHEMA,
+        json: true,
+      }) ?? {}) as Record<string, any>;
+
+      // If the user renamed the album, drop the old YAML key.
+      if (trimmedName !== albumMeta.name) {
+        delete data[albumMeta.name];
+        // And refuse to silently overwrite a different existing album with
+        // the same new name.
+        if (data[trimmedName]) {
+          throw new Error(`Another album already uses the name "${trimmedName}".`);
+        }
+      }
+      // Same guard for URL slug collisions.
+      if (trimmedUrl !== albumMeta.url) {
+        for (const [k, v] of Object.entries(data)) {
+          if (k !== albumMeta.name && k !== trimmedName && v?.url === trimmedUrl) {
+            throw new Error(`URL slug "${trimmedUrl}" is already used by album "${k}".`);
+          }
+        }
+      }
+
+      const entry: Record<string, unknown> = {
+        url: trimmedUrl,
+        date: editForm.date,
+        style: editForm.style,
+        cover: editForm.cover.trim(),
+      };
+      if (location) entry.location = location;
+      data[trimmedName] = entry;
+
+      const yamlText = yaml.dump(data, {
+        indent: 2,
+        lineWidth: -1,
+        noRefs: true,
+        quotingType: '"',
+        forceQuotes: false,
+      });
+
+      await adapter.writeFile(
+        'README.yml',
+        yamlText,
+        `Update album: ${trimmedName}`
+      );
+
+      setAlbumMeta({
+        name: trimmedName,
+        url: trimmedUrl,
+        date: editForm.date,
+        style: editForm.style,
+        cover: editForm.cover.trim(),
+        location,
+      });
+      setEditOpen(false);
+
+      // If the slug moved, the URL we're sitting on no longer matches the
+      // YAML — redirect to the new one. Files on disk stay where they are
+      // (renaming the directory is a separate, riskier op we don't do here).
+      if (trimmedUrl !== albumMeta.url) {
+        router.replace(
+          `/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(trimmedUrl)}` as any
+        );
+      }
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!bridge) {
     return (
       <div className="page">
@@ -175,21 +323,34 @@ export default function AlbumPage() {
         </Link>
 
         <section className="hero">
-          <h1>{albumMeta?.name ?? albumUrl}</h1>
-          <p className="meta">
-            {albumMeta?.date && <><span>{formatDate(albumMeta.date)}</span><span className="dot">•</span></>}
-            <span>
-              {images == null
-                ? 'loading…'
-                : `${images.length} image${images.length === 1 ? '' : 's'}`}
-            </span>
-            {albumMeta?.style && (
-              <>
-                <span className="dot">•</span>
-                <span>{albumMeta.style}</span>
-              </>
+          <div className="hero-row">
+            <div>
+              <h1>{albumMeta?.name ?? albumUrl}</h1>
+              <p className="meta">
+                {albumMeta?.date && <><span>{formatDate(albumMeta.date)}</span><span className="dot">•</span></>}
+                <span>
+                  {images == null
+                    ? 'loading…'
+                    : `${images.length} image${images.length === 1 ? '' : 's'}`}
+                </span>
+                {albumMeta?.style && (
+                  <>
+                    <span className="dot">•</span>
+                    <span>{albumMeta.style}</span>
+                  </>
+                )}
+                {albumMeta?.location && (
+                  <>
+                    <span className="dot">•</span>
+                    <span>{albumMeta.location[0].toFixed(4)}, {albumMeta.location[1].toFixed(4)}</span>
+                  </>
+                )}
+              </p>
+            </div>
+            {albumMeta && (
+              <button className="btn ghost" onClick={openEdit}>Edit</button>
             )}
-          </p>
+          </div>
         </section>
 
         {loadError && (
@@ -225,11 +386,110 @@ export default function AlbumPage() {
         />
       )}
 
+      {editOpen && editForm && albumMeta && (
+        <div className="picg-modal-backdrop" onClick={() => !saving && closeEdit()}>
+          <div className="picg-modal picg-modal-wide" onClick={(e) => e.stopPropagation()}>
+            <header className="picg-modal-header">
+              <h2>Edit album</h2>
+              <button className="btn ghost icon" onClick={closeEdit} disabled={saving}>✕</button>
+            </header>
+            <div className="picg-fields">
+              <label className="picg-field">
+                <span>Name</span>
+                <input
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  disabled={saving}
+                />
+              </label>
+              <div className="picg-field-row">
+                <label className="picg-field">
+                  <span>URL slug</span>
+                  <input
+                    value={editForm.url}
+                    onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
+                    disabled={saving}
+                  />
+                </label>
+                <label className="picg-field">
+                  <span>Date</span>
+                  <input
+                    type="date"
+                    value={editForm.date}
+                    onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                    disabled={saving}
+                  />
+                </label>
+              </div>
+              <label className="picg-field">
+                <span>Style</span>
+                <select
+                  value={editForm.style}
+                  onChange={(e) => setEditForm({ ...editForm, style: e.target.value })}
+                  disabled={saving}
+                >
+                  <option value="fullscreen">Fullscreen</option>
+                  <option value="default">Default</option>
+                </select>
+              </label>
+              <label className="picg-field">
+                <span>Cover (path from repo root)</span>
+                <input
+                  value={editForm.cover}
+                  onChange={(e) => setEditForm({ ...editForm, cover: e.target.value })}
+                  placeholder={`${albumMeta.url}/somefile.webp`}
+                  disabled={saving}
+                />
+              </label>
+              <div className="picg-field-row">
+                <label className="picg-field">
+                  <span>Latitude</span>
+                  <input
+                    value={editForm.lat}
+                    onChange={(e) => setEditForm({ ...editForm, lat: e.target.value })}
+                    placeholder="optional"
+                    disabled={saving}
+                  />
+                </label>
+                <label className="picg-field">
+                  <span>Longitude</span>
+                  <input
+                    value={editForm.lng}
+                    onChange={(e) => setEditForm({ ...editForm, lng: e.target.value })}
+                    placeholder="optional"
+                    disabled={saving}
+                  />
+                </label>
+              </div>
+              {editForm.url.trim() !== albumMeta.url && editForm.url.trim() && (
+                <div className="picg-warning">
+                  Changing the URL slug leaves files in <code>{albumMeta.url}/</code> orphaned —
+                  the directory is not renamed automatically.
+                </div>
+              )}
+              {editError && <div className="picg-banner">{editError}</div>}
+            </div>
+            <div className="picg-modal-actions">
+              <button className="btn ghost" onClick={closeEdit} disabled={saving}>
+                Cancel
+              </button>
+              <button className="btn primary" onClick={saveEdit} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 1200px; margin: 0 auto; }
 
         .hero { margin-bottom: 24px; }
+        .hero-row {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 24px;
+        }
         .hero h1 {
           font-family: var(--serif);
           font-size: 40px;
