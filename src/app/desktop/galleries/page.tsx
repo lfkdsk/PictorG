@@ -167,6 +167,23 @@ export default function GalleriesPage() {
   useEffect(() => {
     if (!bridge) return;
     const unsub = bridge.gallery.onMigrateProgress((evt) => {
+      // Migration is now triggered from the gallery detail page, but we
+      // still listen here so a user navigating back mid-flight can see
+      // progress on the card. On terminal phases, refetch the manifest
+      // so the storage badge / size flip to the post-migration state,
+      // and clear the in-flight entry so the card stops showing "100%
+      // moving to iCloud" indefinitely.
+      if (evt.phase === 'done' || evt.phase === 'error') {
+        bridge.gallery
+          .list()
+          .then((fresh) => setGalleries(fresh))
+          .catch(() => {});
+        setMigrating((prev) => {
+          const { [evt.galleryId]: _removed, ...rest } = prev;
+          return rest;
+        });
+        return;
+      }
       setMigrating((prev) => {
         const entry = prev[evt.galleryId] ?? { direction: evt.direction };
         return { ...prev, [evt.galleryId]: { ...entry, progress: evt } };
@@ -519,17 +536,6 @@ export default function GalleriesPage() {
                 ) : (
                   <div className="card-actions">
                     <button onClick={() => handleSync(g.id)} className="btn ghost small">Sync</button>
-                    <button
-                      onClick={() =>
-                        handleMigrate(
-                          g.id,
-                          g.storage === 'icloud' ? 'to-internal' : 'to-icloud'
-                        )
-                      }
-                      className="btn ghost small"
-                    >
-                      {g.storage === 'icloud' ? 'Move to internal' : 'Move to iCloud'}
-                    </button>
                     <button onClick={() => handleRemove(g.id)} className="btn ghost small">Remove</button>
                   </div>
                 )}

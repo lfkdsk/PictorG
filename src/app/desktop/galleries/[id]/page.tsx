@@ -9,6 +9,8 @@ import {
   PreloadBridgeAdapter,
   getPicgBridge,
   type LocalGallery,
+  type MigrateDirection,
+  type MigrateProgress,
   type PicgBridge,
   type StorageAdapter,
 } from '@/core/storage';
@@ -77,6 +79,12 @@ export default function GalleryDetailPage() {
   const [pushing, setPushing] = useState(false);
   const [ahead, setAhead] = useState(0);
   const [opError, setOpError] = useState<string | null>(null);
+  // Storage migration (move between userData and iCloud Drive). Lives
+  // on the detail page rather than the list card so it's harder to
+  // mis-tap — every successful trigger has gone through "open the
+  // gallery, open the menu, click confirm" first. MigrateState type is
+  // declared at module scope alongside MigrateModal.
+  const [migrateState, setMigrateState] = useState<MigrateState | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -388,6 +396,24 @@ export default function GalleryDetailPage() {
                       >
                         Shrink oversized photos
                       </Link>
+                      <div className="picg-menu-divider" />
+                      <button
+                        type="button"
+                        className="picg-menu-item"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          setMigrateState({
+                            phase: 'confirm',
+                            direction:
+                              gallery.storage === 'icloud' ? 'to-internal' : 'to-icloud',
+                          });
+                        }}
+                        role="menuitem"
+                      >
+                        {gallery.storage === 'icloud'
+                          ? 'Move to internal storage…'
+                          : 'Move to iCloud Drive…'}
+                      </button>
                     </div>
                   </>
                 )}
@@ -473,6 +499,19 @@ export default function GalleryDetailPage() {
         open={editGalleryOpen}
         onClose={() => setEditGalleryOpen(false)}
       />
+
+      {migrateState && bridge && (
+        <MigrateModal
+          state={migrateState}
+          gallery={gallery}
+          bridge={bridge}
+          onUpdate={(next) => setMigrateState(next)}
+          onResolved={(updated) => {
+            // Refresh local gallery state with the post-migration shape.
+            setGallery(updated);
+          }}
+        />
+      )}
 
       <UndoToastHost />
       <DesktopTheme />
@@ -665,6 +704,273 @@ function AlbumCard({
           {album.location[0].toFixed(4)}, {album.location[1].toFixed(4)}
         </div>
       )}
+    </div>
+  );
+}
+
+type MigrateState =
+  | { phase: 'confirm'; direction: MigrateDirection }
+  | { phase: 'running'; direction: MigrateDirection; progress: MigrateProgress | null }
+  | { phase: 'error'; direction: MigrateDirection; error: string }
+  | { phase: 'done'; direction: MigrateDirection };
+
+function MigrateModal({
+  state,
+  gallery,
+  bridge,
+  onUpdate,
+  onResolved,
+}: {
+  state: MigrateState;
+  gallery: LocalGallery;
+  bridge: PicgBridge;
+  onUpdate: (next: MigrateState | null) => void;
+  onResolved: (updated: LocalGallery) => void;
+}) {
+  // Subscribe to migrate-progress events for the duration of the
+  // running phase. Effect re-runs when phase changes; cleanup ensures
+  // we don't leak subscriptions across phase transitions.
+  useEffect(() => {
+    if (state.phase !== 'running') return;
+    const unsub = bridge.gallery.onMigrateProgress((evt) => {
+      if (evt.galleryId !== gallery.id) return;
+      onUpdate({ ...state, progress: evt });
+    });
+    return () => unsub();
+  }, [state, bridge, gallery.id, onUpdate]);
+
+  const isToICloud = state.direction === 'to-icloud';
+  const targetLabel = isToICloud ? 'iCloud Drive' : 'internal storage';
+  const fromLabel = isToICloud ? 'internal storage' : 'iCloud Drive';
+
+  const startMigrate = async () => {
+    onUpdate({ phase: 'running', direction: state.direction, progress: null });
+    try {
+      const updated = await bridge.gallery.migrate(gallery.id, state.direction);
+      onResolved(updated);
+      onUpdate({ phase: 'done', direction: state.direction });
+    } catch (err) {
+      onUpdate({
+        phase: 'error',
+        direction: state.direction,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const close = () => onUpdate(null);
+  // Block backdrop close while running so the user doesn't accidentally
+  // dismiss the in-flight progress; other phases close on backdrop click.
+  const onBackdropClick = () => {
+    if (state.phase === 'running') return;
+    close();
+  };
+
+  return (
+    <div className="picg-modal-backdrop" onClick={onBackdropClick} role="dialog">
+      <div
+        className="picg-modal picg-migrate-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {state.phase === 'confirm' && (
+          <>
+            <header className="picg-modal-header">
+              <div className="picg-modal-title-wrap">
+                <h2>{isToICloud ? 'Move to iCloud Drive' : 'Move to internal storage'}</h2>
+              </div>
+              <button
+                type="button"
+                className="btn ghost icon"
+                onClick={close}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </header>
+            <div className="body">
+              <p>
+                This will copy <strong>{gallery.fullName}</strong> from {fromLabel} to {targetLabel}.
+                {isToICloud ? (
+                  <> Once done, your other Macs signed into the same iCloud account will see this gallery automatically.</>
+                ) : (
+                  <> Once done, the gallery will live only on this Mac and stop syncing.</>
+                )}
+              </p>
+              <p className="warn">
+                The copy can take several minutes for a large gallery (every photo is duplicated, then the original is removed). PicG can stay open during the move.
+              </p>
+            </div>
+            <div className="picg-modal-actions">
+              <button type="button" className="btn ghost" onClick={close}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`btn primary${isToICloud ? '' : ' danger'}`}
+                onClick={startMigrate}
+              >
+                {isToICloud ? 'Move to iCloud' : 'Move to internal'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {state.phase === 'running' && (
+          <>
+            <header className="picg-modal-header">
+              <div className="picg-modal-title-wrap">
+                <h2>Moving to {targetLabel}…</h2>
+              </div>
+            </header>
+            <div className="body">
+              <MigrateProgressView progress={state.progress} />
+              <p className="warn">
+                Don&apos;t quit PicG while this runs. You can keep using other galleries.
+              </p>
+            </div>
+          </>
+        )}
+
+        {state.phase === 'error' && (
+          <>
+            <header className="picg-modal-header">
+              <div className="picg-modal-title-wrap">
+                <h2>Move failed</h2>
+              </div>
+              <button
+                type="button"
+                className="btn ghost icon"
+                onClick={close}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </header>
+            <div className="body">
+              <div className="picg-banner">{state.error}</div>
+            </div>
+            <div className="picg-modal-actions">
+              <button type="button" className="btn ghost" onClick={close}>
+                Close
+              </button>
+              <button type="button" className="btn primary" onClick={startMigrate}>
+                Retry
+              </button>
+            </div>
+          </>
+        )}
+
+        {state.phase === 'done' && (
+          <>
+            <header className="picg-modal-header">
+              <div className="picg-modal-title-wrap">
+                <h2>Moved to {targetLabel}</h2>
+              </div>
+              <button
+                type="button"
+                className="btn ghost icon"
+                onClick={close}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </header>
+            <div className="body">
+              <p>
+                <strong>{gallery.fullName}</strong> now lives in {targetLabel}.
+              </p>
+            </div>
+            <div className="picg-modal-actions">
+              <button type="button" className="btn primary" onClick={close}>
+                Done
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <style jsx>{`
+        .body {
+          padding: 4px 0 16px;
+          font-size: 14px;
+          color: var(--text);
+          line-height: 1.5;
+        }
+        .body p { margin: 0 0 12px; }
+        .body p:last-child { margin-bottom: 0; }
+        .body .warn {
+          font-family: var(--mono);
+          font-size: 12px;
+          color: var(--text-muted);
+          letter-spacing: 0.02em;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function MigrateProgressView({ progress }: { progress: MigrateProgress | null }) {
+  const total = progress?.total ?? 0;
+  const processed = progress?.processed ?? 0;
+  const pct = total > 0 ? (processed / total) * 100 : 0;
+  const phase = progress?.phase ?? 'counting';
+  const phaseLabel =
+    phase === 'counting' ? 'Counting files'
+    : phase === 'copying' ? 'Copying'
+    : phase === 'verifying' ? 'Verifying'
+    : phase === 'cleanup' ? 'Cleaning up source'
+    : phase === 'done' ? 'Done'
+    : phase === 'error' ? 'Error'
+    : phase;
+  return (
+    <div className="prog">
+      <div className="head">
+        <span>{phaseLabel}</span>
+        {total > 0 && (
+          <span className="count">
+            {processed.toLocaleString()} / {total.toLocaleString()} files
+          </span>
+        )}
+      </div>
+      <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+      {progress?.current && (
+        <div className="cur" title={progress.current}>
+          {progress.current}
+        </div>
+      )}
+      <style jsx>{`
+        .prog { margin: 8px 0 12px; }
+        .head {
+          display: flex; justify-content: space-between; align-items: baseline;
+          gap: 12px; margin-bottom: 8px;
+          font-family: var(--mono);
+          font-size: 12px;
+          color: var(--text);
+          letter-spacing: 0.04em;
+        }
+        .count { color: var(--text-muted); }
+        .bar {
+          height: 4px;
+          background: var(--border);
+          border-radius: 2px;
+          overflow: hidden;
+        }
+        .bar span {
+          display: block;
+          height: 100%;
+          background: var(--accent);
+          transition: width 0.25s ease;
+        }
+        .cur {
+          margin-top: 10px;
+          font-family: var(--mono);
+          font-size: 11px;
+          color: var(--text-muted);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      `}</style>
     </div>
   );
 }
