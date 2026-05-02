@@ -479,15 +479,12 @@ function AlbumCard({
             <span>{album.style}</span>
           </>
         )}
-        {album.location && (
-          <>
-            <span className="picg-album-meta-dot">•</span>
-            <span>
-              {album.location[0].toFixed(4)}, {album.location[1].toFixed(4)}
-            </span>
-          </>
-        )}
       </div>
+      {album.location && (
+        <div className="picg-album-meta">
+          {album.location[0].toFixed(4)}, {album.location[1].toFixed(4)}
+        </div>
+      )}
     </div>
   );
 }
