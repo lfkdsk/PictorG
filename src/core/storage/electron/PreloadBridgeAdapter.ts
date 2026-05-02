@@ -161,6 +161,23 @@ export type GalleryStatus = {
   dirty: boolean;
 };
 
+export type CompressImageRequest = {
+  bytes: Uint8Array;
+  originalName: string;
+  outputFormat: 'webp' | 'jpeg';
+  preserveExif: boolean;
+};
+
+export type CompressImageResult = {
+  buffer: Uint8Array;
+  name: string;
+  type: string;
+};
+
+export type PreloadCompressBridge = {
+  image(request: CompressImageRequest): Promise<CompressImageResult>;
+};
+
 // Bridge surface for the App-managed gallery library. The actual
 // implementation lives in main (electron/galleries/GalleryRegistry.ts) and
 // is exposed through preload.ts via contextBridge.
@@ -187,6 +204,7 @@ export type PreloadGalleryBridge = {
 
 export type PicgBridge = {
   pickGalleryDir(): Promise<string | null>;
+  compress: PreloadCompressBridge;
   gallery: PreloadGalleryBridge;
   storage: PreloadStorageBridge;
 };

@@ -5,9 +5,12 @@ export {
 export type {
   PreloadStorageBridge,
   PreloadGalleryBridge,
+  PreloadCompressBridge,
   PreloadBridgeAdapterConfig,
   PicgBridge,
   GalleryStatus,
+  CompressImageRequest,
+  CompressImageResult,
 } from './PreloadBridgeAdapter';
 export type {
   LocalGallery,

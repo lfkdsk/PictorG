@@ -13,7 +13,7 @@ import {
   type StorageAdapter,
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
-import { useCompressWorker } from '@/components/desktop/useCompressWorker';
+import { useCompressIpc } from '@/components/desktop/useCompressIpc';
 
 type PhotoStatus = 'pending' | 'compressing' | 'ready' | 'error';
 
@@ -59,7 +59,7 @@ export default function AddPhotosPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const inFlightRef = useRef<Set<string>>(new Set());
-  const { compress } = useCompressWorker();
+  const { compress } = useCompressIpc();
 
   useEffect(() => {
     setBridge(getPicgBridge());

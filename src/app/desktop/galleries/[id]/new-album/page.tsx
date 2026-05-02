@@ -14,7 +14,7 @@ import {
   type StorageAdapter,
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
-import { useCompressWorker } from '@/components/desktop/useCompressWorker';
+import { useCompressIpc } from '@/components/desktop/useCompressIpc';
 
 const README_PATH = 'README.yml';
 
@@ -83,7 +83,7 @@ export default function NewAlbumPage() {
 
   // Compression queue: serial, one file at a time, won't restart in-flight items.
   const inFlightRef = useRef<Set<string>>(new Set());
-  const { compress } = useCompressWorker();
+  const { compress } = useCompressIpc();
 
   useEffect(() => {
     setBridge(getPicgBridge());

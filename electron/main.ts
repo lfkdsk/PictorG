@@ -6,6 +6,7 @@
 import { app, BrowserWindow, session } from 'electron';
 import * as path from 'node:path';
 
+import { registerCompressIpcHandlers } from './ipc/compress';
 import { registerGalleryIpcHandlers } from './ipc/gallery';
 import { registerStorageIpcHandlers } from './ipc/storage';
 
@@ -84,6 +85,7 @@ app.whenReady().then(async () => {
 
   registerGalleryIpcHandlers();
   registerStorageIpcHandlers();
+  registerCompressIpcHandlers();
   createWindow();
 
   app.on('activate', () => {

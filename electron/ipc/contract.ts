@@ -16,6 +16,9 @@ import type { CloneProgress, LocalGallery } from '../../src/core/storage/electro
 
 export const CHANNELS = {
   pickGalleryDir: 'gallery:pick-dir',
+  compress: {
+    image: 'compress:image',
+  },
   gallery: {
     list: 'gallery:list',
     resolve: 'gallery:resolve',
@@ -113,8 +116,24 @@ export type GalleryStatus = {
   dirty: boolean;
 };
 
+export type CompressImageRequest = {
+  bytes: Uint8Array;
+  originalName: string;
+  outputFormat: 'webp' | 'jpeg';
+  preserveExif: boolean;
+};
+
+export type CompressImageResult = {
+  buffer: Uint8Array;
+  name: string;
+  type: string;
+};
+
 export interface PicgBridge {
   pickGalleryDir(): Promise<string | null>;
+  compress: {
+    image(request: CompressImageRequest): Promise<CompressImageResult>;
+  };
   gallery: {
     list(): Promise<LocalGallery[]>;
     resolve(id: string): Promise<LocalGallery | null>;

@@ -12,6 +12,10 @@ import type { CloneProgress } from '../src/core/storage/electron/galleryTypes';
 const bridge: PicgBridge = {
   pickGalleryDir: () => ipcRenderer.invoke(CHANNELS.pickGalleryDir),
 
+  compress: {
+    image: (request) => ipcRenderer.invoke(CHANNELS.compress.image, request),
+  },
+
   gallery: {
     list: () => ipcRenderer.invoke(CHANNELS.gallery.list),
     resolve: (id) => ipcRenderer.invoke(CHANNELS.gallery.resolve, id),
