@@ -271,6 +271,12 @@ export function DesktopTheme() {
         background: var(--bg-card-hover);
         color: var(--text);
       }
+      .picg-icon-btn:disabled { opacity: 0.6; cursor: wait; }
+      .picg-icon-btn .picg-spin {
+        display: inline-block;
+        animation: picg-spin 0.9s linear infinite;
+      }
+      @keyframes picg-spin { to { transform: rotate(360deg); } }
 
       /* Anchor for popovers — wrap the trigger + menu in this so the
          absolute-positioned menu lines up under the trigger. */

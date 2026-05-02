@@ -142,6 +142,8 @@ export default function AlbumPage() {
   const [deleteAlbumBusy, setDeleteAlbumBusy] = useState(false);
   const [deleteAlbumError, setDeleteAlbumError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -207,6 +209,24 @@ export default function AlbumPage() {
   function exitSelectMode() {
     setSelectMode(false);
     setSelected(new Set());
+  }
+
+  async function handleSync() {
+    if (!bridge || !gallery || syncing) return;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      await bridge.gallery.sync(gallery.id);
+      // git pull may have changed README.yml / album files / sizeBytes;
+      // hard nav reloads against fresh state.
+      const href = `/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(albumUrl ?? '')}?t=${Date.now()}`;
+      if (typeof window !== 'undefined') {
+        window.location.assign(href);
+      }
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : String(err));
+      setSyncing(false);
+    }
   }
 
   function toggleSelected(name: string) {
@@ -483,6 +503,16 @@ export default function AlbumPage() {
                 >
                   + Add photos
                 </Link>
+                <button
+                  type="button"
+                  className="picg-icon-btn"
+                  aria-label="Sync from remote"
+                  title="Sync from remote (git pull)"
+                  onClick={handleSync}
+                  disabled={syncing}
+                >
+                  <span className={syncing ? 'picg-spin' : ''}>↻</span>
+                </button>
                 <div className="picg-menu-anchor">
                   <button
                     type="button"
@@ -547,6 +577,10 @@ export default function AlbumPage() {
             )}
           </div>
         </section>
+
+        {syncError && (
+          <div className="banner">Sync failed: {syncError}</div>
+        )}
 
         {loadError && (
           <div className="banner">{loadError}</div>

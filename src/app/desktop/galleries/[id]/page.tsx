@@ -72,6 +72,8 @@ export default function GalleryDetailPage() {
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [editGalleryOpen, setEditGalleryOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -180,6 +182,24 @@ export default function GalleryDetailPage() {
     void persistOrder(albums);
   }
 
+  async function handleSync() {
+    if (!bridge || !gallery || syncing) return;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      await bridge.gallery.sync(gallery.id);
+      // git pull may have changed README.yml / images / sizeBytes / etc.
+      // Hard nav reloads the page against fresh state.
+      const href = `/desktop/galleries/${encodeURIComponent(gallery.id)}?t=${Date.now()}`;
+      if (typeof window !== 'undefined') {
+        window.location.assign(href);
+      }
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : String(err));
+      setSyncing(false);
+    }
+  }
+
   if (!bridge) {
     return (
       <div className="page">
@@ -239,6 +259,16 @@ export default function GalleryDetailPage() {
               >
                 + New album
               </Link>
+              <button
+                type="button"
+                className="picg-icon-btn"
+                aria-label="Sync from remote"
+                title="Sync from remote (git pull)"
+                onClick={handleSync}
+                disabled={syncing}
+              >
+                <span className={syncing ? 'picg-spin' : ''}>↻</span>
+              </button>
               <div className="picg-menu-anchor">
                 <button
                   type="button"
@@ -300,6 +330,12 @@ export default function GalleryDetailPage() {
         {reorderError && (
           <div className="banner">
             <span>Reorder failed: {reorderError}</span>
+          </div>
+        )}
+
+        {syncError && (
+          <div className="banner">
+            <span>Sync failed: {syncError}</span>
           </div>
         )}
 
