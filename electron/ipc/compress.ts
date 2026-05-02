@@ -29,6 +29,13 @@ import type { CompressImageRequest, CompressImageResult } from './contract';
 
 const execFileAsync = promisify(execFile);
 
+// Soft ceiling on output pixel count. Below it photos pass through at
+// native resolution (24 MP DSLR, 12 MP iPhone — no quality lost to
+// resampling). Above it (60 MP+ mirrorless / 100 MP medium-format)
+// the image is scaled down to exactly this — still way more than any
+// realistic display needs.
+const MAX_PIXELS = 50_000_000;
+
 function basenameWithoutExt(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.substring(0, dot) : name;
@@ -158,16 +165,44 @@ async function compressImage(
   // step can safely drop the Orientation tag without leaving a mismatch.
   pipeline = pipeline.rotate();
 
+  // Cap output at 50 MP. Below that, leave the image alone (24 MP DSLR,
+  // iPhone 12 MP, etc. all pass through untouched). Above it — typical
+  // 60–100 MP medium-format / high-res mirrorless cameras — scale the
+  // image down to exactly 50 MP, preserving aspect ratio. 50 MP is
+  // ~8660×5773 at 3:2; even on a Retina 5K display full-screen view
+  // (5120 × 2880) you've got room to zoom. The output is dramatically
+  // smaller (a 100 MP source roughly halves to 50 MP, with a ~50 %
+  // file-size drop on top of WebP's normal compression).
+  const inWidth = inMeta.width ?? 0;
+  const inHeight = inMeta.height ?? 0;
+  const inPixels = inWidth * inHeight;
+  if (inPixels > MAX_PIXELS && inWidth > 0 && inHeight > 0) {
+    const scale = Math.sqrt(MAX_PIXELS / inPixels);
+    const targetWidth = Math.round(inWidth * scale);
+    pipeline = pipeline.resize({
+      width: targetWidth,
+      withoutEnlargement: true,
+    });
+  }
+
   let outBuffer: Buffer;
   let extension: string;
   let mimeType: string;
 
   if (request.outputFormat === 'jpeg') {
-    outBuffer = await pipeline.jpeg({ mozjpeg: true, quality: 75 }).toBuffer();
+    outBuffer = await pipeline
+      .jpeg({ mozjpeg: true, quality: 75 })
+      .toBuffer();
     extension = '.jpg';
     mimeType = 'image/jpeg';
   } else {
-    outBuffer = await pipeline.webp({ quality: 75 }).toBuffer();
+    // effort: 6 is sharp's slowest/best WebP setting. ~30 % slower than
+    // the default 4, ~5 – 15 % smaller output for the same quality.
+    // For a desktop tool that compresses one photo at a time, the
+    // extra second is invisible — the bytes saved aren't.
+    outBuffer = await pipeline
+      .webp({ quality: 75, effort: 6 })
+      .toBuffer();
     extension = '.webp';
     mimeType = 'image/webp';
   }
