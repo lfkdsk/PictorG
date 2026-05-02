@@ -19,6 +19,9 @@ const bridge: PicgBridge = {
       ipcRenderer.on(CHANNELS.auth.oauthCallback, listener);
       return () => ipcRenderer.off(CHANNELS.auth.oauthCallback, listener);
     },
+    saveToken: (token) => ipcRenderer.invoke(CHANNELS.auth.saveToken, token),
+    getToken: () => ipcRenderer.invoke(CHANNELS.auth.getToken),
+    clearToken: () => ipcRenderer.invoke(CHANNELS.auth.clearToken),
   },
 
   compress: {

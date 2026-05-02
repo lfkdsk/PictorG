@@ -19,6 +19,9 @@ export const CHANNELS = {
   auth: {
     openExternal: 'auth:open-external',
     oauthCallback: 'auth:oauth-callback',
+    saveToken: 'auth:save-token',
+    getToken: 'auth:get-token',
+    clearToken: 'auth:clear-token',
   },
   compress: {
     image: 'compress:image',
@@ -54,7 +57,6 @@ export type GalleryCloneArgs = [
     htmlUrl: string;
     cloneUrl: string;
     defaultBranch?: string;
-    token: string;
   },
 ];
 
@@ -146,6 +148,9 @@ export interface PicgBridge {
   auth: {
     openExternal(url: string): Promise<void>;
     onOAuthCallback(handler: (payload: OAuthCallbackPayload) => void): () => void;
+    saveToken(token: string): Promise<void>;
+    getToken(): Promise<string | null>;
+    clearToken(): Promise<void>;
   };
   compress: {
     image(request: CompressImageRequest): Promise<CompressImageResult>;

@@ -52,6 +52,13 @@ export default function DesktopTokenLoginPage() {
       }
       const user = (await userRes.json()) as GitHubUser;
       storeAuthData(trimmed, user);
+      if (bridge) {
+        try {
+          await bridge.auth.saveToken(trimmed);
+        } catch {
+          /* keychain failures don't block sign-in */
+        }
+      }
 
       window.location.assign('/desktop/galleries');
     } catch (err) {

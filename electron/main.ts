@@ -8,6 +8,7 @@ import * as path from 'node:path';
 
 import { CHANNELS } from './ipc/contract';
 import type { OAuthCallbackPayload } from './ipc/contract';
+import { registerAuthIpcHandlers } from './ipc/auth';
 import { registerCompressIpcHandlers } from './ipc/compress';
 import { registerGalleryIpcHandlers } from './ipc/gallery';
 import { registerStorageIpcHandlers } from './ipc/storage';
@@ -182,6 +183,7 @@ app.whenReady().then(async () => {
   registerGalleryIpcHandlers();
   registerStorageIpcHandlers();
   registerCompressIpcHandlers();
+  registerAuthIpcHandlers();
 
   // OAuth IPC is small enough to inline rather than its own module.
   ipcMain.handle(CHANNELS.auth.openExternal, async (_e, url: string) => {

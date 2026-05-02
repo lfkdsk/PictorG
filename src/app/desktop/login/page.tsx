@@ -64,6 +64,13 @@ export default function DesktopLoginPage() {
         }
         const user = (await userRes.json()) as GitHubUser;
         storeAuthData(payload.token, user);
+        // Persist to OS keychain too — durable across localStorage clears
+        // and where the main process reads it for clone IPC.
+        try {
+          await bridge.auth.saveToken(payload.token);
+        } catch {
+          /* keychain failures don't block sign-in */
+        }
         // Hard nav, same reason as the rest of the desktop flows: avoids
         // Next dev webpack runtime drift on cross-route SPA push.
         window.location.assign('/desktop/galleries');

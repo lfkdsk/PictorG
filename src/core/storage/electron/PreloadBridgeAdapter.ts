@@ -185,6 +185,9 @@ export type OAuthCallbackPayload =
 export type PreloadAuthBridge = {
   openExternal(url: string): Promise<void>;
   onOAuthCallback(handler: (payload: OAuthCallbackPayload) => void): () => void;
+  saveToken(token: string): Promise<void>;
+  getToken(): Promise<string | null>;
+  clearToken(): Promise<void>;
 };
 
 // Bridge surface for the App-managed gallery library. The actual
@@ -200,7 +203,6 @@ export type PreloadGalleryBridge = {
     htmlUrl: string;
     cloneUrl: string;
     defaultBranch?: string;
-    token: string;
   }): Promise<LocalGallery>;
   remove(id: string): Promise<void>;
   sync(id: string): Promise<LocalGallery>;

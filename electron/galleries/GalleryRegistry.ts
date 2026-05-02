@@ -8,6 +8,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import simpleGit from 'simple-git';
 
+import { getStoredToken } from '../ipc/auth';
 import type { CloneProgress, LocalGallery } from '../../src/core/storage/electron/galleryTypes';
 
 const MANIFEST_FILE = 'galleries.json';
@@ -42,10 +43,6 @@ export type CloneRequest = {
   htmlUrl: string;
   cloneUrl: string;       // https://github.com/owner/repo.git
   defaultBranch?: string;
-  // GitHub OAuth/PAT token for private-repo clone. Embedded in the clone URL
-  // for the duration of the clone, then stripped from .git/config so it isn't
-  // persisted on disk. Spike-grade — Keychain integration is a later pass.
-  token: string;
 };
 
 export class GalleryRegistry {
@@ -118,11 +115,18 @@ export class GalleryRegistry {
 
     await fs.mkdir(this.galleriesRoot, { recursive: true });
 
+    const token = getStoredToken();
+    if (!token) {
+      throw new Error(
+        'Not signed in — open Pictor and complete GitHub sign-in before cloning.'
+      );
+    }
     // Token-bearing URL for the clone. We immediately strip it from the
-    // remote afterwards so the token doesn't persist in .git/config.
+    // remote afterwards so the token doesn't persist in .git/config. The
+    // token itself comes from the OS keychain, never from the renderer.
     const tokenUrl = request.cloneUrl.replace(
       'https://',
-      `https://oauth2:${encodeURIComponent(request.token)}@`
+      `https://oauth2:${encodeURIComponent(token)}@`
     );
 
     const git = simpleGit({

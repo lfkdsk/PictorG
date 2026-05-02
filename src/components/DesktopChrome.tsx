@@ -11,6 +11,7 @@ import Link from 'next/link';
 
 import { getGitHubToken, logout } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
+import { getPicgBridge } from '@/core/storage';
 
 // Topbar accepts an optional `actions` slot rendered between the brand
 // and the user pill. Per-page chrome (sync icons, etc.) goes here so
@@ -19,28 +20,49 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Cached user is only populated by the OAuth callback at "/", so PAT-login
-  // sessions land here with no avatar. Fall back to the GitHub /user endpoint
-  // when the cache is empty but a token exists — same dance as Navbar.
+  // Boot order:
+  //   1. Cached gh_user → avatar pill straight away.
+  //   2. localStorage gh_token → fetch /user, populate avatar.
+  //   3. (desktop only) macOS Keychain → restore localStorage if it was
+  //      cleared, then go through (2). The Keychain copy is the durable
+  //      source of truth; localStorage is the renderer's fast cache.
   useEffect(() => {
-    const stored = getStoredUser();
-    if (stored?.avatar_url) {
-      setUser(stored);
-      return;
-    }
-
-    const token = getGitHubToken();
-    if (!token) return;
-
     let cancelled = false;
-    fetch('https://api.github.com/user', {
-      headers: {
-        Authorization: `token ${token}`,
-        Accept: 'application/vnd.github+json',
-      },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
+    (async () => {
+      const stored = getStoredUser();
+      if (stored?.avatar_url) {
+        setUser(stored);
+        return;
+      }
+
+      let token = getGitHubToken();
+
+      if (!token) {
+        const bridge = getPicgBridge();
+        if (bridge) {
+          try {
+            const fromKeychain = await bridge.auth.getToken();
+            if (fromKeychain && !cancelled) {
+              localStorage.setItem('gh_token', fromKeychain);
+              token = fromKeychain;
+            }
+          } catch {
+            /* keychain unavailable; fall through */
+          }
+        }
+      }
+
+      if (!token || cancelled) return;
+
+      try {
+        const r = await fetch('https://api.github.com/user', {
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: 'application/vnd.github+json',
+          },
+        });
+        if (!r.ok || cancelled) return;
+        const data = await r.json();
         if (cancelled || !data?.avatar_url) return;
         setUser(data as GitHubUser);
         try {
@@ -48,12 +70,28 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         } catch {
           /* quota / disabled — non-fatal */
         }
-      })
-      .catch(() => {});
+      } catch {
+        /* network error during /user fetch is non-fatal here */
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function handleLogout() {
+    // Clear the durable Keychain copy first so a stale token can't
+    // "restore" us into a logged-in state on next launch.
+    const bridge = getPicgBridge();
+    if (bridge) {
+      try {
+        await bridge.auth.clearToken();
+      } catch {
+        /* ignore */
+      }
+    }
+    logout();
+  }
 
   return (
     <header className="topbar">
@@ -88,7 +126,7 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
                 <button
                   type="button"
                   className="picg-menu-item"
-                  onClick={() => logout()}
+                  onClick={handleLogout}
                   role="menuitem"
                 >
                   Sign out

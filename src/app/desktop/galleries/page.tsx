@@ -120,7 +120,6 @@ export default function GalleriesPage() {
         fullName: repo.full_name,
         htmlUrl: repo.html_url,
         cloneUrl: cloneUrlFor(repo.full_name),
-        token,
       });
       const fresh = await bridge.gallery.list();
       setGalleries(fresh);
