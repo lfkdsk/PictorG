@@ -35,7 +35,7 @@ PicG 是一个基于GitHub的现代化相册管理系统，让你可以轻松地
 
 ## 🖥️ 桌面端（Beta）
 
-![PicG Desktop](design/desktop.png)
+![PicG Desktop](design/desktop.jpg)
 
 PicG 还提供基于 Electron 的 macOS 桌面端，与 Web 端共享同一套 UI 和业务逻辑，差异只在数据层：
 

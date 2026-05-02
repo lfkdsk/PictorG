@@ -13,7 +13,7 @@
 
 ## 🖥️ 桌面端（Beta）
 
-![PicG Desktop](design/desktop.png)
+![PicG Desktop](design/desktop.jpg)
 
 基于 Electron 的 macOS 桌面端，与 Web 共用同一套页面，仅数据层不同：相册仓库 clone 到本地，编辑、压缩、改 YAML 全部走本地工作区，每次写入生成本地 commit，推送是独立动作。
 
