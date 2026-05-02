@@ -14,7 +14,7 @@ import {
   type StorageAdapter,
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
-import { compressImage } from '@/lib/compress-image';
+import { useCompressWorker } from '@/components/desktop/useCompressWorker';
 
 const README_PATH = 'README.yml';
 
@@ -83,6 +83,7 @@ export default function NewAlbumPage() {
 
   // Compression queue: serial, one file at a time, won't restart in-flight items.
   const inFlightRef = useRef<Set<string>>(new Set());
+  const { compress } = useCompressWorker();
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -112,7 +113,7 @@ export default function NewAlbumPage() {
       prev.map((p) => (p.id === next.id ? { ...p, status: 'compressing' } : p))
     );
 
-    compressImage(next.original)
+    compress(next.original)
       .then((compressed) => {
         setPhotos((prev) =>
           prev.map((p) =>
@@ -132,7 +133,7 @@ export default function NewAlbumPage() {
       .finally(() => {
         inFlightRef.current.delete(next.id);
       });
-  }, [photos]);
+  }, [photos, compress]);
 
   // Free object URLs on unmount.
   useEffect(() => {
