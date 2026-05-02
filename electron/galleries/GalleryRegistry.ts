@@ -210,6 +210,31 @@ export class GalleryRegistry {
     await this.writeManifest(next);
     return updated;
   }
+
+  async push(id: string): Promise<void> {
+    const gallery = await this.resolve(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+    await simpleGit(gallery.localPath).push();
+  }
+
+  // ahead/behind reflect local-vs-last-known-remote, no fetch involved.
+  // After a `push` ahead resets to 0; after a `sync` behind resets to 0.
+  // dirty signals an uncommitted working-tree change (rare here since the
+  // adapter always commits, but useful for debugging).
+  async status(
+    id: string
+  ): Promise<{ current: string; ahead: number; behind: number; dirty: boolean }> {
+    const gallery = await this.resolve(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+    const git = simpleGit(gallery.localPath);
+    const s = await git.status();
+    return {
+      current: s.current ?? '',
+      ahead: s.ahead,
+      behind: s.behind,
+      dirty: !s.isClean(),
+    };
+  }
 }
 
 function normalizeStage(stage: string): CloneProgress['stage'] {

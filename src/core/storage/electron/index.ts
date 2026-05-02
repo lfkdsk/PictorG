@@ -7,6 +7,7 @@ export type {
   PreloadGalleryBridge,
   PreloadBridgeAdapterConfig,
   PicgBridge,
+  GalleryStatus,
 } from './PreloadBridgeAdapter';
 export type {
   LocalGallery,

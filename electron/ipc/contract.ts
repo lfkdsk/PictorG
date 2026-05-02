@@ -22,6 +22,8 @@ export const CHANNELS = {
     clone: 'gallery:clone',
     remove: 'gallery:remove',
     sync: 'gallery:sync',
+    push: 'gallery:push',
+    status: 'gallery:status',
     cloneProgress: 'gallery:clone-progress',
   },
   storage: {
@@ -104,6 +106,13 @@ export type StorageDeleteDirectoryArgs = [
   options?: BranchOptions,
 ];
 
+export type GalleryStatus = {
+  current: string;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+};
+
 export interface PicgBridge {
   pickGalleryDir(): Promise<string | null>;
   gallery: {
@@ -112,6 +121,8 @@ export interface PicgBridge {
     clone(...args: GalleryCloneArgs): Promise<LocalGallery>;
     remove(id: string): Promise<void>;
     sync(id: string): Promise<LocalGallery>;
+    push(id: string): Promise<void>;
+    status(id: string): Promise<GalleryStatus>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
   };
   storage: {

@@ -72,8 +72,10 @@ export default function GalleryDetailPage() {
   const [reorderError, setReorderError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [editGalleryOpen, setEditGalleryOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [ahead, setAhead] = useState(0);
+  const [opError, setOpError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -90,6 +92,22 @@ export default function GalleryDetailPage() {
       }
     });
   }, [bridge, id]);
+
+  // Pull the unpushed-commit count once the gallery is resolved. Cheap
+  // (local git status, no fetch); refreshed after push.
+  useEffect(() => {
+    if (!bridge || !gallery) return;
+    let cancelled = false;
+    bridge.gallery
+      .status(gallery.id)
+      .then((s) => {
+        if (!cancelled) setAhead(s.ahead);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, gallery]);
 
   useEffect(() => {
     if (!adapter) return;
@@ -182,10 +200,10 @@ export default function GalleryDetailPage() {
     void persistOrder(albums);
   }
 
-  async function handleSync() {
-    if (!bridge || !gallery || syncing) return;
-    setSyncing(true);
-    setSyncError(null);
+  async function handlePull() {
+    if (!bridge || !gallery || pulling) return;
+    setPulling(true);
+    setOpError(null);
     try {
       await bridge.gallery.sync(gallery.id);
       // git pull may have changed README.yml / images / sizeBytes / etc.
@@ -195,8 +213,25 @@ export default function GalleryDetailPage() {
         window.location.assign(href);
       }
     } catch (err) {
-      setSyncError(err instanceof Error ? err.message : String(err));
-      setSyncing(false);
+      setOpError(err instanceof Error ? err.message : String(err));
+      setPulling(false);
+    }
+  }
+
+  async function handlePush() {
+    if (!bridge || !gallery || pushing) return;
+    setPushing(true);
+    setOpError(null);
+    try {
+      await bridge.gallery.push(gallery.id);
+      // Push doesn't change local content; just refresh the unpushed
+      // counter so the badge updates without a full page reload.
+      const s = await bridge.gallery.status(gallery.id);
+      setAhead(s.ahead);
+    } catch (err) {
+      setOpError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -262,12 +297,23 @@ export default function GalleryDetailPage() {
               <button
                 type="button"
                 className="picg-icon-btn"
-                aria-label="Sync from remote"
-                title="Sync from remote (git pull)"
-                onClick={handleSync}
-                disabled={syncing}
+                aria-label="Pull from remote"
+                title="Pull from remote (git pull)"
+                onClick={handlePull}
+                disabled={pulling || pushing}
               >
-                <span className={syncing ? 'picg-spin' : ''}>↻</span>
+                <span className={pulling ? 'picg-spin' : ''}>↓</span>
+              </button>
+              <button
+                type="button"
+                className="picg-icon-btn"
+                aria-label={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} to remote` : 'Push to remote'}
+                title={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} (git push)` : 'Push to remote (git push)'}
+                onClick={handlePush}
+                disabled={pulling || pushing}
+              >
+                <span className={pushing ? 'picg-spin' : ''}>↑</span>
+                {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
               </button>
               <div className="picg-menu-anchor">
                 <button
@@ -333,9 +379,9 @@ export default function GalleryDetailPage() {
           </div>
         )}
 
-        {syncError && (
+        {opError && (
           <div className="banner">
-            <span>Sync failed: {syncError}</span>
+            <span>{opError}</span>
           </div>
         )}
 

@@ -142,8 +142,10 @@ export default function AlbumPage() {
   const [deleteAlbumBusy, setDeleteAlbumBusy] = useState(false);
   const [deleteAlbumError, setDeleteAlbumError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [ahead, setAhead] = useState(0);
+  const [opError, setOpError] = useState<string | null>(null);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -160,6 +162,22 @@ export default function AlbumPage() {
       }
     });
   }, [bridge, galleryId]);
+
+  // Pull the unpushed-commit count once the gallery is resolved. Cheap
+  // local-only git status; refreshed after push.
+  useEffect(() => {
+    if (!bridge || !gallery) return;
+    let cancelled = false;
+    bridge.gallery
+      .status(gallery.id)
+      .then((s) => {
+        if (!cancelled) setAhead(s.ahead);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, gallery]);
 
   useEffect(() => {
     if (!adapter || !albumUrl) return;
@@ -211,21 +229,34 @@ export default function AlbumPage() {
     setSelected(new Set());
   }
 
-  async function handleSync() {
-    if (!bridge || !gallery || syncing) return;
-    setSyncing(true);
-    setSyncError(null);
+  async function handlePull() {
+    if (!bridge || !gallery || pulling) return;
+    setPulling(true);
+    setOpError(null);
     try {
       await bridge.gallery.sync(gallery.id);
-      // git pull may have changed README.yml / album files / sizeBytes;
-      // hard nav reloads against fresh state.
       const href = `/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(albumUrl ?? '')}?t=${Date.now()}`;
       if (typeof window !== 'undefined') {
         window.location.assign(href);
       }
     } catch (err) {
-      setSyncError(err instanceof Error ? err.message : String(err));
-      setSyncing(false);
+      setOpError(err instanceof Error ? err.message : String(err));
+      setPulling(false);
+    }
+  }
+
+  async function handlePush() {
+    if (!bridge || !gallery || pushing) return;
+    setPushing(true);
+    setOpError(null);
+    try {
+      await bridge.gallery.push(gallery.id);
+      const s = await bridge.gallery.status(gallery.id);
+      setAhead(s.ahead);
+    } catch (err) {
+      setOpError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -506,12 +537,23 @@ export default function AlbumPage() {
                 <button
                   type="button"
                   className="picg-icon-btn"
-                  aria-label="Sync from remote"
-                  title="Sync from remote (git pull)"
-                  onClick={handleSync}
-                  disabled={syncing}
+                  aria-label="Pull from remote"
+                  title="Pull from remote (git pull)"
+                  onClick={handlePull}
+                  disabled={pulling || pushing}
                 >
-                  <span className={syncing ? 'picg-spin' : ''}>↻</span>
+                  <span className={pulling ? 'picg-spin' : ''}>↓</span>
+                </button>
+                <button
+                  type="button"
+                  className="picg-icon-btn"
+                  aria-label={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} to remote` : 'Push to remote'}
+                  title={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} (git push)` : 'Push to remote (git push)'}
+                  onClick={handlePush}
+                  disabled={pulling || pushing}
+                >
+                  <span className={pushing ? 'picg-spin' : ''}>↑</span>
+                  {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
                 </button>
                 <div className="picg-menu-anchor">
                   <button
@@ -578,8 +620,8 @@ export default function AlbumPage() {
           </div>
         </section>
 
-        {syncError && (
-          <div className="banner">Sync failed: {syncError}</div>
+        {opError && (
+          <div className="banner">{opError}</div>
         )}
 
         {loadError && (

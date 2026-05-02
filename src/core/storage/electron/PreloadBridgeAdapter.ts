@@ -154,6 +154,13 @@ export class PreloadBridgeAdapter implements StorageAdapter {
   }
 }
 
+export type GalleryStatus = {
+  current: string;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+};
+
 // Bridge surface for the App-managed gallery library. The actual
 // implementation lives in main (electron/galleries/GalleryRegistry.ts) and
 // is exposed through preload.ts via contextBridge.
@@ -171,6 +178,8 @@ export type PreloadGalleryBridge = {
   }): Promise<LocalGallery>;
   remove(id: string): Promise<void>;
   sync(id: string): Promise<LocalGallery>;
+  push(id: string): Promise<void>;
+  status(id: string): Promise<GalleryStatus>;
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
   // from a useEffect cleanup to avoid leaks.
   onCloneProgress(handler: (event: CloneProgress) => void): () => void;

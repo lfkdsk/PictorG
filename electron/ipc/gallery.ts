@@ -41,4 +41,12 @@ export function registerGalleryIpcHandlers(): void {
   ipcMain.handle(CHANNELS.gallery.sync, async (_e, id: string) => {
     return getRegistry().sync(id);
   });
+
+  ipcMain.handle(CHANNELS.gallery.push, async (_e, id: string) => {
+    await getRegistry().push(id);
+  });
+
+  ipcMain.handle(CHANNELS.gallery.status, async (_e, id: string) => {
+    return getRegistry().status(id);
+  });
 }

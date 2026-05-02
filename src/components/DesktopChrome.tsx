@@ -272,11 +272,30 @@ export function DesktopTheme() {
         color: var(--text);
       }
       .picg-icon-btn:disabled { opacity: 0.6; cursor: wait; }
+      .picg-icon-btn { position: relative; }
       .picg-icon-btn .picg-spin {
         display: inline-block;
         animation: picg-spin 0.9s linear infinite;
       }
       @keyframes picg-spin { to { transform: rotate(360deg); } }
+      .picg-badge-count {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 5px;
+        background: var(--accent);
+        color: var(--accent-text);
+        font-family: var(--mono);
+        font-size: 9px;
+        font-weight: 700;
+        line-height: 16px;
+        text-align: center;
+        border-radius: 999px;
+        border: 1px solid var(--bg);
+        box-sizing: border-box;
+      }
 
       /* Anchor for popovers — wrap the trigger + menu in this so the
          absolute-positioned menu lines up under the trigger. */

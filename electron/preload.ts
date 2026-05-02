@@ -18,6 +18,8 @@ const bridge: PicgBridge = {
     clone: (...args) => ipcRenderer.invoke(CHANNELS.gallery.clone, ...args),
     remove: (id) => ipcRenderer.invoke(CHANNELS.gallery.remove, id),
     sync: (id) => ipcRenderer.invoke(CHANNELS.gallery.sync, id),
+    push: (id) => ipcRenderer.invoke(CHANNELS.gallery.push, id),
+    status: (id) => ipcRenderer.invoke(CHANNELS.gallery.status, id),
     onCloneProgress: (handler: (event: CloneProgress) => void) => {
       const listener = (_e: unknown, evt: CloneProgress) => handler(evt);
       ipcRenderer.on(CHANNELS.gallery.cloneProgress, listener);

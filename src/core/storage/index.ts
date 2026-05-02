@@ -38,6 +38,7 @@ export type {
   PreloadGalleryBridge,
   PreloadBridgeAdapterConfig,
   PicgBridge,
+  GalleryStatus,
   LocalGallery,
   CloneProgress,
   CloneStage,
