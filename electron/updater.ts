@@ -65,7 +65,7 @@ export function initAutoUpdater(): void {
     log('update-not-available');
   });
   autoUpdater.on('download-progress', (progress) => {
-    broadcast('update-download-progress', {
+    broadcastChan(CHANNELS.updater.downloadProgress, {
       percent: Math.round(progress?.percent ?? 0),
     });
   });

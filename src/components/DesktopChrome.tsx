@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { clearGitHubToken, getGitHubToken } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
 import { getPicgBridge } from '@/core/storage';
+import { InfoToastHost, fireInfoToast } from '@/components/desktop/InfoToast';
 
 // Topbar accepts an optional `actions` slot rendered between the brand
 // and the user pill. Per-page chrome (sync icons, etc.) goes here so
@@ -22,6 +23,12 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
   const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(
     null
   );
+  // null when no download is in flight, 0–100 while bytes stream in.
+  // Stays at the last reported value until the "downloaded" event
+  // flips us to the install pill — the visible progress vanishing
+  // for a moment between the last percent and the pill would feel
+  // glitchy.
+  const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
 
   // Subscribe to updater "downloaded" broadcasts from the main process,
   // AND replay any update that was already downloaded before this
@@ -42,10 +49,20 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
       .catch(() => {
         /* old preload without getPending — fall back to live event */
       });
-    const off = bridge.updater.onUpdateDownloaded((info) => {
+    const offDownloaded = bridge.updater.onUpdateDownloaded((info) => {
       setUpdateReady({ version: info?.version });
+      // Once it's downloaded, the install pill takes over from the
+      // progress bar. Hide the bar so the topbar doesn't show both.
+      setDownloadPercent(null);
     });
-    return off;
+    const offProgress = bridge.updater.onDownloadProgress?.((info) => {
+      const pct = Math.max(0, Math.min(100, Math.round(info?.percent ?? 0)));
+      setDownloadPercent(pct);
+    });
+    return () => {
+      offDownloaded();
+      offProgress?.();
+    };
   }, []);
 
   async function handleInstallUpdate() {
@@ -61,30 +78,32 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     try {
       const r = await bridge.updater.checkNow();
       if (!r.ok) {
-        alert(`Update check failed: ${r.error}`);
+        fireInfoToast({ message: `Update check failed: ${r.error}`, kind: 'error' });
         return;
       }
-      // If something already finished downloading, surface the pill
-      // immediately — the user shouldn't have to wait for the next
-      // broadcast cycle to discover it.
       if (r.downloaded) {
+        // Already cached an update from an earlier check — show the
+        // install pill at once, no need to wait for the next event.
         setUpdateReady(r.downloaded);
-        alert(
-          `Update ${r.downloaded.version ?? ''} downloaded — click "Update ready" in the topbar to install.`
-        );
+        fireInfoToast({
+          message: `Update ${r.downloaded.version ?? ''} ready — click the topbar pill to install.`,
+        });
         return;
       }
       if (r.updateAvailable && r.manifestVersion) {
-        alert(
-          `Update found: ${r.manifestVersion} (current ${r.currentVersion}). Downloading in the background — the topbar will show "Update ready" when it's done.`
-        );
+        fireInfoToast({
+          message: `Update ${r.manifestVersion} found — downloading. Topbar shows progress.`,
+        });
         return;
       }
-      alert(
-        `You are on the latest version (${r.currentVersion}).`
-      );
+      fireInfoToast({
+        message: `You're on the latest version (${r.currentVersion}).`,
+      });
     } catch (err) {
-      alert(`Update check failed: ${err instanceof Error ? err.message : err}`);
+      fireInfoToast({
+        message: `Update check failed: ${err instanceof Error ? err.message : err}`,
+        kind: 'error',
+      });
     }
   }
 
@@ -171,10 +190,35 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
   }
 
   return (
+    <>
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark">P</span>
         <span className="brand-name">Pictor</span>
+        {/* Slim auto-update download bar. Lives in the brand cluster
+            so it's visible on every page without taking real estate
+            away from the per-page actions. Hides when there's no
+            in-flight download. The "Update ready" pill below
+            replaces it once the download finishes. */}
+        {downloadPercent != null && !updateReady && (
+          <div
+            className="picg-update-progress"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={downloadPercent}
+            aria-label="Downloading update"
+            title={`Downloading update — ${downloadPercent}%`}
+          >
+            <div
+              className="picg-update-progress-fill"
+              style={{ width: `${downloadPercent}%` }}
+            />
+            <span className="picg-update-progress-label">
+              ↓ {downloadPercent}%
+            </span>
+          </div>
+        )}
       </div>
       {actions && <div className="topbar-actions">{actions}</div>}
       {updateReady && (
@@ -336,8 +380,37 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
           50%      { opacity: 0.45; }
         }
         .picg-update-pill-text { white-space: nowrap; }
+
+        .picg-update-progress {
+          position: relative;
+          margin-left: 12px;
+          width: 120px;
+          height: 18px;
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          overflow: hidden;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .picg-update-progress-fill {
+          position: absolute;
+          inset: 0 auto 0 0;
+          background: rgba(217, 119, 87, 0.45);
+          transition: width 0.18s ease-out;
+        }
+        .picg-update-progress-label {
+          position: relative;
+          z-index: 1;
+          font-family: var(--mono);
+          font-size: 10px;
+          letter-spacing: 0.04em;
+          color: var(--text);
+          white-space: nowrap;
+        }
       `}</style>
     </header>
+    <InfoToastHost />
+    </>
   );
 }
 

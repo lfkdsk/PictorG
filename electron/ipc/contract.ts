@@ -33,6 +33,10 @@ export const CHANNELS = {
     // Main → renderer broadcast: a new version finished downloading
     // and will install on next quit (or now via installNow).
     updateDownloaded: 'updater:update-downloaded',
+    // Main → renderer broadcast: incremental download progress
+    // (0–100). Topbar uses this for the slim progress bar next to
+    // the brand logo while the .dmg streams in.
+    downloadProgress: 'updater:download-progress',
     // Renderer → main: replay the most recent update-downloaded event
     // if one fired before the renderer's listener was attached. Used
     // by the Topbar on mount.
@@ -187,6 +191,7 @@ export interface PicgBridge {
   updater: {
     installNow(): Promise<void>;
     onUpdateDownloaded(handler: (info: { version?: string }) => void): () => void;
+    onDownloadProgress(handler: (info: { percent: number }) => void): () => void;
     getPending(): Promise<{ version?: string } | null>;
     checkNow(): Promise<
       | {
