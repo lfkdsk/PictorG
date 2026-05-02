@@ -3,8 +3,11 @@
 // (PICG_DEV_URL, default http://localhost:3000) or — eventually — a packaged
 // static export. Production packaging is out of scope for this spike.
 
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, session, shell } from 'electron';
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+
+import { GalleryRegistry } from './galleries/GalleryRegistry';
 
 import { CHANNELS } from './ipc/contract';
 import type { OAuthCallbackPayload } from './ipc/contract';
@@ -91,6 +94,48 @@ async function createWindow(): Promise<void> {
 
   if (process.env.PICG_DEVTOOLS) {
     win.webContents.openDevTools({ mode: 'detach' });
+  }
+}
+
+// Tell Chromium that picg:// is a "standard" scheme (parses host/path,
+// supports fetch from the renderer, can be loaded as <img src> without
+// CSP complaining). Must run before app.whenReady. Two distinct hosts
+// share this scheme:
+//   picg://oauth/...           → OAuth callback (delivered via OS,
+//                                 not via fetch)
+//   picg://gallery/<id>/<p>    → renderer fetches local gallery files
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'picg',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+    },
+  },
+]);
+
+function mimeForPath(p: string): string {
+  const ext = p.toLowerCase().split('.').pop() ?? '';
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'avif':
+      return 'image/avif';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'bmp':
+      return 'image/bmp';
+    default:
+      return 'application/octet-stream';
   }
 }
 
@@ -188,6 +233,64 @@ app.whenReady().then(async () => {
   // OAuth IPC is small enough to inline rather than its own module.
   ipcMain.handle(CHANNELS.auth.openExternal, async (_e, url: string) => {
     await shell.openExternal(url);
+  });
+
+  // picg://gallery/<id>/<path> handler. Lets <img src="picg://..."> in the
+  // renderer pull files straight from the on-disk clone without an IPC
+  // round-trip + base64 re-encode through the StorageAdapter. The gallery
+  // id is the manifest id (owner__repo); the path is whatever follows.
+  const galleryRegistry = new GalleryRegistry();
+  protocol.handle('picg', async (request) => {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.host !== 'gallery') {
+      // OAuth callbacks come in via the OS-level open-url event, not fetch.
+      // Anything else under picg:// gets a 404 from this handler.
+      return new Response('Not found', { status: 404 });
+    }
+    const segments = requestUrl.pathname.split('/').filter(Boolean);
+    if (segments.length < 2) {
+      return new Response('Bad path', { status: 400 });
+    }
+    const galleryId = decodeURIComponent(segments[0]);
+    const relPath = segments
+      .slice(1)
+      .map((s) => decodeURIComponent(s))
+      .join('/');
+
+    const gallery = await galleryRegistry.resolve(galleryId);
+    if (!gallery) {
+      return new Response('Gallery not found', { status: 404 });
+    }
+
+    // Resolve and confirm the resolved path stays inside gallery.localPath.
+    // Same threat model as LocalGitStorageAdapter.absolute() — the
+    // renderer (or any code building these URLs) should never be able to
+    // read outside the gallery.
+    const galleryRoot = path.resolve(gallery.localPath);
+    const resolvedPath = path.resolve(galleryRoot, relPath);
+    if (
+      resolvedPath !== galleryRoot &&
+      !resolvedPath.startsWith(galleryRoot + path.sep)
+    ) {
+      return new Response('Path escapes gallery', { status: 403 });
+    }
+
+    try {
+      const data = await fs.readFile(resolvedPath);
+      const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      return new Response(view, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeForPath(resolvedPath),
+          'Cache-Control': 'no-cache',
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        return new Response('Not found', { status: 404 });
+      }
+      return new Response(`Read error: ${err?.message ?? err}`, { status: 500 });
+    }
   });
 
   createWindow();

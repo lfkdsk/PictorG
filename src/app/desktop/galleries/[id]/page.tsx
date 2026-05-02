@@ -525,7 +525,9 @@ function AlbumCard({
   // README.yml's `cover` is the path from repo root (matches the web flow's
   // `${thumbnail_url}/${album.cover}`), not a filename relative to album.url.
   const coverPath = album.cover || null;
-  const { src, error } = useAdapterImage(adapter, coverPath);
+  const { src, error } = useAdapterImage(adapter, coverPath, {
+    picgGalleryId: galleryId,
+  });
   const albumHref = `/desktop/galleries/${encodeURIComponent(galleryId)}/${encodeURIComponent(album.url)}`;
 
   // Plain div + onClick instead of <Link> so the HTML5 drag handlers don't

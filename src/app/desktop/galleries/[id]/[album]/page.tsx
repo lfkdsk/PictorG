@@ -670,6 +670,7 @@ export default function AlbumPage() {
                   adapter={adapter}
                   albumUrl={albumUrl}
                   name={img.name}
+                  galleryId={gallery.id}
                   selectMode={selectMode}
                   selected={selected.has(img.name)}
                   onOpen={() => {
@@ -687,6 +688,7 @@ export default function AlbumPage() {
         <Lightbox
           adapter={adapter}
           path={lightboxPath}
+          galleryId={gallery.id}
           onClose={() => setLightboxPath(null)}
         />
       )}
@@ -767,6 +769,7 @@ export default function AlbumPage() {
                     <CoverField
                       adapter={adapter}
                       cover={editForm.cover}
+                      galleryId={gallery.id}
                       onPick={() => setEditPhase('pickCover')}
                       disabled={saving || !images || images.length === 0}
                     />
@@ -792,6 +795,7 @@ export default function AlbumPage() {
               <CoverPicker
                 adapter={adapter}
                 albumUrl={albumUrl}
+                galleryId={gallery.id}
                 images={images ?? []}
                 currentCover={editForm.cover}
                 onSelect={(path) => {
@@ -935,6 +939,7 @@ function Thumb({
   adapter,
   albumUrl,
   name,
+  galleryId,
   selectMode,
   selected,
   onOpen,
@@ -942,11 +947,14 @@ function Thumb({
   adapter: StorageAdapter | null;
   albumUrl: string;
   name: string;
+  galleryId: string;
   selectMode: boolean;
   selected: boolean;
   onOpen: () => void;
 }) {
-  const { src } = useAdapterImage(adapter, `${albumUrl}/${name}`);
+  const { src } = useAdapterImage(adapter, `${albumUrl}/${name}`, {
+    picgGalleryId: galleryId,
+  });
   return (
     <li>
       <button
@@ -965,13 +973,15 @@ function Thumb({
 function Lightbox({
   adapter,
   path,
+  galleryId,
   onClose,
 }: {
   adapter: StorageAdapter | null;
   path: string;
+  galleryId: string;
   onClose: () => void;
 }) {
-  const { src } = useAdapterImage(adapter, path);
+  const { src } = useAdapterImage(adapter, path, { picgGalleryId: galleryId });
   const filename = path.split('/').pop() ?? path;
 
   return (
@@ -988,15 +998,19 @@ function Lightbox({
 function CoverField({
   adapter,
   cover,
+  galleryId,
   onPick,
   disabled,
 }: {
   adapter: StorageAdapter | null;
   cover: string;
+  galleryId: string;
   onPick: () => void;
   disabled: boolean;
 }) {
-  const { src } = useAdapterImage(adapter, cover || null);
+  const { src } = useAdapterImage(adapter, cover || null, {
+    picgGalleryId: galleryId,
+  });
   return (
     <div className="picg-cover-field">
       <div className="picg-cover-preview">
@@ -1024,12 +1038,14 @@ function CoverField({
 function CoverPicker({
   adapter,
   albumUrl,
+  galleryId,
   images,
   currentCover,
   onSelect,
 }: {
   adapter: StorageAdapter | null;
   albumUrl: string;
+  galleryId: string;
   images: DirectoryEntry[];
   currentCover: string;
   onSelect: (path: string) => void;
@@ -1049,6 +1065,7 @@ function CoverPicker({
               key={img.path}
               adapter={adapter}
               path={path}
+              galleryId={galleryId}
               isCurrent={currentCover === path}
               onSelect={() => onSelect(path)}
             />
@@ -1062,15 +1079,17 @@ function CoverPicker({
 function CoverPickerThumb({
   adapter,
   path,
+  galleryId,
   isCurrent,
   onSelect,
 }: {
   adapter: StorageAdapter | null;
   path: string;
+  galleryId: string;
   isCurrent: boolean;
   onSelect: () => void;
 }) {
-  const { src } = useAdapterImage(adapter, path);
+  const { src } = useAdapterImage(adapter, path, { picgGalleryId: galleryId });
   const filename = path.split('/').pop() ?? path;
   return (
     <li>

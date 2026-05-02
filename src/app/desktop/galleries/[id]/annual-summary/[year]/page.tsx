@@ -259,6 +259,7 @@ export default function AnnualSummaryPicker() {
                   key={p.path}
                   adapter={adapter}
                   candidate={p}
+                  galleryId={gallery.id}
                   isPicked={selections[currentMonth] === p.path}
                   onPick={() => pick(p.path)}
                 />
@@ -407,15 +408,19 @@ export default function AnnualSummaryPicker() {
 function PickerThumb({
   adapter,
   candidate,
+  galleryId,
   isPicked,
   onPick,
 }: {
   adapter: StorageAdapter | null;
   candidate: CandidatePhoto;
+  galleryId: string;
   isPicked: boolean;
   onPick: () => void;
 }) {
-  const { src } = useAdapterImage(adapter, candidate.path);
+  const { src } = useAdapterImage(adapter, candidate.path, {
+    picgGalleryId: galleryId,
+  });
   return (
     <li>
       <button

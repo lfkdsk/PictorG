@@ -2,13 +2,25 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { StorageAdapter } from '@/core/storage';
+import { getPicgBridge, type StorageAdapter } from '@/core/storage';
 
 // Process-wide cache keyed by adapter id + path. Surviving across mounts is
 // what makes thumbnail grids feel snappy when you bounce back from a
 // lightbox; a tab reload still drops everything.
+//
+// Note: this cache is only used by the data-URL path. When picgGalleryId is
+// supplied we return picg:// URLs straight away — they're already pointing
+// at on-disk files, so Chromium's HTTP cache + Electron's protocol handler
+// do their own caching.
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
+
+function picgUrlFor(galleryId: string, p: string): string {
+  return `picg://gallery/${encodeURIComponent(galleryId)}/${p
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}`;
+}
 
 function mimeForPath(path: string): string {
   const ext = path.toLowerCase().split('.').pop() ?? '';
@@ -55,16 +67,32 @@ async function loadDataUrl(
   return promise;
 }
 
-// Reads `path` through the given adapter and exposes it as a data URL the
-// renderer can drop into <img src=...>. Cached process-wide so flipping
-// between thumbnail grid and lightbox doesn't re-decode.
+// Reads `path` through the given adapter and exposes it as a URL the
+// renderer can drop into <img src=...>.
 //
-// Returns `{ src, error }`. While loading, `src` is null.
+// Two modes:
+//   - With `options.picgGalleryId` set, return `picg://gallery/<id>/<path>`
+//     synchronously. The Electron main process serves it from disk, so
+//     no IPC + no base64 round-trip per thumbnail. This is what you want
+//     for the desktop pages.
+//   - Without it, fall back to the IPC + base64 + data-URL path. Used in
+//     a non-Electron preview (rare) or anywhere the caller doesn't know
+//     the gallery id.
+//
+// Returns `{ src, error }`. While loading (data-URL path), `src` is null.
 export function useAdapterImage(
   adapter: StorageAdapter | null,
-  path: string | null
+  path: string | null,
+  options?: { picgGalleryId?: string }
 ): { src: string | null; error: string | null } {
+  const picgGalleryId = options?.picgGalleryId;
+  const fastPath =
+    picgGalleryId && path && getPicgBridge()
+      ? picgUrlFor(picgGalleryId, path)
+      : null;
+
   const [src, setSrc] = useState<string | null>(() => {
+    if (fastPath) return fastPath;
     if (!adapter || !path) return null;
     return cache.get(`${adapter.id}:${path}`) ?? null;
   });
@@ -72,6 +100,11 @@ export function useAdapterImage(
   const reqId = useRef(0);
 
   useEffect(() => {
+    if (fastPath) {
+      setSrc(fastPath);
+      setError(null);
+      return;
+    }
     if (!adapter || !path) {
       setSrc(null);
       setError(null);
@@ -97,7 +130,7 @@ export function useAdapterImage(
           setError(err instanceof Error ? err.message : String(err));
         }
       });
-  }, [adapter, path]);
+  }, [adapter, path, fastPath]);
 
   return { src, error };
 }
