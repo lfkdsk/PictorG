@@ -318,6 +318,48 @@ export function DesktopTheme() {
         margin: 4px 0;
       }
 
+      /* Year card on /desktop/galleries/[id]/annual-summary */
+      .year-card {
+        display: flex; flex-direction: column; gap: 12px;
+        padding: 24px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        text-decoration: none;
+        color: inherit;
+        cursor: pointer;
+        transition: border-color 0.15s ease, transform 0.1s ease;
+      }
+      .year-card:hover {
+        border-color: var(--border-strong);
+        transform: translateY(-2px);
+      }
+      .year-card .year {
+        font-family: var(--serif);
+        font-size: 36px;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        color: var(--text);
+        line-height: 1;
+      }
+      .year-card .status { display: flex; }
+      .year-card .badge {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        border-radius: 999px;
+      }
+      .year-card .badge.filled {
+        background: rgba(232, 160, 74, 0.16);
+        color: var(--accent);
+      }
+      .year-card .badge.empty {
+        background: rgba(232, 220, 196, 0.06);
+        color: var(--text-muted);
+      }
+
       /* Back link — global because styled-jsx occasionally misses next/link's
          rendered <a> when the page also has many scoped rules. */
       .picg-back-link {

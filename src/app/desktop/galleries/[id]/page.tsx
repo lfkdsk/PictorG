@@ -268,6 +268,14 @@ export default function GalleryDetailPage() {
                       >
                         Edit gallery
                       </button>
+                      <Link
+                        href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/annual-summary` as any}
+                        className="picg-menu-item"
+                        onClick={() => setMoreMenuOpen(false)}
+                        role="menuitem"
+                      >
+                        Annual summary
+                      </Link>
                     </div>
                   </>
                 )}
