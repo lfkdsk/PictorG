@@ -14,6 +14,11 @@
 // produce equivalent metadata.
 
 import { ipcMain } from 'electron';
+import { execFile } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { promisify } from 'node:util';
 import sharp from 'sharp';
 // @lfkdsk/exif-library is CJS and ships type definitions for these
 // symbols; the top-level `insert` auto-detects JPEG/WebP/PNG by header.
@@ -22,9 +27,50 @@ import { dump, insert, load, TagNumbers } from '@lfkdsk/exif-library';
 import { CHANNELS } from './contract';
 import type { CompressImageRequest, CompressImageResult } from './contract';
 
+const execFileAsync = promisify(execFile);
+
 function basenameWithoutExt(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.substring(0, dot) : name;
+}
+
+// Detect HEIC/HEIF magic bytes. ISOBMFF container — first 8 bytes are
+// the box length, followed by `ftyp` and a brand. Apple's HEIC uses
+// brands `heic`, `heix`, `hevc`, `hevx`; HEIF photos use `mif1`/`msf1`.
+// AVIF (`avif`) is also HEIF but sharp can decode that natively, so we
+// don't route it through sips.
+const HEIC_BRANDS = new Set([
+  'heic',
+  'heix',
+  'hevc',
+  'hevx',
+  'mif1',
+  'msf1',
+]);
+function isHeicLike(buf: Buffer): boolean {
+  if (buf.length < 12) return false;
+  if (buf.toString('ascii', 4, 8) !== 'ftyp') return false;
+  return HEIC_BRANDS.has(buf.toString('ascii', 8, 12));
+}
+
+// Run `sips` (macOS ImageIO CLI, ships with every Mac) to transcode the
+// HEIC into a JPEG buffer that sharp can decode. sips can't read stdin
+// or write stdout, so we route through a tmp file pair. Apple's
+// ImageIO has a real HEVC decoder via the OS frameworks, which is what
+// we're piggybacking on — sharp's prebuilt libheif is AOM-only and
+// fails on Apple's HEVC-encoded HEIC with "Support for this
+// compression format has not been built in".
+async function decodeHeicViaSips(input: Buffer): Promise<Buffer> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'picg-heic-'));
+  const inPath = path.join(dir, 'in.heic');
+  const outPath = path.join(dir, 'out.jpg');
+  try {
+    await fs.writeFile(inPath, input);
+    await execFileAsync('sips', ['-s', 'format', 'jpeg', inPath, '--out', outPath]);
+    return await fs.readFile(outPath);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // Mirror src/lib/compress-image.ts: pull EXIF off the original bytes,
@@ -80,7 +126,17 @@ function supplementExif(
 async function compressImage(
   request: CompressImageRequest
 ): Promise<CompressImageResult> {
-  const input = Buffer.from(request.bytes);
+  let input = Buffer.from(request.bytes);
+
+  // HEIC route — sharp's prebuilt libheif can't decode Apple's HEVC-
+  // encoded HEIC, so we transcode to JPEG via macOS's `sips` first
+  // and feed sharp the JPEG. EXIF is preserved by sips, then re-
+  // injected via dump/insert below using the HEIC's own EXIF (which
+  // is the same data, just re-routed through JPEG along the way).
+  if (isHeicLike(input)) {
+    console.log('[picg compress] HEIC input detected, routing through sips');
+    input = await decodeHeicViaSips(input);
+  }
 
   // failOn: 'none' lets sharp keep going on minor codec warnings (slightly
   // truncated JPEG markers etc) — the input here came from a user picker,

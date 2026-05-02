@@ -35,7 +35,7 @@ function formatBytes(n: number): string {
 
 function isImageFile(file: File): boolean {
   return /^image\//.test(file.type) ||
-    /\.(jpe?g|png|gif|webp|avif|bmp)$/i.test(file.name);
+    /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif)$/i.test(file.name);
 }
 
 export default function AddPhotosPage() {
