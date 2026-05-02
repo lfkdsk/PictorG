@@ -166,6 +166,7 @@ export type CompressImageRequest = {
   originalName: string;
   outputFormat: 'webp' | 'jpeg';
   preserveExif: boolean;
+  lossless?: boolean;
 };
 
 export type CompressImageResult = {

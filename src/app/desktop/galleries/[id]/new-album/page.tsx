@@ -62,8 +62,14 @@ function parseLocation(raw: string): [number, number] | null {
 }
 
 function isImageFile(file: File): boolean {
+  // Live Photos arrive as HEIC + matching MOV with the same basename;
+  // accept the MOV here so users can drop the pair together. The
+  // compressor passes MOV through untouched and git ends up with
+  // both files side by side, which is the convention web viewers
+  // look for to recognize a Live Photo.
   return /^image\//.test(file.type) ||
-    /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif)$/i.test(file.name);
+    file.type === 'video/quicktime' ||
+    /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|mov)$/i.test(file.name);
 }
 
 export default function NewAlbumPage() {

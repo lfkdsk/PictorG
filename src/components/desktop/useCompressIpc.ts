@@ -21,6 +21,13 @@ import { getCompressionSettings } from '@/lib/settings';
 const COMPRESSIBLE_TYPES = /^image\/(png|jpe?g|webp|avif|tiff|gif|hei[cf])$/i;
 const COMPRESSIBLE_EXTS = /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i;
 
+// MOV arrives alongside HEIC for Live Photos. We accept it in the
+// upload UI but skip compression — sharp can't process video and we
+// want the .mov to land in git unchanged so viewers can pair it back
+// with the matching photo.
+const PASSTHROUGH_EXTS = /\.mov$/i;
+const PASSTHROUGH_TYPES = /^video\/quicktime$/i;
+
 export function useCompressIpc(): {
   compress: (file: File) => Promise<File>;
 } {
@@ -31,6 +38,15 @@ export function useCompressIpc(): {
     // Skip cases — return the original file untouched, same shape as the
     // squoosh path used to.
     if (!settings.enableWebP) return file;
+    // Live-Photo MOV: keep alongside its HEIC partner without any
+    // re-encode. Sharp doesn't process video, and we want the .mov to
+    // land in git verbatim so a viewer can pair it back to the photo.
+    if (
+      PASSTHROUGH_TYPES.test(file.type) ||
+      PASSTHROUGH_EXTS.test(file.name)
+    ) {
+      return file;
+    }
     // Some browsers report image/heic as application/octet-stream or empty
     // type; fall back to filename extension when the MIME is unknown.
     const looksCompressible =
