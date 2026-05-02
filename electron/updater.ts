@@ -34,6 +34,14 @@ const FOUR_HOURS = 4 * 60 * 60 * 1000;
 // download finished.
 let pendingDownloadedUpdate: { version?: string } | null = null;
 
+// Most recent updater error message + ISO timestamp. Surfaced via
+// checkNow's response so the avatar-menu manual check can tell the
+// user "last attempt failed N min ago because X" — until we add
+// this, a silent error during background poll leaves the user with
+// no signal at all (the toast that fires on `error` events only
+// catches errors that happen while the renderer is mounted).
+let lastUpdateError: { message: string; at: string } | null = null;
+
 export function initAutoUpdater(): void {
   if (!app.isPackaged) {
     log('updater: skipped (dev mode)');

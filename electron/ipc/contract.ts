@@ -36,6 +36,13 @@ export const CHANNELS = {
     // Renderer → main: quit the app and install the downloaded update
     // immediately. Triggered by the Topbar "Update ready" button.
     installNow: 'updater:install-now',
+    // Main → renderer broadcast: an update was found and a download
+    // is about to start (autoDownload is on). Topbar uses this to
+    // flip the progress bar into an indeterminate (pulsing) state
+    // immediately, so the user sees *something* even when the delta
+    // is small enough that download-progress events fire too few
+    // times to register before update-downloaded lands.
+    updateAvailable: 'updater:update-available',
     // Main → renderer broadcast: a new version finished downloading
     // and will install on next quit (or now via installNow).
     updateDownloaded: 'updater:update-downloaded',
@@ -43,6 +50,11 @@ export const CHANNELS = {
     // (0–100). Topbar uses this for the slim progress bar next to
     // the brand logo while the .dmg streams in.
     downloadProgress: 'updater:download-progress',
+    // Main → renderer broadcast: electron-updater fired an `error`
+    // event. Topbar surfaces this as a toast so a silent background
+    // failure (network down, signature mismatch, GitHub API hiccup)
+    // doesn't leave the user wondering why auto-update never landed.
+    updateError: 'updater:update-error',
     // Renderer → main: replay the most recent update-downloaded event
     // if one fired before the renderer's listener was attached. Used
     // by the Topbar on mount.
@@ -214,8 +226,12 @@ export interface PicgBridge {
   };
   updater: {
     installNow(): Promise<void>;
+    onUpdateAvailable(
+      handler: (info: { version?: string }) => void
+    ): () => void;
     onUpdateDownloaded(handler: (info: { version?: string }) => void): () => void;
     onDownloadProgress(handler: (info: { percent: number }) => void): () => void;
+    onUpdateError(handler: (info: { message: string }) => void): () => void;
     getPending(): Promise<{ version?: string } | null>;
     checkNow(): Promise<
       | {
@@ -224,6 +240,10 @@ export interface PicgBridge {
           manifestVersion: string | null;
           updateAvailable: boolean;
           downloaded: { version?: string } | null;
+          // Most recent updater error captured in this session, if
+          // any. Lets the manual-check toast surface "last attempt
+          // failed because X" instead of leaving the user guessing.
+          lastError: { message: string; at: string } | null;
         }
       | { ok: false; error: string }
     >;
