@@ -57,6 +57,17 @@ const DEV_URL = process.env.PICG_DEV_URL ?? 'http://localhost:3000/desktop/galle
 // module scope so app.on('quit') can SIGTERM it cleanly.
 let nextServer: ChildProcess | null = null;
 
+// Cache the URL we resolved on first launch. On macOS, closing the
+// window (red traffic-light) doesn't quit the app — `app.on('activate')`
+// fires later when the user clicks the dock icon and we re-create the
+// window. The Next server we forked at startup is still running on
+// the same port; if we asked pickStablePort() again it would try to
+// bind that same port, fail (because our own server has it), and
+// fall back to a fresh port. The new origin would have an empty
+// localStorage and the user would have to sign in again. Reusing the
+// resolved URL keeps the origin stable across activate cycles.
+let cachedAppUrl: string | null = null;
+
 // Try to bind a specific port; resolves to that port if free, rejects
 // otherwise. Used to validate a persisted port before spawning the
 // Next server against it.
@@ -129,10 +140,25 @@ async function waitForServer(url: string, timeoutMs = 20_000): Promise<void> {
   throw new Error(`Next server did not start within ${timeoutMs}ms`);
 }
 
-// Resolve to the URL we should loadURL: either dev or a freshly-spawned
-// packaged Next standalone server.
+// Resolve to the URL we should loadURL: either dev or a packaged Next
+// standalone server. The first call in packaged mode forks the
+// standalone server; subsequent calls reuse the same URL (see
+// cachedAppUrl above) so window-close + activate doesn't churn ports
+// and lose localStorage.
 async function resolveAppUrl(): Promise<string> {
   if (!app.isPackaged) return DEV_URL;
+
+  // Reuse the running server if it's still alive. nextServer.killed
+  // catches the case where we sent SIGTERM somewhere; nextServer.exitCode
+  // catches a server that crashed on its own.
+  if (
+    cachedAppUrl &&
+    nextServer &&
+    !nextServer.killed &&
+    nextServer.exitCode === null
+  ) {
+    return cachedAppUrl;
+  }
 
   // electron-builder copies .next/standalone next to the app code; the
   // resourcesPath is the canonical location for asar-extra-resources
@@ -163,11 +189,15 @@ async function resolveAppUrl(): Promise<string> {
   });
   nextServer.on('exit', (code, signal) => {
     console.log(`[picg] Next server exited code=${code} signal=${signal}`);
+    // Server died — drop the cached URL so the next createWindow re-spawns
+    // instead of trying to load a dead URL.
+    cachedAppUrl = null;
   });
 
   const baseUrl = `http://127.0.0.1:${port}`;
   await waitForServer(baseUrl);
-  return `${baseUrl}/desktop/galleries`;
+  cachedAppUrl = `${baseUrl}/desktop/galleries`;
+  return cachedAppUrl;
 }
 
 async function createWindow(): Promise<void> {
