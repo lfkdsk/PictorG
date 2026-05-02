@@ -120,7 +120,15 @@ export default function DesktopLoginPage() {
     <div className="page">
       <Topbar />
 
-      <main>
+      <main
+        style={{
+          width: '100%',
+          maxWidth: 600,
+          margin: '0 auto',
+          padding: '32px 40px 64px',
+          boxSizing: 'border-box',
+        }}
+      >
         <section className="hero">
           <h1>Sign in</h1>
           <p className="meta">Pictor uses GitHub for storage and identity.</p>
@@ -164,8 +172,6 @@ export default function DesktopLoginPage() {
 
       <DesktopTheme />
       <style jsx>{`
-        main { padding: 32px 40px 64px; max-width: 600px; margin: 0 auto; }
-
         .hero { margin-bottom: 32px; }
         .hero h1 {
           font-family: var(--serif);

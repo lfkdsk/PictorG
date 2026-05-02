@@ -74,7 +74,15 @@ export default function DesktopTokenLoginPage() {
     <div className="page">
       <Topbar />
 
-      <main>
+      <main
+        style={{
+          width: '100%',
+          maxWidth: 600,
+          margin: '0 auto',
+          padding: '32px 40px 64px',
+          boxSizing: 'border-box',
+        }}
+      >
         <Link href="/desktop/login" className="picg-back-link">
           ← Sign in
         </Link>
@@ -128,8 +136,6 @@ export default function DesktopTokenLoginPage() {
 
       <DesktopTheme />
       <style jsx>{`
-        main { padding: 32px 40px 64px; max-width: 600px; margin: 0 auto; }
-
         .hero { margin-bottom: 24px; }
         .hero h1 {
           font-family: var(--serif);
