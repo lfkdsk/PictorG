@@ -12,11 +12,19 @@ compression: maximum
 removePackageScripts: true
 removePackageKeywords: true
 
-# Chromium ships .pak files for ~50 locales (~25 MB total). PicG's UI
-# is en + zh-CN; the rest is dead weight in the bundle.
+# Chromium ships locale.pak per language (~672 KB each × 55 langs ≈
+# 36 MB inside Electron Framework.framework). We only ship en + zh
+# variants; the rest are dead weight.
+#
+# Codes here must match Chromium's actual lproj names — Chromium uses
+# `en_GB`, `zh_CN` (underscores) but electron-builder accepts BCP47
+# hyphenated form and translates. Don't list locales that don't exist
+# in Chromium (e.g. `en-US`, which Chromium folds into plain `en`):
+# electron-builder silently no-ops the whole filter when one entry
+# doesn't resolve.
 electronLanguages:
   - en
-  - en-US
+  - en-GB
   - zh-CN
   - zh-TW
 
@@ -49,6 +57,8 @@ files:
   - "!node_modules/**/{test,tests,docs,doc,example,examples,__tests__,coverage,benchmark,benchmarks}/**"
   - "!node_modules/**/*.d.ts"
   - "!node_modules/**/*.map"
+  # Same for our own compiled main: the .js.map files are dev-only.
+  - "!electron/dist/**/*.map"
   - "!node_modules/**/*.markdown"
   - "!node_modules/**/{.github,.vscode,.idea,.husky}/**"
   - "!node_modules/**/{CHANGELOG,CHANGES,HISTORY,AUTHORS,CONTRIBUTORS,CONTRIBUTING,SECURITY}*"
@@ -56,6 +66,14 @@ files:
   - "!node_modules/**/{*.flow,*.ts,!*.d.ts}"
   - "!**/.git/**"
   - "!**/.DS_Store"
+  # Cache directories that occasionally leak from build tools — none
+  # of them affect runtime behavior.
+  - "!**/{.cache,cache}/**"
+  - "!**/*.tsbuildinfo"
+  - "!**/.editorconfig"
+  - "!**/yarn.lock"
+  - "!**/pnpm-lock.yaml"
+  - "!**/package-lock.json"
   # The Next standalone bundle is shipped separately via extraResources
   # — no need to ALSO pack the renderer-side React tree into the asar.
   # @next/swc-* is the build-time SWC native compiler (110 MB on
@@ -111,6 +129,12 @@ extraResources:
 # when loaded inside Electron with a "Module did not self-register" or
 # similar mismatch error.
 npmRebuild: true
+
+# Runs after the app dir is staged but before code-signing. We use it
+# to manually delete unused Chromium locale.pak files (~30 MB on macOS),
+# which the top-level `electronLanguages` option doesn't reliably do
+# in `--dir` mode in electron-builder 24.x.
+afterPack: scripts/after-pack.js
 
 # macOS-specific
 mac:

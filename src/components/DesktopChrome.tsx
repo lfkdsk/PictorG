@@ -9,7 +9,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 
-import { getGitHubToken, logout } from '@/lib/github';
+import { clearGitHubToken, getGitHubToken } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
 import { getPicgBridge } from '@/core/storage';
 
@@ -80,8 +80,9 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
   }, []);
 
   async function handleLogout() {
-    // Clear the durable Keychain copy first so a stale token can't
-    // "restore" us into a logged-in state on next launch.
+    // Clear the durable on-disk copy first (was Keychain, now
+    // <userData>/auth.json) so a stale token can't "restore" us into a
+    // logged-in state on next launch.
     const bridge = getPicgBridge();
     if (bridge) {
       try {
@@ -90,7 +91,15 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         /* ignore */
       }
     }
-    logout();
+    // Don't call the shared logout() — it redirects to /login, which is
+    // the web sign-in page. Desktop has its own /desktop/login. We
+    // still clear the renderer-side localStorage token via
+    // clearGitHubToken (re-exported through getGitHubToken's module),
+    // then hard-nav to the desktop login.
+    clearGitHubToken();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/desktop/login';
+    }
   }
 
   return (
