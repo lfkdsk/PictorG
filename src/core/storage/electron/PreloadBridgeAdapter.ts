@@ -178,6 +178,15 @@ export type PreloadCompressBridge = {
   image(request: CompressImageRequest): Promise<CompressImageResult>;
 };
 
+export type OAuthCallbackPayload =
+  | { ok: true; token: string; scope: string; state: string }
+  | { ok: false; error: string; state: string };
+
+export type PreloadAuthBridge = {
+  openExternal(url: string): Promise<void>;
+  onOAuthCallback(handler: (payload: OAuthCallbackPayload) => void): () => void;
+};
+
 // Bridge surface for the App-managed gallery library. The actual
 // implementation lives in main (electron/galleries/GalleryRegistry.ts) and
 // is exposed through preload.ts via contextBridge.
@@ -204,6 +213,7 @@ export type PreloadGalleryBridge = {
 
 export type PicgBridge = {
   pickGalleryDir(): Promise<string | null>;
+  auth: PreloadAuthBridge;
   compress: PreloadCompressBridge;
   gallery: PreloadGalleryBridge;
   storage: PreloadStorageBridge;

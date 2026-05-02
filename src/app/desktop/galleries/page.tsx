@@ -190,8 +190,8 @@ export default function GalleriesPage() {
         <main className="empty">
           <h1>Sign in</h1>
           <p>Connect your GitHub account to start adding galleries.</p>
-          <Link href="/login/token" className="btn primary">
-            Open token sign-in →
+          <Link href="/desktop/login" className="btn primary">
+            Sign in with GitHub →
           </Link>
         </main>
         <DesktopTheme />

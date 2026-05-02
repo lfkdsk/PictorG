@@ -6,11 +6,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import { CHANNELS } from './ipc/contract';
-import type { PicgBridge } from './ipc/contract';
+import type { OAuthCallbackPayload, PicgBridge } from './ipc/contract';
 import type { CloneProgress } from '../src/core/storage/electron/galleryTypes';
 
 const bridge: PicgBridge = {
   pickGalleryDir: () => ipcRenderer.invoke(CHANNELS.pickGalleryDir),
+
+  auth: {
+    openExternal: (url) => ipcRenderer.invoke(CHANNELS.auth.openExternal, url),
+    onOAuthCallback: (handler: (payload: OAuthCallbackPayload) => void) => {
+      const listener = (_e: unknown, payload: OAuthCallbackPayload) => handler(payload);
+      ipcRenderer.on(CHANNELS.auth.oauthCallback, listener);
+      return () => ipcRenderer.off(CHANNELS.auth.oauthCallback, listener);
+    },
+  },
 
   compress: {
     image: (request) => ipcRenderer.invoke(CHANNELS.compress.image, request),

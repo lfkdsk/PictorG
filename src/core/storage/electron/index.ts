@@ -6,11 +6,13 @@ export type {
   PreloadStorageBridge,
   PreloadGalleryBridge,
   PreloadCompressBridge,
+  PreloadAuthBridge,
   PreloadBridgeAdapterConfig,
   PicgBridge,
   GalleryStatus,
   CompressImageRequest,
   CompressImageResult,
+  OAuthCallbackPayload,
 } from './PreloadBridgeAdapter';
 export type {
   LocalGallery,

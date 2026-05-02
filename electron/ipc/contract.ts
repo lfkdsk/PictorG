@@ -16,6 +16,10 @@ import type { CloneProgress, LocalGallery } from '../../src/core/storage/electro
 
 export const CHANNELS = {
   pickGalleryDir: 'gallery:pick-dir',
+  auth: {
+    openExternal: 'auth:open-external',
+    oauthCallback: 'auth:oauth-callback',
+  },
   compress: {
     image: 'compress:image',
   },
@@ -116,6 +120,14 @@ export type GalleryStatus = {
   dirty: boolean;
 };
 
+// Sent by main when picg://oauth/#... is dispatched to the app, after
+// extracting the fragment params. The renderer is responsible for
+// validating `state` against whatever it stored in sessionStorage when
+// it kicked off the flow.
+export type OAuthCallbackPayload =
+  | { ok: true; token: string; scope: string; state: string }
+  | { ok: false; error: string; state: string };
+
 export type CompressImageRequest = {
   bytes: Uint8Array;
   originalName: string;
@@ -131,6 +143,10 @@ export type CompressImageResult = {
 
 export interface PicgBridge {
   pickGalleryDir(): Promise<string | null>;
+  auth: {
+    openExternal(url: string): Promise<void>;
+    onOAuthCallback(handler: (payload: OAuthCallbackPayload) => void): () => void;
+  };
   compress: {
     image(request: CompressImageRequest): Promise<CompressImageResult>;
   };
