@@ -327,7 +327,246 @@ that's also running dev.
 
 ---
 
-## 6. Backlog / known gaps
+## 6. Compression pipeline (desktop)
+
+`electron/ipc/compress.ts` is the single hot path everything goes
+through (renderer drops files → `useCompressIpc` → IPC →
+`compressImage()`). Five things are non-obvious here:
+
+- **EXIF preservation is manual**, not via sharp's `keepMetadata()`.
+  We do `load(input) → strip Orientation → dump → insert(into output)`
+  with `@lfkdsk/exif-library`. sharp's metadata copy was lossy across
+  libvips builds (some camera makernotes / GPS sub-IFDs got dropped);
+  the manual route is byte-exact except for the Orientation tag we
+  drop because `.rotate()` already baked it into pixels.
+- **HEIC routes through `sips`** before sharp. Sharp's prebuilt
+  libheif is AOM-only — supports AV1 (so AVIF works) but not HEVC,
+  and Apple HEIC is HEVC. `decodeHeicViaSips()` writes a tmp HEIC,
+  invokes `sips -s format jpeg`, reads back the JPEG, then sharp
+  takes over. `sips` is macOS-only — when we ship Linux/Windows we
+  need a different path (libde265 build of libvips, or a wasm
+  decoder). Until then the Linux/Windows DMG/MSI is hypothetical.
+- **MOV passes through untouched** for Live Photos. iPhone Live Photo
+  = HEIC + matching MOV. `useCompressIpc` short-circuits any video
+  MIME / `.mov` extension before hitting the IPC; the file lands in
+  git verbatim alongside its HEIC partner so a Live-Photo-aware
+  viewer can pair them.
+- **50 MP soft cap** when not lossless. `MAX_PIXELS = 50_000_000`. If
+  input exceeds it (60–100 MP medium-format / mirrorless), we
+  compute `scale = √(50M / inputPixels)` and resize to land at
+  exactly 50 MP. Below the cap, native resolution is preserved
+  (24 MP DSLR, 12 MP iPhone untouched).
+- **Lossless mode** lives in `CompressionSettings.lossless`. When
+  on: sharp `.webp({ lossless: true, effort: 6 })`, the 50 MP cap is
+  skipped, and the JPEG output radio is forced to WebP (no useful
+  JPEG-lossless exists). On web, `compress-image.ts` mirrors this
+  via squoosh's `lossless: 1, exact: 1` encoder option, plus the
+  squoosh resize processor for the 50 MP cap.
+
+`effort: 6` on WebP is unconditional (5–15 % smaller for the same
+quality at the cost of ~30 % encode time — invisible per-photo).
+
+---
+
+## 7. Thumbnail cache + visible errors
+
+The gallery overview used to render every album cover at full
+resolution — 30+ MB webp files getting decoded to fill 260 px cards.
+`electron/thumbnail.ts` now sits behind the `picg://` protocol
+handler:
+
+```
+picg://gallery/<id>/<path>          → original file (lightbox)
+picg://gallery/<id>/<path>?thumb=W  → cached webp resized to W px wide
+```
+
+Cache key: `sha1(absPath | width | mtime)`. The `mtime` part means
+replacing a photo on disk auto-invalidates the cached thumbnail. Cap
+on `W` is `[64, 2048]` to keep a malicious URL from OOMing main or
+filling disk. Cards thread the size through
+`useAdapterImage(..., { thumbWidth })`:
+
+- gallery overview cards: 640
+- album page photo grid + cover picker: 480
+- annual summary candidate grid: 480
+- lightbox: unset → original
+
+**Error surfacing.** Failures from the protocol handler used to land
+as default-broken-image icons. `useAdapterImage` now does a HEAD
+probe alongside the `<img>` for any `picg://` URL; on non-200 it
+reads the body once and parses for the JSON shape main returns
+(`{ error, message, ... }`). That feeds the existing `error` channel
+of the hook, which the album card renders as an editorial
+"COVER FAILED · `<reason>`" overlay.
+
+The previous read-as-text-after-failed-json bug (body already
+consumed → falls back to bare "picg:// 404") is fixed by reading
+text first then attempting `JSON.parse` on the string. All
+protocol errors return structured JSON with `Content-Type:
+application/json` + `X-Picg-Error: 1` so the renderer can identify
+them without parsing.
+
+For the upload pages (new-album / [album]/add) we use a different
+path: `makePreviewUrl(file)` in `src/components/desktop/makePreview.ts`
+runs `createImageBitmap` with `resizeWidth` → OffscreenCanvas →
+`convertToBlob('image/webp', 0.7)` for a ~30–80 KB preview blob,
+regardless of source size. HEIC isn't decoded by Chromium so we
+fall back to the original URL (broken-icon UX for HEIC previews
+in upload — a future improvement is round-tripping through main's
+sips path).
+
+---
+
+## 8. Auto-update + release flow
+
+Built on `electron-updater`. Behaviour:
+
+- Boot → 0.5 s later `autoUpdater.checkForUpdates()`. Then every 4 h.
+- If the GitHub Release manifest version is **strictly greater**
+  than the installed version (`semver.gt`, not `!==`), we download
+  in the background. Progress events stream to the renderer over
+  `updater:download-progress` → Topbar shows a slim bar next to
+  the brand logo while bytes flow in.
+- On download finish, main caches the event in
+  `pendingDownloadedUpdate` and broadcasts `updater:update-downloaded`.
+  Topbar renders an "Update ready · v0.x.y" pill. Click → main
+  calls `autoUpdater.quitAndInstall()`.
+- The cached `pendingDownloadedUpdate` is what `getPending()` IPC
+  returns on Topbar mount — this **replays the event** to a Topbar
+  that mounted *after* the download finished (e.g. user navigating
+  between desktop pages mid-download).
+
+Two non-obvious failure modes burned into the doc as guard rails:
+
+- **Don't compare with `!==`** — when GitHub's `releases/latest`
+  trails behind us, the manifest claims an *older* version. A `!==`
+  check announced downgrades as updates. Always `semver.gt`.
+- **Don't publish releases as draft.** electron-builder defaults to
+  draft. Drafts are invisible to the `releases/latest` API → the
+  most recent *published* release wins, which is whichever stale
+  release happens to still be marked non-draft. The yml has
+  `publish.releaseType: release` to force published. Old drafts
+  need a one-shot `gh release edit --draft=false` to repair.
+
+Manual recheck path: avatar menu → "Check for updates…" → calls
+`updater:check-now`. Returns `{ ok, currentVersion, manifestVersion,
+updateAvailable, downloaded }`. Topbar reads the shape and surfaces
+an info-toast (`fireInfoToast` from `src/components/desktop/InfoToast.tsx`)
+with the right message. Replaces the older `alert()` calls — info
+toasts are the desktop's standard non-blocking feedback now.
+
+### 8.1 Cutting a release
+
+Standard flow when shipping:
+
+1. Bump `package.json` `version` to a new semver. Tag MUST match.
+2. `git commit + git push origin main`.
+3. `git tag v0.X.Y && git push origin v0.X.Y`.
+4. `.github/workflows/release-desktop.yml` triggers on the tag push
+   → builds arm64 + x64 DMGs → publishes to a matching GitHub
+   Release. `electron-builder.yml` has `mac.artifactName:
+   ${productName}-${version}-${arch}.${ext}` so both DMGs get
+   symmetric `-arm64` / `-x64` suffixes.
+5. Verify via `gh release view vX.Y.Z` — should show
+   `latest-mac.yml` + 2 DMGs + 2 blockmaps, and `gh api .../latest`
+   should return the new tag.
+
+If the workflow fails (CI build error, missing secrets, …) without
+publishing: delete the tag locally + remote, fix, re-tag.
+
+```bash
+git tag -d vX.Y.Z
+git push --delete origin vX.Y.Z
+# fix
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+If you want to **skip a release** and just save WIP, commit + push
+without tagging. Workflow only fires on tag push.
+
+### 8.2 Signing / notarization
+
+Currently unsigned. Users see "PicG is damaged" on first open
+(quarantine flag → Gatekeeper reject for unsigned). Workarounds in
+the release notes:
+
+```bash
+xattr -cr /Applications/PicG.app
+```
+
+To actually sign:
+
+1. Apple Developer Program ($99/yr) → "Developer ID Application"
+   cert.
+2. Export `.p12`, `base64 -i cert.p12 -o cert.b64`.
+3. Add GitHub secrets: `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`,
+   `APPLE_ID`, `APPLE_ID_PASSWORD` (app-specific password),
+   `APPLE_TEAM_ID`.
+4. Uncomment the `CSC_LINK / CSC_KEY_PASSWORD / APPLE_*` env block
+   in `.github/workflows/release-desktop.yml`.
+5. Set `mac.identity` in `electron-builder.yml`, flip
+   `hardenedRuntime: true`.
+
+Not yet done. Tracked in §10 backlog.
+
+---
+
+## 9. Singletons & lifecycle gotchas
+
+These bit us in production once each — keep them in mind.
+
+### 9.1 GalleryRegistry must be one instance
+
+`electron/ipc/gallery.ts` exports `getRegistry()`. The picg://
+protocol handler in main must use **that** function, not
+`new GalleryRegistry()`. Two instances = two manifest caches = a
+gallery cloned via IPC after the protocol side has already cached
+the manifest will 404 forever (until next launch). Symptom: every
+album cover in a freshly-cloned gallery shows "COVER FAILED ·
+gallery-not-found".
+
+### 9.2 Stable port across activate
+
+`pickStablePort()` writes the chosen port to
+`<userData>/picg-port` and reuses it on next launch. Without this,
+each cold launch would pick a fresh free port → the Next standalone
+server's URL changes → renderer's `localStorage` is keyed by
+origin → user has to re-sign-in every time.
+
+### 9.3 Cache the resolved app URL across `app.activate`
+
+On macOS, closing the window doesn't quit. `app.on('activate')`
+fires later when the user clicks the dock icon, and we re-create
+the window. The Next server we forked is still alive on the same
+port. **Don't re-spawn or re-pick the port** — the persisted port
+is held by our own server, `pickStablePort` falls through to a new
+one, new origin, localStorage gone. `cachedAppUrl` in
+`electron/main.ts` reuses the URL until the spawned server actually
+exits.
+
+### 9.4 Push must go through `origin`, not a raw URL
+
+`git push <token-url> <branch>` does the upload but doesn't update
+`refs/remotes/origin/<branch>`. The Topbar's ahead-counter then
+shows the same number forever, even after a successful push. Fix:
+override the URL inline with `git -c remote.origin.url=<token-url>
+push origin <branch>`. The `-c` keeps the token off `.git/config`.
+
+Same call path also pins `http.postBuffer=524288000` and
+`http.version=HTTP/1.1` to dodge GitHub's HTTP/2 sideband-disconnect
+on multi-MB pushes.
+
+### 9.5 Squash unpushed commits at push time
+
+`maybeSquash()` collapses everything ahead of `origin/<branch>` into
+a single commit before push, with the original subject lines listed
+in the body. Local stays granular for the Undo toast; remote stays
+readable. On push failure we `git reset --hard <preSquashSha>` so
+the user keeps their per-op Undo grain.
+
+---
+
+## 10. Backlog / known gaps
 
 These are deliberately undone, and listed here so the next person
 doesn't redo investigations.
@@ -338,50 +577,60 @@ doesn't redo investigations.
   flow uses (see `openDeployedGalleryDb` in
   `src/components/desktop/galleryDb.ts`). Building the DB locally
   would mean owning the rendering layer (template + theme + build.py)
-  — an explicit non-goal per §0. If you find yourself wanting a local
-  DB, the answer is "push and let CI rebuild it".
-- **OAuth in Electron** — currently the user has to paste a PAT at
-  `/login/token`. The web OAuth flow does
-  `window.location.href = github.com/...` which will replace the
-  Electron renderer. Solution: `shell.openExternal` to the system
-  browser + a custom protocol callback (`picg://oauth/callback`). The
-  lfkdsk-auth Cloudflare Worker would need to redirect to that
-  protocol; not done.
-- **Production packaging** — `npm run electron:dev` requires a
-  separately-running Next dev server. For a real distributable:
-  `electron-builder` for signing + notarization, plus either Next
-  static export (`output: 'export'` in `next.config.js` if all routes
-  can be static) or a `next start` server inside main. Trade-offs not
-  yet evaluated.
-- **Token in Keychain** — see §4.2. Replace IPC-passed-each-clone with
-  Keychain storage so re-clones don't need the user to paste again.
-- **Custom protocol for thumbnails** — every thumbnail currently goes
-  through IPC + base64 + data URL. For an album with hundreds of
-  photos that's a real bottleneck. `protocol.handle('picg', ...)` in
-  main + `<img src="picg://...">` would short-circuit to direct
-  `file://` reads, no IPC.
-- **Album drag reorder past the last card** — drop targets are the
-  cards themselves, so dragging "to the end" requires dropping on the
-  last card. A trailing drop zone would fix it.
-- **EXIF GPS in the lightbox** — albums have a per-album location in
-  README.yml that's already shown; per-photo GPS read from each
+  — an explicit non-goal per §0.
+- **macOS code signing + notarization** — see §8.2. Cert costs $99/yr;
+  workflow secrets pre-wired (commented out). Without it users hit
+  "PicG is damaged" → must run `xattr -cr` or right-click open.
+- **HEIC on Linux / Windows** — `decodeHeicViaSips` is macOS-only.
+  Replace with libde265 in libvips, or a wasm HEIC decoder, before
+  we ship Linux/Windows builds.
+- **HEIC preview in upload page** — `makePreviewUrl` falls back to
+  the original `URL.createObjectURL(file)` for HEIC because Chromium
+  can't decode HEIC. Round-tripping through main's `sips` for the
+  preview would fix it (small IPC cost, one-time per file).
+- **CONFIG.yml modules detection bug** — user reported a gallery
+  whose `nav` entries are valid but the editor shows everything
+  unchecked. Parser run in isolation (Node + same code) returns
+  correct results. Diagnostic `console.log` was added to the modal
+  load path (`[picg edit-gallery] CONFIG.yml parsed`). Root cause
+  not yet confirmed; suspects are state-update timing (modal opens
+  while `adapter` is briefly null) or a render-side stale closure.
+  Next step: reproduce in dev mode with DevTools open and capture
+  the diagnostic.
+- **Live-Photo MOV preview** — accepted in upload; the `<img>` tag
+  shows a broken icon during the preview phase (no video frame
+  extraction). Best fix: detect `.mov` in `makePreviewUrl`, skip
+  the bitmap path, render a small video icon placeholder.
+- **Per-photo EXIF in lightbox** — albums show the per-album location
+  from README.yml; per-photo GPS / camera / lens read from each
   image's EXIF is not done. Web doesn't show it either.
+- **Cover failed on stale manifest** — the `gallery-not-found` overlay
+  is a useful diagnostic but with §9.1 fixed it should never fire.
+  If it ever does in production again, the cause is NOT a race: the
+  manifest itself is wrong (stale entry, repo deleted under us, …).
+- **Auto-update for dev builds** — `initAutoUpdater()` returns early
+  when `!app.isPackaged`. There's no way to test the full update
+  flow without packaging two builds and installing the older one.
 
 ---
 
-## 7. File map cheat sheet
+## 11. File map cheat sheet
 
 ```
 electron/                                  Electron main process
-├ main.ts                                  app boot, BrowserWindow, IPC register
+├ main.ts                                  boot, BrowserWindow, port pick, picg:// protocol, dev/prod URL resolution
 ├ preload.ts                               contextBridge → window.picgBridge
+├ updater.ts                               electron-updater wiring (semver-aware checkNow + replay cache)
+├ thumbnail.ts                             on-disk thumb cache for picg://?thumb=W
 ├ tsconfig.json                            CommonJS, dist → electron/dist/
 ├ ipc/
 │  ├ contract.ts                           IPC channels + payload types (single source of truth)
-│  ├ gallery.ts                            list / resolve / clone / remove / sync handlers
+│  ├ auth.ts                               token in <userData>/auth.json (mode 0600)
+│  ├ compress.ts                           sharp + sips HEIC route + 50 MP cap + lossless + EXIF supplement
+│  ├ gallery.ts                            getRegistry() singleton — used by both IPC and protocol handler
 │  └ storage.ts                            StorageAdapter handlers (read / write / delete)
 ├ galleries/
-│  └ GalleryRegistry.ts                    manifest + on-disk repo management
+│  └ GalleryRegistry.ts                    manifest + on-disk repo management; squash-on-push lives here
 └ storage/
    └ LocalGitStorageAdapter.ts             fs/promises + simple-git impl
 
@@ -396,31 +645,46 @@ src/core/storage/                          Cross-platform storage abstraction
 │  ├ api.ts                                listRepos / createRepo / token introspection
 │  └ index.ts
 └ electron/
-   ├ PreloadBridgeAdapter.ts               renderer-side StorageAdapter via window.picgBridge
+   ├ PreloadBridgeAdapter.ts               renderer-side StorageAdapter + PicgBridge type (mirror of electron/ipc/contract.ts)
    ├ galleryTypes.ts                       LocalGallery + CloneProgress (shared with main)
    └ index.ts
 
 src/components/
-├ DesktopChrome.tsx                        Topbar + DesktopTheme (global rules live here)
+├ DesktopChrome.tsx                        Topbar + DesktopTheme + InfoToastHost mount + update progress UI
 └ desktop/
-   ├ EditGalleryModal.tsx                  CONFIG.yml editor
-   ├ compressWorker.ts                     Worker entry — re-exports compressImage
-   ├ useCompressWorker.ts                  hook around the worker
-   └ useAdapterImage.ts                    hook: adapter.readFile → data URL with cache
+   ├ EditGalleryModal.tsx                  CONFIG.yml editor (modules catalog + drag reorder)
+   ├ InfoToast.tsx                         lightweight info / error toast (replaces alert())
+   ├ UndoToast.tsx                         action toast for single-commit mutations
+   ├ makePreview.ts                        createImageBitmap → webp blob, used by upload pages
+   ├ useCompressIpc.ts                     hook: bridge.compress.image with passthrough for MOV
+   ├ useAdapterImage.ts                    hook: picg:// URL with optional ?thumb=W + error-overlay probe
+   └ galleryDb.ts                          openDeployedGalleryDb (annual summary reads CDN sqlite.db)
 
 src/app/desktop/                           All desktop routes
-├ galleries/page.tsx                       library list
-├ galleries/[id]/page.tsx                  gallery detail (album grid + reorder)
+├ login/page.tsx                           OAuth landing
+├ login/token/page.tsx                     PAT fallback
+├ galleries/page.tsx                       library list (hero-row layout: title left + Add gallery right)
+├ galleries/[id]/page.tsx                  gallery detail (album grid + reorder + cover error overlay)
 ├ galleries/[id]/new-album/page.tsx        create album wizard
 ├ galleries/[id]/[album]/page.tsx          album detail (thumbnails + lightbox)
 ├ galleries/[id]/[album]/add/page.tsx      add photos to existing album
-└ settings/page.tsx                        compression settings
+├ galleries/[id]/annual-summary/page.tsx   year list
+├ galleries/[id]/annual-summary/[year]/page.tsx  monthly picker
+└ settings/page.tsx                        compression settings (lossless toggle here)
 
 src/lib/
 ├ github.ts                                Backwards-compat facade over StorageAdapter
 ├ auth.ts                                  OAuth helpers (mostly web-flow specific)
 ├ settings.ts                              CompressionSettings shape + localStorage I/O
-├ compress-image.ts                        squoosh + EXIF wrapper (used by the worker)
+├ compress-image.ts                        squoosh + EXIF wrapper for the web flow (mirrors desktop's 50 MP cap + lossless)
 ├ annualSummary.ts                         sql.js queries (platform-agnostic, ready to reuse)
 └ sqlite.ts                                sql.js loader — fetches from CDN; needs an adapter
+
+build/icon.svg                             single source of truth for app icon (920×920 inset, inktype palette)
+scripts/build-icon.js                      svg → icns/png via sharp + iconutil
+scripts/stage-standalone.js                copies .next/static + public into .next/standalone for packaging
+scripts/after-pack.js                      strips Chromium locales except en/zh during electron-builder afterPack
+
+electron-builder.yml                       packaging config (asarUnpack, max compression, locale strip, github publish)
+.github/workflows/release-desktop.yml      tag-push → DMG → publish to GitHub Release
 ```
