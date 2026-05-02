@@ -177,7 +177,6 @@ export default function GalleryDetailPage() {
                 : `${sortedAlbums.length} album${sortedAlbums.length === 1 ? '' : 's'}`}
             </span>
           </p>
-          <p className="path"><code>{gallery.localPath}</code></p>
         </section>
 
         {loadError && (

@@ -190,7 +190,6 @@ export default function AlbumPage() {
               </>
             )}
           </p>
-          <p className="path"><code>{albumUrl}/</code></p>
         </section>
 
         {loadError && (
