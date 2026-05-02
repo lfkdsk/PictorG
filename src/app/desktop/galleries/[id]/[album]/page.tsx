@@ -992,6 +992,7 @@ function Thumb({
 }) {
   const { src } = useAdapterImage(adapter, `${albumUrl}/${name}`, {
     picgGalleryId: galleryId,
+    thumbWidth: 480,
   });
   return (
     <li>
@@ -1048,6 +1049,7 @@ function CoverField({
 }) {
   const { src } = useAdapterImage(adapter, cover || null, {
     picgGalleryId: galleryId,
+    thumbWidth: 480,
   });
   return (
     <div className="picg-cover-field">
@@ -1127,7 +1129,10 @@ function CoverPickerThumb({
   isCurrent: boolean;
   onSelect: () => void;
 }) {
-  const { src } = useAdapterImage(adapter, path, { picgGalleryId: galleryId });
+  const { src } = useAdapterImage(adapter, path, {
+    picgGalleryId: galleryId,
+    thumbWidth: 480,
+  });
   const filename = path.split('/').pop() ?? path;
   return (
     <li>

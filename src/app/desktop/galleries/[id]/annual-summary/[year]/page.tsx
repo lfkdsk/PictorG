@@ -425,6 +425,7 @@ function PickerThumb({
 }) {
   const { src } = useAdapterImage(adapter, candidate.path, {
     picgGalleryId: galleryId,
+    thumbWidth: 480,
   });
   return (
     <li>
