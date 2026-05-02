@@ -14,6 +14,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
+import { EditGalleryModal } from '@/components/desktop/EditGalleryModal';
 
 type Album = {
   name: string;        // YAML key — display name (often Chinese)
@@ -69,6 +70,8 @@ export default function GalleryDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draggingUrl, setDraggingUrl] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [editGalleryOpen, setEditGalleryOpen] = useState(false);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -229,12 +232,47 @@ export default function GalleryDetailPage() {
                 </span>
               </p>
             </div>
-            <Link
-              href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/new-album` as any}
-              className="btn primary"
-            >
-              + New album
-            </Link>
+            <div className="hero-actions">
+              <Link
+                href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/new-album` as any}
+                className="btn primary"
+              >
+                + New album
+              </Link>
+              <div className="picg-menu-anchor">
+                <button
+                  type="button"
+                  className="picg-icon-btn"
+                  aria-label="Gallery actions"
+                  aria-haspopup="menu"
+                  aria-expanded={moreMenuOpen}
+                  onClick={() => setMoreMenuOpen((v) => !v)}
+                >
+                  ⋯
+                </button>
+                {moreMenuOpen && (
+                  <>
+                    <div
+                      className="picg-menu-overlay"
+                      onClick={() => setMoreMenuOpen(false)}
+                    />
+                    <div className="picg-menu" role="menu">
+                      <button
+                        type="button"
+                        className="picg-menu-item"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          setEditGalleryOpen(true);
+                        }}
+                        role="menuitem"
+                      >
+                        Edit gallery
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -283,6 +321,12 @@ export default function GalleryDetailPage() {
         )}
       </main>
 
+      <EditGalleryModal
+        adapter={adapter}
+        open={editGalleryOpen}
+        onClose={() => setEditGalleryOpen(false)}
+      />
+
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 1200px; margin: 0 auto; }
@@ -291,6 +335,9 @@ export default function GalleryDetailPage() {
         .hero-row {
           display: flex; align-items: flex-start; justify-content: space-between;
           gap: 24px;
+        }
+        .hero-actions {
+          display: flex; gap: 8px; align-items: center; flex-shrink: 0;
         }
         .hero h1 {
           font-family: var(--serif);
