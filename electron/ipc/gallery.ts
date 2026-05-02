@@ -8,7 +8,7 @@ import { ipcMain } from 'electron';
 
 import { GalleryRegistry } from '../galleries/GalleryRegistry';
 import { CHANNELS } from './contract';
-import type { GalleryCloneArgs } from './contract';
+import type { GalleryCloneArgs, GalleryMigrateArgs } from './contract';
 
 // Module-level singleton, exported so the picg:// protocol handler in
 // main.ts can use the SAME instance (and therefore the same cache).
@@ -62,5 +62,31 @@ export function registerGalleryIpcHandlers(): void {
 
   ipcMain.handle(CHANNELS.gallery.undoLastCommit, async (_e, id: string) => {
     return getRegistry().undoLastCommit(id);
+  });
+
+  // Migration is the only gallery op besides clone that streams progress.
+  // We pass `event.sender` so the registry can broadcast
+  // CHANNELS.gallery.migrateProgress events back to the requesting
+  // renderer, exactly matching the clone-progress pattern.
+  ipcMain.handle(
+    CHANNELS.gallery.migrate,
+    async (event, ...args: GalleryMigrateArgs) => {
+      const [id, direction] = args;
+      const registry = getRegistry();
+      return direction === 'to-icloud'
+        ? registry.migrateToICloud(id, event.sender)
+        : registry.migrateToInternal(id, event.sender);
+    }
+  );
+
+  ipcMain.handle(CHANNELS.gallery.discover, async () => {
+    return getRegistry().discoverICloud();
+  });
+
+  // Renderer-visible iCloud root path. The galleries page uses this
+  // for the "iCloud-syncing libraries live in <path>" hint in the
+  // settings menu, so the user can find them in Finder if they need to.
+  ipcMain.handle(CHANNELS.gallery.iCloudRoot, async () => {
+    return getRegistry().iCloudGalleriesRoot();
   });
 }

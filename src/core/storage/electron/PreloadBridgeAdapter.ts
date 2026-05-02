@@ -9,7 +9,13 @@ import type {
   WriteOptions,
 } from '../types';
 import { bytesToBase64, bytesToUtf8 } from '../encoding';
-import type { CloneProgress, InFlightClone, LocalGallery } from './galleryTypes';
+import type {
+  CloneProgress,
+  InFlightClone,
+  LocalGallery,
+  MigrateDirection,
+  MigrateProgress,
+} from './galleryTypes';
 
 // Renderer-side adapter that forwards every StorageAdapter call to the
 // Electron preload bridge. Used in the desktop app; on web the import is
@@ -227,6 +233,24 @@ export type PreloadGalleryBridge = {
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
   // from a useEffect cleanup to avoid leaks.
   onCloneProgress(handler: (event: CloneProgress) => void): () => void;
+  // Move a gallery between the app's userData and iCloud Drive. The
+  // promise resolves once the swap is complete (manifest updated,
+  // source removed); the returned LocalGallery has the new path and
+  // updated `storage` field.
+  migrate(id: string, direction: MigrateDirection): Promise<LocalGallery>;
+  // Scan the iCloud PicG directory for galleries the local manifest
+  // doesn't know about and add them. Returns the newly-added entries
+  // (decorated with `storage: 'icloud'`); empty array means the scan
+  // turned up nothing new. Safe to call repeatedly.
+  discover(): Promise<LocalGallery[]>;
+  // Absolute path of the iCloud PicG root, e.g.
+  // /Users/<you>/Library/Mobile Documents/com~apple~CloudDocs/PicG.
+  // The renderer surfaces this in a settings hint so the user can
+  // open it in Finder.
+  iCloudRoot(): Promise<string>;
+  // Subscribe to migrate-progress events. Same shape as
+  // onCloneProgress: returns an unsubscribe fn.
+  onMigrateProgress(handler: (event: MigrateProgress) => void): () => void;
 };
 
 export type PreloadUpdaterBridge = {

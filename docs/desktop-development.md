@@ -99,13 +99,18 @@ Top-level operations that don't fit the per-gallery shape (`listRepos`,
 
 `electron/galleries/GalleryRegistry.ts` owns the user's gallery library.
 Manifests live at `<userData>/galleries.json`; cloned repos live at
-`<userData>/galleries/<owner>__<repo>/`. Users never see the path — the
-app is the library, not a folder picker over their filesystem.
+**either** `<userData>/galleries/<owner>__<repo>/` (default — Internal)
+**or** `~/Library/Mobile Documents/com~apple~CloudDocs/PicG/<owner>__<repo>/`
+(opt-in — iCloud, see §10). Users never see the path — the app is the
+library, not a folder picker over their filesystem.
 
 Methods: `list()` / `resolve(id)` / `clone(request, sender)` /
-`remove(id)` / `sync(id)`. Clone progress streams back over
-`CHANNELS.gallery.cloneProgress` events; `measureDirSize` runs after
-clone + sync to populate the capacity readout on cards.
+`remove(id)` / `sync(id)` / `migrateToICloud(id, sender)` /
+`migrateToInternal(id, sender)` / `discoverICloud()` /
+`triggerICloudDownload(paths?)`. Clone and migrate progress stream
+over `CHANNELS.gallery.cloneProgress` and `.migrateProgress` events
+respectively; `measureDirSize` runs after clone + sync + migration to
+populate the capacity readout on cards.
 
 ### 1.3 `PreloadBridgeAdapter` (renderer → main)
 
@@ -518,7 +523,7 @@ To actually sign:
 5. Set `mac.identity` in `electron-builder.yml`, flip
    `hardenedRuntime: true`.
 
-Not yet done. Tracked in §10 backlog.
+Not yet done. Tracked in §11 backlog.
 
 ---
 
@@ -577,7 +582,112 @@ the user keeps their per-op Undo grain.
 
 ---
 
-## 10. Backlog / known gaps
+## 10. iCloud sync (Mac-only)
+
+A gallery's working tree can live in the user's iCloud Drive instead
+of inside `<userData>`. iCloud Drive then handles cross-Mac sync of
+both the photo files and the `.git` directory; nothing else in the
+architecture changes — the same `LocalGitStorageAdapter` reads/writes
+through `fs/promises` regardless of where the path resolves to, and
+publishing still goes through `git push` → CI → deployed site as
+described in §0.
+
+### 10.1 Layout
+
+```
+~/Library/Mobile Documents/com~apple~CloudDocs/PicG/
+├── alice__landscape-2024/      ← gallery 1, full clone with .git
+└── alice__europe-trip/         ← gallery 2
+```
+
+`com~apple~CloudDocs` is the OS-mandated mount point for iCloud Drive
+on macOS; we hard-code it. The `PicG/` subfolder is intentionally
+literal — the user can find it in Finder / Files.app and recognize
+it. We don't use a bundle id like `com.lfkdsk.picg`.
+
+### 10.2 Migration
+
+`GalleryRegistry.migrateToICloud(id, sender)` (and its inverse
+`migrateToInternal`) copies the entire working tree to the new
+location, verifies the file count matches, atomically swaps
+`localPath` in the manifest, then deletes the source. Progress
+streams as `MigrateProgress` events on `CHANNELS.gallery.migrateProgress`
+through five phases: `counting → copying → verifying → cleanup → done`.
+The renderer (`/desktop/galleries`) renders the card's action row as a
+progress bar while a migrate is in flight.
+
+If anything fails before the manifest swap, the source is intact and
+we delete the half-copied destination so the user can retry. After
+the swap, source removal failure is logged but treated as recoverable
+garbage — the manifest already points to the new path so the user's
+view is correct.
+
+### 10.3 Discovery on startup
+
+`discoverICloud()` runs in `app.whenReady` (see [main.ts](../electron/main.ts))
+and scans `PicG/` for subdirectories whose name matches `<owner>__<repo>`,
+that contain a `.git/` directory, and whose `origin` remote points
+at `https://github.com/<owner>/<repo>(.git)?`. Folders that pass all
+three checks and aren't already in this Mac's manifest get
+auto-registered. Folders that fail any check are silently skipped and
+logged — better to miss a gallery than to import the user's stray
+folder.
+
+This is the mechanism that lets a gallery migrated on Mac A appear on
+Mac B without a re-clone. It's a one-shot at startup; we don't poll
+for newly-arrived iCloud folders during a session.
+
+### 10.4 Materialization (`brctl download`)
+
+iCloud's "Optimize Mac Storage" silently evicts files to placeholder
+form (`.foo.jpg.icloud`) when disk is tight, and **a placeholder breaks
+us** — `fs.readFile` returns `EIO`, sqlite errors, sharp can't decode.
+
+We mitigate two ways:
+
+- **At startup**, `triggerICloudDownload()` fires `brctl download
+  <path>` against every iCloud-rooted gallery in the manifest.
+  Already-downloaded files are no-ops; placeholders queue a
+  background materialization.
+- **After every migrate-to-iCloud**, the same call runs against the
+  new destination so the source-of-truth Mac doesn't immediately
+  hand its own files back to iCloud as placeholders.
+
+`brctl` is shell-out, fire-and-forget — we don't await its
+completion, only the queue acceptance. The right user-side fix is
+**System Settings → iCloud Drive → PicG folder → "Always Keep
+Downloaded"**; surfacing this hint in the UI is on the backlog.
+
+### 10.5 Known invariants
+
+- **Single-machine-at-a-time editing.** iCloud doesn't have Git's
+  conflict resolution. Concurrent edits on Mac A and Mac B before
+  iCloud finishes propagating produce silent `xxx 2.json` conflict
+  files in `.git/refs/` or working tree. Document; v1 has no UI for
+  detection.
+- **Always close the app before switching machines.** sqlite WAL
+  files (if any are left around by a future feature; current code
+  doesn't write sqlite from the desktop) and `.git/index.lock` need
+  to be committed/cleared before iCloud can sync them safely.
+- **No on-demand download.** v1 assumes the whole library is
+  materialized. A future enhancement can scan for `.icloud`
+  placeholders and lazy-download as the user navigates, with
+  thumbnail-level "downloading" overlays.
+
+### 10.6 Code paths
+
+| Concern | File |
+|---|---|
+| Registry methods | [`electron/galleries/GalleryRegistry.ts`](../electron/galleries/GalleryRegistry.ts) (search `iCloud`) |
+| IPC channels | [`electron/ipc/contract.ts`](../electron/ipc/contract.ts) — `gallery.migrate` / `discover` / `migrateProgress` / `iCloudRoot` |
+| IPC handlers | [`electron/ipc/gallery.ts`](../electron/ipc/gallery.ts) |
+| Preload bridge | [`electron/preload.ts`](../electron/preload.ts) |
+| Startup wiring | [`electron/main.ts`](../electron/main.ts) (`discoverICloud` + `triggerICloudDownload` after `app.whenReady`) |
+| Renderer UI | [`src/app/desktop/galleries/page.tsx`](../src/app/desktop/galleries/page.tsx) (storage badge, Move action, migrate progress) |
+
+---
+
+## 11. Backlog / known gaps
 
 These are deliberately undone, and listed here so the next person
 doesn't redo investigations.
@@ -622,10 +732,26 @@ doesn't redo investigations.
 - **Auto-update for dev builds** — `initAutoUpdater()` returns early
   when `!app.isPackaged`. There's no way to test the full update
   flow without packaging two builds and installing the older one.
+- **iCloud "Always Keep Downloaded" hint** — when the user moves a
+  gallery to iCloud (§10), we should prompt them to right-click the
+  PicG folder in Finder and pick "Always Keep Downloaded". Without
+  it, "Optimize Mac Storage" can evict files to placeholders and
+  break reads. `triggerICloudDownload` mitigates but doesn't prevent
+  re-eviction. UI for the hint is the missing piece.
+- **iCloud conflict file detection** — concurrent edits across two
+  Macs before iCloud finishes propagating produce silent
+  `xxx 2.json` / `xxx 2.jpg` conflict files. Detecting them on
+  startup and surfacing a "merge or discard" UI is on the iCloud
+  v2 list.
+- **On-demand iCloud download** — current code assumes the whole
+  library is materialized. A v2 enhancement scans for `.icloud`
+  placeholders during gallery navigation and lazy-downloads with
+  per-thumbnail "downloading" overlays, instead of the upfront
+  `brctl download` that we do today.
 
 ---
 
-## 11. File map cheat sheet
+## 12. File map cheat sheet
 
 ```
 electron/                                  Electron main process

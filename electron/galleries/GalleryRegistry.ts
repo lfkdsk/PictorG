@@ -4,6 +4,7 @@
 // thin wrappers that translate calls and forward progress events.
 
 import { app, WebContents } from 'electron';
+import { exec } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import simpleGit from 'simple-git';
@@ -14,10 +15,19 @@ import type {
   CloneProgress,
   InFlightClone,
   LocalGallery,
+  MigrateDirection,
+  MigrateProgress,
 } from '../../src/core/storage/electron/galleryTypes';
+import { CHANNELS } from '../ipc/contract';
 
 const MANIFEST_FILE = 'galleries.json';
 const GALLERIES_DIR = 'galleries';
+
+// Sub-directory inside the user's iCloud Drive root where we store
+// galleries that opted in to cross-Mac sync. Picked to be visible and
+// recognizable in Files.app (on iPhone) and Finder. We deliberately
+// don't use a bundle id — iCloud Drive shows the literal folder name.
+const ICLOUD_PICG_DIR = 'PicG';
 
 function galleryIdFor(owner: string, repo: string): string {
   // owner__repo — `__` is rare in GitHub slugs and stays filesystem-safe.
@@ -53,6 +63,7 @@ export type CloneRequest = {
 export class GalleryRegistry {
   private readonly manifestPath: string;
   private readonly galleriesRoot: string;
+  private readonly iCloudRoot: string;
   private cache: LocalGallery[] | null = null;
   // In-flight clones, keyed by galleryId. Lives only in memory: clones
   // don't survive an app restart anyway (the simple-git child process
@@ -60,11 +71,49 @@ export class GalleryRegistry {
   // misleading. Used by listInFlight() so a renderer that mounts after
   // navigating back to /desktop/galleries can rebuild its progress UI.
   private readonly inFlight = new Map<string, InFlightClone>();
+  // Migrations currently running. We refuse to start a second migrate
+  // for a gallery that's already moving — the half-copied destination
+  // would race the in-progress copy and corrupt one or both.
+  private readonly migrating = new Set<string>();
 
   constructor() {
     const userData = app.getPath('userData');
     this.manifestPath = path.join(userData, MANIFEST_FILE);
     this.galleriesRoot = path.join(userData, GALLERIES_DIR);
+    // ~/Library/Mobile Documents/com~apple~CloudDocs is iCloud Drive's
+    // canonical mount on macOS. The `com~apple~CloudDocs` token is
+    // hard-coded by Apple — it won't change, and there's no public API
+    // to discover it (FileProvider's API is iOS-only).
+    this.iCloudRoot = path.join(
+      app.getPath('home'),
+      'Library/Mobile Documents/com~apple~CloudDocs',
+      ICLOUD_PICG_DIR
+    );
+  }
+
+  iCloudGalleriesRoot(): string {
+    return this.iCloudRoot;
+  }
+
+  // Whether this absolute path lives under the iCloud Drive PicG folder.
+  // Used to derive `gallery.storage` on read. Tolerates trailing slashes
+  // and normalizes both inputs so a user who copied the path with a
+  // typo doesn't silently miss the check.
+  isICloudPath(p: string): boolean {
+    const root = path.resolve(this.iCloudRoot) + path.sep;
+    const candidate = path.resolve(p) + path.sep;
+    return candidate.startsWith(root);
+  }
+
+  // Add a transient `storage` field to a manifest entry without
+  // mutating the cached/persisted shape. Called from every public
+  // read path (list, resolve, clone return, sync return, migrate
+  // return) so the renderer always sees the right badge.
+  private decorate(g: LocalGallery): LocalGallery {
+    return {
+      ...g,
+      storage: this.isICloudPath(g.localPath) ? 'icloud' : 'internal',
+    };
   }
 
   // --- manifest ---
@@ -91,12 +140,14 @@ export class GalleryRegistry {
   }
 
   async list(): Promise<LocalGallery[]> {
-    return [...(await this.readManifest())];
+    const all = await this.readManifest();
+    return all.map((g) => this.decorate(g));
   }
 
   async resolve(id: string): Promise<LocalGallery | null> {
     const all = await this.readManifest();
-    return all.find((g) => g.id === id) ?? null;
+    const found = all.find((g) => g.id === id);
+    return found ? this.decorate(found) : null;
   }
 
   // --- clone ---
@@ -211,7 +262,7 @@ export class GalleryRegistry {
     const items = await this.readManifest();
     await this.writeManifest([...items, gallery]);
     this.inFlight.delete(id);
-    return gallery;
+    return this.decorate(gallery);
   }
 
   // Snapshot of clones currently running. Used by the galleries page on
@@ -250,7 +301,7 @@ export class GalleryRegistry {
     const items = await this.readManifest();
     const next = items.map((g) => (g.id === id ? updated : g));
     await this.writeManifest(next);
-    return updated;
+    return this.decorate(updated);
   }
 
   async push(id: string): Promise<void> {
@@ -448,6 +499,412 @@ export class GalleryRegistry {
       behind: s.behind,
       dirty: !s.isClean(),
     };
+  }
+
+  // --- iCloud migration ---
+
+  // Move a gallery's working tree into the user's iCloud Drive
+  // (`~/Library/Mobile Documents/com~apple~CloudDocs/PicG/<id>/`). The
+  // manifest's `localPath` is updated atomically — we copy first, verify,
+  // then swap the manifest, then delete the source. Failure at any step
+  // before the swap leaves the original directory intact, so the worst
+  // case is a half-written iCloud copy that we clean up before
+  // surfacing the error.
+  async migrateToICloud(
+    id: string,
+    sender: WebContents | null = null
+  ): Promise<LocalGallery> {
+    return this.migrate(id, 'to-icloud', sender);
+  }
+
+  // Reverse migration: pull a gallery out of iCloud back into the
+  // app's userData. Useful if the user is hitting iCloud quota issues
+  // or wants to stop syncing a particular library.
+  async migrateToInternal(
+    id: string,
+    sender: WebContents | null = null
+  ): Promise<LocalGallery> {
+    return this.migrate(id, 'to-internal', sender);
+  }
+
+  private async migrate(
+    id: string,
+    direction: MigrateDirection,
+    sender: WebContents | null
+  ): Promise<LocalGallery> {
+    if (this.migrating.has(id)) {
+      throw new Error(`Migration already in progress for ${id}`);
+    }
+    if (this.inFlight.has(id)) {
+      throw new Error(`Cannot migrate while a clone is running for ${id}`);
+    }
+    const gallery = await this.resolveRaw(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+
+    const isICloudNow = this.isICloudPath(gallery.localPath);
+    if (direction === 'to-icloud' && isICloudNow) {
+      throw new Error('Gallery already lives in iCloud Drive.');
+    }
+    if (direction === 'to-internal' && !isICloudNow) {
+      throw new Error('Gallery already lives in the app data directory.');
+    }
+
+    const dst =
+      direction === 'to-icloud'
+        ? path.join(this.iCloudRoot, id)
+        : path.join(this.galleriesRoot, id);
+
+    // Refuse to clobber an existing destination — if the user has a
+    // half-finished migration sitting in iCloud from a previous run,
+    // they should clean it up themselves rather than have us silently
+    // merge.
+    try {
+      await fs.access(dst);
+      throw new Error(
+        `Destination already exists: ${dst}. Remove it manually before retrying.`
+      );
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+
+    this.migrating.add(id);
+    const emit = (evt: MigrateProgress) => {
+      try {
+        sender?.send(CHANNELS.gallery.migrateProgress, evt);
+      } catch {
+        /* renderer might be gone; ignore */
+      }
+    };
+
+    try {
+      // Make sure the parent directory exists. For iCloud this also
+      // implicitly creates `~/.../com~apple~CloudDocs/PicG/` on first
+      // migration; the fileprovider materializes it as a real folder.
+      await fs.mkdir(path.dirname(dst), { recursive: true });
+
+      emit({ galleryId: id, direction, phase: 'counting' });
+      const entries = await this.listAll(gallery.localPath);
+      const totalFiles = entries.reduce((n, e) => (e.isDir ? n : n + 1), 0);
+      emit({
+        galleryId: id,
+        direction,
+        phase: 'counting',
+        total: totalFiles,
+      });
+
+      // Phase: copying. We mkdir the destination root first, then
+      // walk entries and copy each file. mkdir-on-each-file's parent
+      // is recursive+idempotent — a few extra cheap syscalls beat
+      // having to sort the entries list ourselves.
+      await fs.mkdir(dst, { recursive: true });
+      let processed = 0;
+      for (const entry of entries) {
+        const srcPath = path.join(gallery.localPath, entry.rel);
+        const dstPath = path.join(dst, entry.rel);
+        if (entry.isDir) {
+          await fs.mkdir(dstPath, { recursive: true });
+        } else {
+          await fs.mkdir(path.dirname(dstPath), { recursive: true });
+          await fs.copyFile(srcPath, dstPath);
+          processed += 1;
+          // Throttle progress to roughly one event per 25 files so
+          // the renderer's React reconciler doesn't melt on a
+          // 5000-photo migration. Always emit the final file.
+          if (processed % 25 === 0 || processed === totalFiles) {
+            emit({
+              galleryId: id,
+              direction,
+              phase: 'copying',
+              processed,
+              total: totalFiles,
+              current: entry.rel,
+            });
+          }
+        }
+      }
+
+      // Phase: verifying. Cheap sanity check — count files at the
+      // destination, must match the source's count we already
+      // computed. If a copyFile silently dropped a file (it doesn't,
+      // but defense in depth), we catch it before deleting the
+      // source.
+      emit({ galleryId: id, direction, phase: 'verifying', total: totalFiles });
+      const dstEntries = await this.listAll(dst);
+      const dstFiles = dstEntries.reduce((n, e) => (e.isDir ? n : n + 1), 0);
+      if (dstFiles !== totalFiles) {
+        throw new Error(
+          `Verification failed: source had ${totalFiles} files, destination has ${dstFiles}.`
+        );
+      }
+
+      // Atomically swap the manifest entry. Updating localPath is the
+      // commit point of the migration: from here on, every read goes
+      // through the new path. The old directory is just garbage we
+      // delete next.
+      const items = await this.readManifest();
+      const updated: LocalGallery = { ...gallery, localPath: dst };
+      const next = items.map((g) => (g.id === id ? updated : g));
+      await this.writeManifest(next);
+
+      emit({ galleryId: id, direction, phase: 'cleanup' });
+      await fs.rm(gallery.localPath, { recursive: true, force: true }).catch(
+        (err) => {
+          // Source removal failed but the manifest is already pointing
+          // at the new path, so the user's experience is correct.
+          // Surface to console for the spike — orphaned source is
+          // recoverable manually.
+          console.warn(
+            `[picg] migrate: failed to remove source ${gallery.localPath}: ${
+              err?.message ?? err
+            }`
+          );
+        }
+      );
+
+      // For migrations into iCloud, kick off `brctl download` on the
+      // new path so the file provider materializes it on this Mac
+      // immediately instead of lazily. Async — we don't block the
+      // UI on the download finishing.
+      if (direction === 'to-icloud') {
+        this.triggerICloudDownload([dst]).catch(() => {
+          /* logged inside */
+        });
+      }
+
+      emit({
+        galleryId: id,
+        direction,
+        phase: 'done',
+        processed: totalFiles,
+        total: totalFiles,
+      });
+      return this.decorate(updated);
+    } catch (err) {
+      // Best-effort cleanup of the half-copied destination. If it
+      // doesn't exist (we never got past mkdir) the rm is a no-op.
+      await fs.rm(dst, { recursive: true, force: true }).catch(() => {});
+      const message = err instanceof Error ? err.message : String(err);
+      emit({ galleryId: id, direction, phase: 'error', error: message });
+      throw err;
+    } finally {
+      this.migrating.delete(id);
+    }
+  }
+
+  // Scan ~/.../PicG/ for galleries that aren't in this machine's
+  // manifest. Used at startup so a gallery the user migrated to
+  // iCloud on Mac A automatically shows up on Mac B without re-cloning.
+  //
+  // Discovery is conservative: a folder qualifies if it (a) has a
+  // `.git` directory, (b) has a remote named `origin`, and (c) the
+  // remote URL parses as a GitHub https clone URL. Anything else is
+  // ignored — better to miss a gallery than to add a stray folder
+  // the user dropped in PicG/ for some other reason.
+  //
+  // Returns the newly-added gallery records (decorated). Empty array
+  // means nothing changed.
+  async discoverICloud(): Promise<LocalGallery[]> {
+    let entries: string[];
+    try {
+      const dirents = await fs.readdir(this.iCloudRoot, { withFileTypes: true });
+      entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
+    } catch (err: any) {
+      // ENOENT = no PicG folder yet (first launch on this machine, or
+      // user never migrated anything to iCloud). Not an error.
+      if (err?.code === 'ENOENT') return [];
+      throw err;
+    }
+
+    const existing = await this.readManifest();
+    const seen = new Set(existing.map((g) => g.id));
+    const additions: LocalGallery[] = [];
+
+    for (const id of entries) {
+      if (seen.has(id)) continue;
+      const candidate = path.join(this.iCloudRoot, id);
+      const gallery = await this.tryRecognizeGallery(id, candidate).catch(
+        (err) => {
+          console.warn(
+            `[picg] discoverICloud: skipping ${candidate}: ${
+              err?.message ?? err
+            }`
+          );
+          return null;
+        }
+      );
+      if (gallery) additions.push(gallery);
+    }
+
+    if (additions.length === 0) return [];
+
+    const next = [...existing, ...additions];
+    await this.writeManifest(next);
+    return additions.map((g) => this.decorate(g));
+  }
+
+  // Recognize a directory as a PicG gallery and produce a manifest
+  // entry for it. Reads the git remote to derive owner / repo / clone
+  // URL; rejects anything that doesn't look like a GitHub https remote
+  // (`https://github.com/<owner>/<repo>.git`). Folder name must
+  // already match `<owner>__<repo>` since that's our manifest id.
+  private async tryRecognizeGallery(
+    id: string,
+    dirPath: string
+  ): Promise<LocalGallery | null> {
+    // Parse `<owner>__<repo>` from the folder name. We never silently
+    // synthesize an id from the remote, because the folder name is
+    // what determines our manifest key — getting it from somewhere
+    // else risks two manifest entries for the same on-disk folder.
+    const sep = id.indexOf('__');
+    if (sep <= 0 || sep === id.length - 2) return null;
+    const owner = id.slice(0, sep);
+    const repo = id.slice(sep + 2);
+
+    // Confirm `.git` exists. Without it, this isn't a clone — could
+    // be a stray folder the user created.
+    try {
+      const gitStat = await fs.stat(path.join(dirPath, '.git'));
+      if (!gitStat.isDirectory()) return null;
+    } catch {
+      return null;
+    }
+
+    let remoteUrl = '';
+    try {
+      remoteUrl = (
+        await simpleGit(dirPath).remote(['get-url', 'origin'])
+      )
+        ?.toString()
+        .trim() ?? '';
+    } catch {
+      return null;
+    }
+    if (!remoteUrl) return null;
+
+    // Accept https://github.com/<owner>/<repo>(.git)? — we don't
+    // support ssh remotes for cloning anyway (token-based https is
+    // the entire auth model in clone()).
+    const m = remoteUrl.match(
+      /^https:\/\/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?\/?$/
+    );
+    if (!m) return null;
+    const [, remoteOwner, remoteRepo] = m;
+    if (remoteOwner !== owner || remoteRepo !== repo) {
+      // Folder name disagrees with the remote — refuse rather than
+      // silently importing under the wrong id.
+      return null;
+    }
+
+    // Best-effort default branch: ask git for HEAD's branch. simpleGit
+    // returns empty when on a detached HEAD; we leave defaultBranch
+    // undefined in that case rather than guessing.
+    let defaultBranch: string | undefined;
+    try {
+      const branchInfo = await simpleGit(dirPath).branch();
+      defaultBranch = branchInfo.current || undefined;
+    } catch {
+      /* leave undefined */
+    }
+
+    const sizeBytes = await measureDirSize(dirPath).catch(() => 0);
+
+    return {
+      id,
+      owner,
+      repo,
+      fullName: `${owner}/${repo}`,
+      htmlUrl: `https://github.com/${owner}/${repo}`,
+      cloneUrl: `https://github.com/${owner}/${repo}.git`,
+      localPath: dirPath,
+      defaultBranch,
+      addedAt: new Date().toISOString(),
+      sizeBytes,
+    };
+  }
+
+  // Fire `brctl download` for one or more iCloud paths. Async,
+  // non-blocking — `brctl` returns when the file provider has queued
+  // the download, not when it's finished. Treats failures as warnings
+  // because brctl might be missing on a stripped macOS install or
+  // the user might not be signed into iCloud; either way we continue.
+  //
+  // If `paths` is undefined, downloads every gallery currently in the
+  // manifest whose localPath is under iCloud — used at startup.
+  async triggerICloudDownload(paths?: string[]): Promise<void> {
+    let targets: string[];
+    if (paths) {
+      targets = paths;
+    } else {
+      const all = await this.readManifest();
+      targets = all
+        .filter((g) => this.isICloudPath(g.localPath))
+        .map((g) => g.localPath);
+    }
+    if (targets.length === 0) return;
+
+    await Promise.all(
+      targets.map(
+        (p) =>
+          new Promise<void>((resolve) => {
+            // brctl is a single-arg CLI: `brctl download <path>`. We
+            // shell-out via exec rather than spawn because the path
+            // is from our own manifest (never user-controlled at this
+            // layer) and exec lets us shell-quote with one argument
+            // string. JSON.stringify gives us a properly-quoted shell
+            // string for any path, including ones with spaces or
+            // single quotes.
+            exec(
+              `brctl download ${JSON.stringify(p)}`,
+              { timeout: 60_000 },
+              (err) => {
+                if (err) {
+                  console.warn(
+                    `[picg] brctl download failed for ${p}: ${err.message}`
+                  );
+                }
+                resolve();
+              }
+            );
+          })
+      )
+    );
+  }
+
+  // Like resolve() but returns the persisted shape (no `storage`
+  // decoration). Internal helper for migrate, which needs the bare
+  // record so the next writeManifest doesn't accidentally persist the
+  // derived field.
+  private async resolveRaw(id: string): Promise<LocalGallery | null> {
+    const all = await this.readManifest();
+    return all.find((g) => g.id === id) ?? null;
+  }
+
+  // Recursive directory walk, returning entries in a flat list keyed
+  // by their relative path. Used by migrate() to count files for
+  // progress and to drive the copy. Skips symlinks (gallery contents
+  // are photos + git objects, neither of which the renderer can
+  // create).
+  private async listAll(
+    root: string
+  ): Promise<{ rel: string; isDir: boolean }[]> {
+    const out: { rel: string; isDir: boolean }[] = [];
+    const stack: string[] = [''];
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      const dir = cur ? path.join(root, cur) : root;
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const e of entries) {
+        const rel = cur ? path.join(cur, e.name) : e.name;
+        if (e.isDirectory()) {
+          out.push({ rel, isDir: true });
+          stack.push(rel);
+        } else if (e.isFile()) {
+          out.push({ rel, isDir: false });
+        }
+        // symlinks intentionally skipped — see method comment
+      }
+    }
+    return out;
   }
 }
 

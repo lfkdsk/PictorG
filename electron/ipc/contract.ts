@@ -16,6 +16,8 @@ import type {
   CloneProgress,
   InFlightClone,
   LocalGallery,
+  MigrateDirection,
+  MigrateProgress,
 } from '../../src/core/storage/electron/galleryTypes';
 
 export const CHANNELS = {
@@ -60,6 +62,10 @@ export const CHANNELS = {
     status: 'gallery:status',
     cloneProgress: 'gallery:clone-progress',
     undoLastCommit: 'gallery:undo-last-commit',
+    migrate: 'gallery:migrate',
+    discover: 'gallery:discover',
+    migrateProgress: 'gallery:migrate-progress',
+    iCloudRoot: 'gallery:icloud-root',
   },
   storage: {
     getDefaultBranch: 'storage:get-default-branch',
@@ -84,6 +90,8 @@ export type GalleryCloneArgs = [
     defaultBranch?: string;
   },
 ];
+
+export type GalleryMigrateArgs = [id: string, direction: MigrateDirection];
 
 // Wire format for FileContent. The renderer-side adapter rehydrates this into
 // a FileContent (with `text()` / `base64()` helpers) — those methods can't
@@ -230,6 +238,10 @@ export interface PicgBridge {
     status(id: string): Promise<GalleryStatus>;
     undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
+    migrate(...args: GalleryMigrateArgs): Promise<LocalGallery>;
+    discover(): Promise<LocalGallery[]>;
+    iCloudRoot(): Promise<string>;
+    onMigrateProgress(handler: (event: MigrateProgress) => void): () => void;
   };
   storage: {
     getDefaultBranch(repoPath: string): Promise<string>;

@@ -10,12 +10,34 @@ export interface LocalGallery {
   fullName: string;      // owner/repo
   htmlUrl: string;
   cloneUrl: string;      // https://github.com/owner/repo.git
-  localPath: string;     // <userData>/galleries/<id>
+  localPath: string;     // <userData>/galleries/<id> OR <iCloud>/PicG/<id>
   defaultBranch?: string;
   addedAt: string;       // ISO timestamp
   lastSyncAt?: string;
   sizeBytes?: number;    // measured on clone + sync; UI shows on cards
+  // Derived (not persisted): inferred from localPath every time the
+  // registry returns a gallery. 'icloud' means the working tree lives
+  // under ~/Library/Mobile Documents/com~apple~CloudDocs/PicG/ — auto-
+  // synced across the user's Macs. 'internal' means it lives under the
+  // app's userData and never leaves this machine.
+  storage?: 'internal' | 'icloud';
 }
+
+export type MigrateDirection = 'to-icloud' | 'to-internal';
+
+// Streamed back over CHANNELS.gallery.migrateProgress while a migrate
+// runs. `phase` follows: counting → copying → verifying → cleanup → done.
+// `processed`/`total` are file counts during 'copying'; the renderer
+// shows them as a "32 / 1240 files" string + a percentage bar.
+export type MigrateProgress = {
+  galleryId: string;
+  direction: MigrateDirection;
+  phase: 'counting' | 'copying' | 'verifying' | 'cleanup' | 'done' | 'error';
+  processed?: number;
+  total?: number;
+  current?: string;      // last file copied — useful for slow machines
+  error?: string;
+};
 
 export type CloneStage =
   | 'receiving'

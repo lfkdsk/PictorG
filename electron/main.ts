@@ -573,6 +573,29 @@ app.whenReady().then(async () => {
     }
   });
 
+  // iCloud bootstrap: pick up any galleries another Mac migrated to
+  // ~/Library/Mobile Documents/com~apple~CloudDocs/PicG/ that this
+  // machine's manifest doesn't know about yet, and kick off a
+  // `brctl download` for every iCloud-rooted entry so files are
+  // materialized on disk before the renderer tries to read them.
+  // Both are best-effort — failures get logged but don't block the
+  // window from opening, since galleries already in this machine's
+  // manifest are unaffected.
+  try {
+    const added = await galleryRegistry.discoverICloud();
+    if (added.length > 0) {
+      console.log(`[picg] discovered ${added.length} iCloud gallery(ies)`);
+    }
+    // Fire-and-forget — `brctl download` only queues the work in
+    // the file provider; we don't need to await its completion to
+    // open the window.
+    galleryRegistry.triggerICloudDownload().catch((err) => {
+      console.warn('[picg] triggerICloudDownload failed', err);
+    });
+  } catch (err) {
+    console.warn('[picg] iCloud discovery failed', err);
+  }
+
   createWindow();
 
   // If the user clicked a picg:// link before the app was running, we
