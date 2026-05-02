@@ -29,17 +29,30 @@ async function compressImage(
   // not adversarial bytes, so loosening this is fine.
   let pipeline = sharp(input, { failOn: 'none' });
 
+  // Diagnostic: log whether the source actually has EXIF before we touch it.
+  // Some pipelines / cameras store metadata only in XMP, in which case
+  // .keepMetadata() won't have an EXIF segment to copy.
+  const inMeta = await sharp(input, { failOn: 'none' }).metadata();
+  console.log('[picg compress] input', {
+    format: inMeta.format,
+    hasExif: !!inMeta.exif,
+    exifBytes: inMeta.exif?.length ?? 0,
+    hasXmp: !!inMeta.xmp,
+    orientation: inMeta.orientation,
+  });
+
   // .rotate() with no args reads EXIF orientation, applies it, and resets
-  // orientation to 1 in the output. Doing this before withMetadata() makes
+  // orientation to 1 in the output. Doing this before keepMetadata() makes
   // sure the saved orientation tag matches the actual pixel layout
   // (otherwise viewers double-rotate).
   pipeline = pipeline.rotate();
 
   if (request.preserveExif) {
-    // withMetadata copies EXIF (camera, GPS, timestamp, etc.) onto the
-    // output. Combined with the .rotate() above this is the equivalent of
-    // squoosh + manual exif-library reinsertion the web flow does.
-    pipeline = pipeline.withMetadata();
+    // .keepMetadata() is the post-0.32 sharp API for "copy all metadata
+    // (EXIF + ICC + XMP) from input to output". The older .withMetadata()
+    // alias still exists but its behaviour around modern metadata chunks
+    // is inconsistent across libvips versions.
+    pipeline = pipeline.keepMetadata();
   }
 
   let outBuffer: Buffer;
@@ -54,6 +67,21 @@ async function compressImage(
     outBuffer = await pipeline.webp({ quality: 75 }).toBuffer();
     extension = '.webp';
     mimeType = 'image/webp';
+  }
+
+  // Diagnostic: confirm metadata round-tripped to the output.
+  try {
+    const outMeta = await sharp(outBuffer).metadata();
+    console.log('[picg compress] output', {
+      format: outMeta.format,
+      bytes: outBuffer.length,
+      hasExif: !!outMeta.exif,
+      exifBytes: outMeta.exif?.length ?? 0,
+      hasXmp: !!outMeta.xmp,
+      orientation: outMeta.orientation,
+    });
+  } catch {
+    /* probing the output is best-effort; ignore failures */
   }
 
   return {
