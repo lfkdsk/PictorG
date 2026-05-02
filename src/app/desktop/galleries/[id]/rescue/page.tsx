@@ -101,8 +101,14 @@ export default function GalleryRescuePage() {
   }, [bridge, galleryId]);
 
   // Stage 1 — scan
+  // Use a ref instead of `phase` in deps so the setPhase('scanning') call
+  // below doesn't re-fire this effect, whose cleanup would set
+  // cancelled=true on its own scope and silently abort the async work
+  // before any progress event landed.
+  const scanStartedRef = useRef(false);
   useEffect(() => {
-    if (!adapter || phase !== 'init') return;
+    if (!adapter || scanStartedRef.current) return;
+    scanStartedRef.current = true;
     setPhase('scanning');
     setScanProgress(null);
     let cancelled = false;
@@ -133,7 +139,7 @@ export default function GalleryRescuePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [adapter, phase]);
+  }, [adapter]);
 
   // Filter candidates by threshold and re-default-select on threshold change
   const candidates = useMemo(
@@ -416,25 +422,65 @@ export default function GalleryRescuePage() {
 }
 
 function ScanningView({ progress }: { progress: { idx: number; total: number; name: string } | null }) {
+  // progress.idx is 1-indexed (page maps it from the lib's 0-indexed
+  // albumIndex via +1) — meaning "currently processing album N of total".
+  const pct = progress && progress.total > 0 ? (progress.idx / progress.total) * 100 : 0;
   return (
-    <div className="hint">
-      Scanning albums…
-      {progress && (
-        <span className="prog">
-          {' '}({progress.idx}/{progress.total}) {progress.name}
+    <div className="wrap">
+      <div className="head">
+        <span className="title">Scanning albums…</span>
+        <span className="pct">
+          {progress ? `${progress.idx} / ${progress.total}` : '—'}
+          {progress && progress.total > 0 && (
+            <span className="num"> · {Math.round(pct)}%</span>
+          )}
         </span>
-      )}
+      </div>
+      <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+      <div className="cur" title={progress?.name}>
+        {progress?.name ?? ' '}
+      </div>
       <style jsx>{`
-        .hint {
-          padding: 56px 24px;
-          text-align: center;
-          color: var(--text-muted);
+        .wrap {
+          padding: 28px 32px;
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+        }
+        .head {
+          display: flex; align-items: baseline; justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
+          font-family: var(--mono);
+          font-size: 13px;
+          color: var(--text);
+          letter-spacing: 0.04em;
+        }
+        .title { text-transform: uppercase; letter-spacing: 0.06em; }
+        .pct { color: var(--text-muted); }
+        .pct .num { color: var(--accent); }
+        .bar {
+          height: 4px;
+          background: var(--border);
+          border-radius: 2px;
+          overflow: hidden;
+        }
+        .bar span {
+          display: block;
+          height: 100%;
+          background: var(--accent);
+          transition: width 0.25s ease;
+        }
+        .cur {
+          margin-top: 12px;
           font-family: var(--mono);
           font-size: 12px;
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
+          color: var(--text-muted);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-height: 1em;
         }
-        .prog { color: var(--text); }
       `}</style>
     </div>
   );
@@ -858,11 +904,12 @@ function ReviewView({
                       src={`picg://gallery/${encodeURIComponent(galleryId)}/${r.source.path
                         .split('/')
                         .map(encodeURIComponent)
-                        .join('/')}?thumb=320`}
+                        .join('/')}`}
                       alt="before"
+                      loading="lazy"
                     />
                     <span className="arrow">→</span>
-                    <img src={r.blobUrl} alt="after" />
+                    <img src={r.blobUrl} alt="after" loading="lazy" />
                   </div>
                   <div className="meta">
                     <div className="name" title={r.source.path}>{r.source.fileName}</div>
@@ -1096,8 +1143,11 @@ function CompareLightbox({
   const reduction = 1 - (item.newSize ?? item.source.size) / item.source.size;
 
   return (
-    <div className="overlay" onClick={onClose} role="dialog">
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="picg-modal-backdrop" onClick={onClose} role="dialog">
+      <div
+        className="picg-modal picg-modal-xwide"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="head">
           <span className="pos">{index + 1} / {items.length}</span>
           <span className="name">{item.source.path}</span>
@@ -1111,7 +1161,7 @@ function CompareLightbox({
               src={`picg://gallery/${encodeURIComponent(galleryId)}/${item.source.path
                 .split('/')
                 .map(encodeURIComponent)
-                .join('/')}?thumb=1024`}
+                .join('/')}`}
               alt="before"
             />
           </div>
@@ -1157,23 +1207,6 @@ function CompareLightbox({
       </div>
 
       <style jsx>{`
-        .overlay {
-          position: fixed; inset: 0;
-          background: rgba(0, 0, 0, 0.85);
-          z-index: 100;
-          display: flex; align-items: center; justify-content: center;
-          padding: 24px;
-        }
-        .modal {
-          background: var(--bg-card);
-          border: 1px solid var(--border-strong);
-          border-radius: 12px;
-          max-width: 1280px;
-          width: 100%;
-          max-height: 100%;
-          display: flex; flex-direction: column;
-          overflow: hidden;
-        }
         .head {
           display: flex; align-items: center; gap: 12px;
           padding: 12px 16px;

@@ -939,6 +939,16 @@ export function DesktopTheme() {
         text-transform: uppercase;
       }
       .picg-modal-wide { width: 600px; }
+      /* Side-by-side compare / preview shell — needs a much wider canvas
+         and zero outer padding so the inner layout (head / panes / footer)
+         owns its own spacing without doubling up on .picg-modal's defaults. */
+      .picg-modal-xwide {
+        width: 1280px;
+        max-width: calc(100vw - 48px);
+        max-height: calc(100vh - 48px);
+        padding: 0;
+        overflow: hidden;
+      }
       .picg-modal-actions {
         display: flex; gap: 8px; justify-content: flex-end;
         margin-top: 18px;
