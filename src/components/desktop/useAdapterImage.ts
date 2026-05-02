@@ -15,11 +15,12 @@ import { getPicgBridge, type StorageAdapter } from '@/core/storage';
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
-function picgUrlFor(galleryId: string, p: string): string {
-  return `picg://gallery/${encodeURIComponent(galleryId)}/${p
+function picgUrlFor(galleryId: string, p: string, thumbWidth?: number): string {
+  const base = `picg://gallery/${encodeURIComponent(galleryId)}/${p
     .split('/')
     .map(encodeURIComponent)
     .join('/')}`;
+  return thumbWidth ? `${base}?thumb=${thumbWidth}` : base;
 }
 
 function mimeForPath(path: string): string {
@@ -79,16 +80,24 @@ async function loadDataUrl(
 //     a non-Electron preview (rare) or anywhere the caller doesn't know
 //     the gallery id.
 //
+// `options.thumbWidth` (only honored on the picg:// fast path) appends
+// `?thumb=W` to the URL. The main process resizes + caches a webp at
+// that width on first request and serves the cached version after.
+// Use this for grids of small cards (album covers, the photo grid in
+// an album page) — leave it off for full-resolution views like the
+// lightbox where the original quality matters.
+//
 // Returns `{ src, error }`. While loading (data-URL path), `src` is null.
 export function useAdapterImage(
   adapter: StorageAdapter | null,
   path: string | null,
-  options?: { picgGalleryId?: string }
+  options?: { picgGalleryId?: string; thumbWidth?: number }
 ): { src: string | null; error: string | null } {
   const picgGalleryId = options?.picgGalleryId;
+  const thumbWidth = options?.thumbWidth;
   const fastPath =
     picgGalleryId && path && getPicgBridge()
-      ? picgUrlFor(picgGalleryId, path)
+      ? picgUrlFor(picgGalleryId, path, thumbWidth)
       : null;
 
   const [src, setSrc] = useState<string | null>(() => {

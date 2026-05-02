@@ -581,8 +581,11 @@ function AlbumCard({
   // README.yml's `cover` is the path from repo root (matches the web flow's
   // `${thumbnail_url}/${album.cover}`), not a filename relative to album.url.
   const coverPath = album.cover || null;
+  // Cards are 260 px wide; ask for 2× to look crisp on retina, capped at
+  // 640. Main process resizes + caches the first time each cover is hit.
   const { src, error } = useAdapterImage(adapter, coverPath, {
     picgGalleryId: galleryId,
+    thumbWidth: 640,
   });
   const albumHref = `/desktop/galleries/${encodeURIComponent(galleryId)}/${encodeURIComponent(album.url)}`;
 

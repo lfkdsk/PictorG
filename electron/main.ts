@@ -11,6 +11,7 @@ import { promises as fs, existsSync } from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
 
+import { getOrCreateThumbnail, parseThumbWidth } from './thumbnail';
 import { initAutoUpdater } from './updater';
 
 // Surface unhandled errors via console.log so they're visible when the
@@ -444,7 +445,28 @@ app.whenReady().then(async () => {
       return new Response('Path escapes gallery', { status: 403 });
     }
 
+    // ?thumb=512 → resize and serve a cached webp thumbnail at the
+    // given target width. Used by the gallery overview cards so they
+    // don't have to download + decode multi-MB originals just to fill
+    // a 260 px square. Lightbox / album-page renderers omit the param
+    // and get the original file.
+    const thumbWidth = parseThumbWidth(requestUrl.searchParams.get('thumb'));
+
     try {
+      if (thumbWidth) {
+        const buf = await getOrCreateThumbnail(resolvedPath, thumbWidth);
+        const view = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+        return new Response(view, {
+          status: 200,
+          headers: {
+            'Content-Type': 'image/webp',
+            // Long cache: the URL changes when the source mtime changes
+            // (key includes mtimeMs), so an immutable cache is safe.
+            'Cache-Control': 'public, max-age=86400, immutable',
+          },
+        });
+      }
+
       const data = await fs.readFile(resolvedPath);
       const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
       return new Response(view, {
