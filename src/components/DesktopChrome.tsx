@@ -7,6 +7,7 @@
 // accidentally break their layout.
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 import { getGitHubToken, logout } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
@@ -71,6 +72,14 @@ export function Topbar() {
             <>
               <div className="menu-overlay" onClick={() => setMenuOpen(false)} />
               <div className="menu">
+                <Link
+                  href="/desktop/settings"
+                  className="menu-item"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Settings
+                </Link>
+                <div className="menu-divider" />
                 <button className="menu-item" onClick={() => logout()}>
                   Sign out
                 </button>
@@ -165,8 +174,14 @@ export function Topbar() {
           text-align: left;
           cursor: pointer;
           border-radius: 6px;
+          text-decoration: none;
         }
         .menu-item:hover { background: var(--bg-card-hover); }
+        .menu-divider {
+          height: 1px;
+          background: var(--border);
+          margin: 4px 0;
+        }
       `}</style>
     </header>
   );
