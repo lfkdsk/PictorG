@@ -67,7 +67,7 @@ export function initAutoUpdater(): void {
 
   autoUpdater.on('update-available', (info) => {
     log('update-available', info?.version);
-    broadcast('update-available', { version: info?.version });
+    broadcastChan(CHANNELS.updater.updateAvailable, { version: info?.version });
   });
   autoUpdater.on('update-not-available', () => {
     log('update-not-available');
@@ -133,13 +133,20 @@ export function initAutoUpdater(): void {
         // Already-downloaded? Renderer can immediately show the install
         // pill instead of waiting for the broadcast on next event.
         downloaded: pendingDownloadedUpdate,
+        // Background-poll errors that fired before the renderer was
+        // ready surface here so the manual-check toast can say
+        // "last attempt failed at <time> because X".
+        lastError: lastUpdateError,
       };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? String(err) };
     }
   });
   autoUpdater.on('error', (err) => {
-    log('updater error', err?.message ?? String(err));
+    const message = err?.message ?? String(err);
+    log('updater error', message);
+    lastUpdateError = { message, at: new Date().toISOString() };
+    broadcastChan(CHANNELS.updater.updateError, { message });
   });
 
   // Initial check + a recurring poll. checkForUpdatesAndNotify shows
@@ -153,13 +160,6 @@ export function initAutoUpdater(): void {
       log('updater poll failed', err?.message ?? String(err));
     });
   }, FOUR_HOURS);
-}
-
-function broadcast(suffix: string, payload: unknown): void {
-  // Legacy helper for the progress / available events we don't yet wire
-  // through the renderer. Kept the namespaced name (updater:*) so the
-  // log output is readable.
-  broadcastChan(`updater:${suffix}`, payload);
 }
 
 function broadcastChan(channel: string, payload: unknown): void {

@@ -33,6 +33,12 @@ const bridge: PicgBridge = {
 
   updater: {
     installNow: () => ipcRenderer.invoke(CHANNELS.updater.installNow),
+    onUpdateAvailable: (handler) => {
+      const listener = (_e: unknown, payload: { version?: string }) =>
+        handler(payload);
+      ipcRenderer.on(CHANNELS.updater.updateAvailable, listener);
+      return () => ipcRenderer.off(CHANNELS.updater.updateAvailable, listener);
+    },
     onUpdateDownloaded: (handler) => {
       const listener = (_e: unknown, payload: { version?: string }) =>
         handler(payload);
@@ -44,6 +50,12 @@ const bridge: PicgBridge = {
         handler(payload);
       ipcRenderer.on(CHANNELS.updater.downloadProgress, listener);
       return () => ipcRenderer.off(CHANNELS.updater.downloadProgress, listener);
+    },
+    onUpdateError: (handler) => {
+      const listener = (_e: unknown, payload: { message: string }) =>
+        handler(payload);
+      ipcRenderer.on(CHANNELS.updater.updateError, listener);
+      return () => ipcRenderer.off(CHANNELS.updater.updateError, listener);
     },
     getPending: () => ipcRenderer.invoke(CHANNELS.updater.getPending),
     checkNow: () => ipcRenderer.invoke(CHANNELS.updater.checkNow),
