@@ -112,6 +112,33 @@ export function useAdapterImage(
     if (fastPath) {
       setSrc(fastPath);
       setError(null);
+      // Side-channel probe for picg:// URLs — main returns a JSON body
+      // tagged with `X-Picg-Error` (or `X-Picg-Thumb-Error` for the
+      // sharp-resize variant) for any non-200. Without this the <img>
+      // tag would just paint a broken-image icon silently. We probe
+      // every fast-path URL because the same failure modes (missing
+      // file, permission error) hit the lightbox / cover picker too —
+      // not just thumbnail URLs.
+      const myReq = ++reqId.current;
+      fetch(fastPath)
+        .then(async (res) => {
+          if (reqId.current !== myReq) return;
+          if (res.ok) return;
+          let detail = '';
+          try {
+            const data = await res.json();
+            detail = data?.message
+              ? `${data.error ?? 'error'}: ${data.message}`
+              : data?.error ?? '';
+          } catch {
+            detail = await res.text().catch(() => '');
+          }
+          setError(detail || `picg:// ${res.status}`);
+        })
+        .catch(() => {
+          /* protocol handler didn't respond at all — let the <img>
+             onError surface that case */
+        });
       return;
     }
     if (!adapter || !path) {

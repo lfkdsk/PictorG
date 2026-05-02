@@ -622,9 +622,17 @@ function AlbumCard({
       }}
     >
       <div className="picg-album-cover">
-        {src && <img src={src} alt="" loading="lazy" draggable={false} />}
+        {src && !error && <img src={src} alt="" loading="lazy" draggable={false} />}
         {!src && !error && <div className="picg-album-cover-placeholder" />}
-        {error && <div className="picg-album-cover-error">{error}</div>}
+        {error && (
+          <div
+            className="picg-album-cover-error"
+            title={error}
+          >
+            <strong>cover failed</strong>
+            <span>{error.length > 80 ? error.slice(0, 80) + '…' : error}</span>
+          </div>
+        )}
       </div>
       <div className="picg-album-name">{album.name}</div>
       <div className="picg-album-meta">

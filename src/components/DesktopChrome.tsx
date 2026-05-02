@@ -586,12 +586,30 @@ export function DesktopTheme() {
       }
       .picg-album-cover-error {
         position: absolute; inset: 0;
-        display: grid; place-items: center;
-        color: var(--text-faint);
+        display: flex;
+        flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 6px;
+        color: var(--text-muted);
         font-family: var(--mono);
-        font-size: 11px;
-        padding: 12px;
+        font-size: 10px;
+        padding: 14px;
         text-align: center;
+        line-height: 1.4;
+        background: rgba(216, 90, 70, 0.08);
+        border: 1px dashed rgba(216, 90, 70, 0.32);
+        border-radius: inherit;
+      }
+      .picg-album-cover-error strong {
+        color: #f0bfb6;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-size: 10px;
+      }
+      .picg-album-cover-error span {
+        color: var(--text-faint);
+        word-break: break-word;
       }
       .picg-album-name {
         font-family: var(--serif);
