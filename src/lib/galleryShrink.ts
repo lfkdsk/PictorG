@@ -2,16 +2,16 @@ import yaml from 'js-yaml';
 
 import type { StorageAdapter } from '@/core/storage';
 
-// Photo extensions we'll scan for rescue. Includes HEIC even though
+// Photo extensions we'll scan for shrink. Includes HEIC even though
 // the album page's IMAGE_EXTS list doesn't — HEIC is exactly the
 // "huge source file" we want to compress, and the deployed gallery
 // already pairs HEIC with its `.webp` thumbnail.
-export const RESCUE_IMAGE_EXTS = [
+export const SHRINK_IMAGE_EXTS = [
   '.jpg', '.jpeg', '.png', '.heic', '.heif',
   '.webp', '.avif', '.bmp', '.gif',
 ];
 
-// MOV (Live Photo partner) is intentionally not rescued — sharp can't
+// MOV (Live Photo partner) is intentionally not shrunk — sharp can't
 // re-encode video and the existing compress pipeline passes it through.
 
 export type OversizedPhoto = {
@@ -23,17 +23,19 @@ export type OversizedPhoto = {
   ext: string;          // lowercase, includes leading dot
 };
 
+export type AlbumRef = { name: string; url: string };
+
 type AlbumEntry = {
   url: string;
   cover?: string;
 };
 
-function parseAlbumsForRescue(yamlText: string): Array<{ name: string; url: string }> {
+function parseAlbumsForShrink(yamlText: string): AlbumRef[] {
   const data = yaml.load(yamlText, { schema: yaml.CORE_SCHEMA, json: true }) as
     | Record<string, AlbumEntry>
     | null;
   if (!data || typeof data !== 'object') return [];
-  const out: Array<{ name: string; url: string }> = [];
+  const out: AlbumRef[] = [];
   for (const [name, fields] of Object.entries(data)) {
     if (!fields || typeof fields !== 'object') continue;
     if (typeof fields.url !== 'string' || !fields.url) continue;
@@ -47,31 +49,58 @@ function lowerExt(name: string): string {
   return idx === -1 ? '' : name.slice(idx).toLowerCase();
 }
 
-export type ScanProgress = { albumIndex: number; albumCount: number; albumName: string };
+// Per-album lifecycle events. The page listens for these to drive a
+// live tree of "queued / scanning / done / error" rows; multiple
+// albums can sit in 'scanning' simultaneously thanks to the worker-pool
+// concurrency below.
+export type ScanEvent =
+  | { type: 'init'; albums: AlbumRef[] }
+  | { type: 'albumStart'; url: string }
+  | { type: 'albumDone'; url: string; total: number; oversized: number }
+  | { type: 'albumError'; url: string; error: string };
+
+// Cap on simultaneous listDirectory IPC roundtrips. listDirectory in
+// LocalGitStorageAdapter is just fs.readdir + a stat per entry, so we
+// can run several in parallel without saturating either Node's libuv
+// thread pool or the Electron IPC bus. 6 keeps the visual "many albums
+// scanning at once" feel for galleries with 6+ albums while staying
+// well below libuv's default 4-thread fs pool times any reasonable burst.
+const SCAN_CONCURRENCY = 6;
 
 export async function scanOversizedPhotos(
   adapter: StorageAdapter,
   thresholdBytes: number,
-  onProgress?: (p: ScanProgress) => void,
+  onEvent?: (e: ScanEvent) => void,
 ): Promise<OversizedPhoto[]> {
   const readme = await adapter.readFile('README.yml');
-  const albums = parseAlbumsForRescue(readme.text());
+  const albums = parseAlbumsForShrink(readme.text());
+  onEvent?.({ type: 'init', albums });
 
   const results: OversizedPhoto[] = [];
-  for (let i = 0; i < albums.length; i++) {
-    const album = albums[i];
-    onProgress?.({ albumIndex: i, albumCount: albums.length, albumName: album.name });
+  const queue = [...albums];
+
+  async function processOne(album: AlbumRef) {
+    onEvent?.({ type: 'albumStart', url: album.url });
     let entries;
     try {
       entries = await adapter.listDirectory(album.url);
-    } catch {
-      continue;
+    } catch (err) {
+      onEvent?.({
+        type: 'albumError',
+        url: album.url,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
     }
+    let total = 0;
+    let oversized = 0;
     for (const e of entries) {
       if (e.type !== 'file') continue;
       const ext = lowerExt(e.name);
-      if (!RESCUE_IMAGE_EXTS.includes(ext)) continue;
+      if (!SHRINK_IMAGE_EXTS.includes(ext)) continue;
+      total++;
       if (typeof e.size !== 'number' || e.size < thresholdBytes) continue;
+      oversized++;
       results.push({
         albumUrl: album.url,
         albumName: album.name,
@@ -81,7 +110,24 @@ export async function scanOversizedPhotos(
         ext,
       });
     }
+    onEvent?.({ type: 'albumDone', url: album.url, total, oversized });
   }
+
+  // Worker-pool: spawn N workers that each pull from the shared queue.
+  // Albums beyond SCAN_CONCURRENCY wait their turn rather than all
+  // firing listDirectory at once.
+  const workers = Array.from(
+    { length: Math.min(SCAN_CONCURRENCY, albums.length) },
+    async () => {
+      while (queue.length > 0) {
+        const album = queue.shift();
+        if (!album) return;
+        await processOne(album);
+      }
+    },
+  );
+  await Promise.all(workers);
+
   results.sort((a, b) => b.size - a.size);
   return results;
 }

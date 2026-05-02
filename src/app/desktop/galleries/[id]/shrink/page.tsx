@@ -21,11 +21,12 @@ import {
   findCoverReferences,
   formatBytes,
   type OversizedPhoto,
-} from '@/lib/galleryRescue';
+  type AlbumRef,
+} from '@/lib/galleryShrink';
 
 // Memory-only result staging. If the user runs into RAM pressure on
 // huge batches we can extend CompressedResult with a `stagedPath` and
-// add a main-side IPC that writes to <userData>/rescue-staging/<sid>/
+// add a main-side IPC that writes to <userData>/shrink-staging/<sid>/
 // — the page-level state machine doesn't need to change.
 type CompressedResult = {
   source: OversizedPhoto;
@@ -53,7 +54,17 @@ const SCAN_FLOOR_MB = 1;          // scan returns photos >= this
 const DEFAULT_THRESHOLD_MB = 10;  // default slider position
 const MAX_THRESHOLD_MB = 100;
 
-export default function GalleryRescuePage() {
+// Per-album row driving the tree-style scanning UI. Multiple rows can
+// sit in 'scanning' simultaneously thanks to the lib's worker pool.
+type AlbumScanRow = {
+  ref: AlbumRef;
+  status: 'queued' | 'scanning' | 'done' | 'error';
+  total?: number;
+  oversized?: number;
+  error?: string;
+};
+
+export default function GalleryShrinkPage() {
   const params = useParams<{ id: string }>();
   const galleryId = params?.id;
 
@@ -65,11 +76,11 @@ export default function GalleryRescuePage() {
 
   const [allCandidates, setAllCandidates] = useState<OversizedPhoto[]>([]);
   const [thresholdMb, setThresholdMb] = useState(DEFAULT_THRESHOLD_MB);
-  const [scanProgress, setScanProgress] = useState<{ idx: number; total: number; name: string } | null>(null);
+  const [scanRows, setScanRows] = useState<AlbumScanRow[]>([]);
   const [picks, setPicks] = useState<Set<string>>(new Set());
   const [coverRefs, setCoverRefs] = useState<Set<string>>(new Set());
 
-  const [compressing, setCompressing] = useState<{ done: number; total: number; current?: string } | null>(null);
+  const [compressing, setCompressing] = useState<{ done: number; total: number; inFlight: number } | null>(null);
   const [results, setResults] = useState<CompressedResult[]>([]);
   const [applyChoices, setApplyChoices] = useState<Map<string, boolean>>(new Map());
   const [applyProgress, setApplyProgress] = useState<{ done: number; total: number } | null>(null);
@@ -82,7 +93,7 @@ export default function GalleryRescuePage() {
 
   const cancelRef = useRef(false);
   const settingsRef = useRef(getCompressionSettings());
-  // Effective output format — rescue mode forces lossless off (decision #2).
+  // Effective output format — shrink mode forces lossless off (decision #2).
   // We don't write back to localStorage, this is just for the in-flight run.
   const effectiveSettings = useMemo(() => ({ ...settingsRef.current, lossless: false }), []);
   const outputFormat = effectiveSettings.outputFormat;
@@ -110,7 +121,7 @@ export default function GalleryRescuePage() {
     if (!adapter || scanStartedRef.current) return;
     scanStartedRef.current = true;
     setPhase('scanning');
-    setScanProgress(null);
+    setScanRows([]);
     let cancelled = false;
     (async () => {
       try {
@@ -122,10 +133,32 @@ export default function GalleryRescuePage() {
         const found = await scanOversizedPhotos(
           adapter,
           SCAN_FLOOR_MB * 1024 * 1024,
-          (p) => {
-            if (!cancelled) {
-              setScanProgress({ idx: p.albumIndex + 1, total: p.albumCount, name: p.albumName });
-            }
+          (event) => {
+            if (cancelled) return;
+            setScanRows((prev) => {
+              switch (event.type) {
+                case 'init':
+                  return event.albums.map((ref) => ({ ref, status: 'queued' as const }));
+                case 'albumStart':
+                  return prev.map((r) =>
+                    r.ref.url === event.url ? { ...r, status: 'scanning' as const } : r,
+                  );
+                case 'albumDone':
+                  return prev.map((r) =>
+                    r.ref.url === event.url
+                      ? { ...r, status: 'done' as const, total: event.total, oversized: event.oversized }
+                      : r,
+                  );
+                case 'albumError':
+                  return prev.map((r) =>
+                    r.ref.url === event.url
+                      ? { ...r, status: 'error' as const, error: event.error }
+                      : r,
+                  );
+                default:
+                  return prev;
+              }
+            });
           },
         );
         if (cancelled) return;
@@ -152,25 +185,37 @@ export default function GalleryRescuePage() {
     setPicks(new Set(candidates.map((p) => p.path)));
   }, [phase, candidates]);
 
-  // Stage 2 — compress
+  // Stage 2 — compress (parallel, capped at COMPRESS_CONCURRENCY).
+  // Each worker pulls from the shared queue, reads + compresses one
+  // photo at a time. sharp/libvips already exploits multi-core for a
+  // single image; cap=3 stacks 3 in flight to amortize the per-photo
+  // overhead (sips fork, EXIF parse, IPC roundtrip) without blowing
+  // memory on high-MP HEIC batches (peak ~400-500 MB at this cap).
+  const COMPRESS_CONCURRENCY = 3;
   const startCompress = useCallback(async () => {
     if (!bridge || !adapter) return;
     const queue = candidates.filter((p) => picks.has(p.path));
     if (queue.length === 0) return;
     cancelRef.current = false;
     setResults([]);
-    setCompressing({ done: 0, total: queue.length });
+    setCompressing({ done: 0, total: queue.length, inFlight: 0 });
     setPhase('compressing');
 
     const out: CompressedResult[] = [];
-    for (let i = 0; i < queue.length; i++) {
-      if (cancelRef.current) break;
-      const src = queue[i];
-      setCompressing({ done: i, total: queue.length, current: src.path });
+    const remaining = [...queue];
+    let done = 0;
+    let inFlight = 0;
+    const total = queue.length;
+
+    const flush = () => {
+      setCompressing({ done, total, inFlight });
+    };
+
+    async function processOne(src: OversizedPhoto) {
       try {
-        const file = await adapter.readFile(src.path);
-        if (cancelRef.current) break;
-        const result = await bridge.compress.image({
+        const file = await adapter!.readFile(src.path);
+        if (cancelRef.current) return;
+        const result = await bridge!.compress.image({
           bytes: file.data,
           originalName: src.fileName,
           outputFormat: effectiveSettings.outputFormat,
@@ -182,7 +227,7 @@ export default function GalleryRescuePage() {
         });
         if (result.buffer.byteLength >= src.size) {
           out.push({ source: src, status: 'skipped-no-gain', newSize: result.buffer.byteLength });
-          continue;
+          return;
         }
         const newPath = `${src.albumUrl}/${result.name}`;
         const blob = new Blob([result.buffer], { type: result.type });
@@ -206,8 +251,25 @@ export default function GalleryRescuePage() {
       }
     }
 
+    const workers = Array.from(
+      { length: Math.min(COMPRESS_CONCURRENCY, queue.length) },
+      async () => {
+        while (remaining.length > 0) {
+          if (cancelRef.current) return;
+          const src = remaining.shift();
+          if (!src) return;
+          inFlight++;
+          flush();
+          await processOne(src);
+          inFlight--;
+          done++;
+          flush();
+        }
+      },
+    );
+    await Promise.all(workers);
+
     if (cancelRef.current) {
-      // Revoke any blob URLs we accumulated before bailing.
       for (const r of out) if (r.blobUrl) URL.revokeObjectURL(r.blobUrl);
       setResults([]);
       setCompressing(null);
@@ -248,13 +310,13 @@ export default function GalleryRescuePage() {
       const newPath = r.newPath!;
       const buffer = r.buffer!;
       const extChanged = extensionWillChange(src.path, outputFormat);
-      const message = `Rescue: compress ${src.path}`;
+      const message = `Shrink: compress ${src.path}`;
       try {
         await adapter.writeFile(newPath, buffer, message);
         replaced++;
         if (extChanged) {
           try {
-            await adapter.deleteFile(src.path, `Rescue: drop original ${src.path}`);
+            await adapter.deleteFile(src.path, `Shrink: drop original ${src.path}`);
             deletedOriginals++;
           } catch (err) {
             failed.push({
@@ -278,7 +340,7 @@ export default function GalleryRescuePage() {
         const { text, rewrites } = rewriteCoverPaths(readme.text(), coverMapping);
         coverRewrites = rewrites.length;
         if (coverRewrites > 0) {
-          await adapter.writeFile('README.yml', text, `Rescue: update cover refs (${coverRewrites})`);
+          await adapter.writeFile('README.yml', text, `Shrink: update cover refs (${coverRewrites})`);
         }
       } catch (err) {
         failed.push({
@@ -335,7 +397,7 @@ export default function GalleryRescuePage() {
         </Link>
 
         <section className="hero">
-          <h1>Rescue oversized photos</h1>
+          <h1>Shrink oversized photos</h1>
           <p className="meta">
             Scans every album for large source photos and re-compresses them
             with your current compression settings (lossless temporarily off).
@@ -348,7 +410,7 @@ export default function GalleryRescuePage() {
         )}
 
         {phase === 'scanning' && (
-          <ScanningView progress={scanProgress} />
+          <ScanningView rows={scanRows} />
         )}
 
         {phase === 'pick' && (
@@ -421,28 +483,56 @@ export default function GalleryRescuePage() {
   );
 }
 
-function ScanningView({ progress }: { progress: { idx: number; total: number; name: string } | null }) {
-  // progress.idx is 1-indexed (page maps it from the lib's 0-indexed
-  // albumIndex via +1) — meaning "currently processing album N of total".
-  const pct = progress && progress.total > 0 ? (progress.idx / progress.total) * 100 : 0;
+function ScanningView({ rows }: { rows: AlbumScanRow[] }) {
+  const settled = rows.filter((r) => r.status === 'done' || r.status === 'error').length;
+  const photosCollected = rows.reduce((s, r) => s + (r.total ?? 0), 0);
+  const total = rows.length;
+  const pct = total > 0 ? (settled / total) * 100 : 0;
+
+  if (total === 0) {
+    return (
+      <div className="hint">
+        Reading album index...
+        <style jsx>{`
+          .hint {
+            padding: 56px 24px;
+            text-align: center;
+            color: var(--text-muted);
+            font-family: var(--mono);
+            font-size: 12px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div className="wrap">
       <div className="head">
-        <span className="title">Scanning albums…</span>
-        <span className="pct">
-          {progress ? `${progress.idx} / ${progress.total}` : '—'}
-          {progress && progress.total > 0 && (
-            <span className="num"> · {Math.round(pct)}%</span>
+        <span className="title">Shrinking gallery</span>
+        <span className="meta">
+          {settled} / {total} albums
+          {photosCollected > 0 && (
+            <>
+              {' · '}
+              <span className="num">{photosCollected}</span> photo{photosCollected === 1 ? '' : 's'} collected
+            </>
           )}
         </span>
       </div>
       <div className="bar"><span style={{ width: `${pct}%` }} /></div>
-      <div className="cur" title={progress?.name}>
-        {progress?.name ?? ' '}
-      </div>
+
+      <ul className="rows">
+        {rows.map((r) => (
+          <ScanRow key={r.ref.url} row={r} />
+        ))}
+      </ul>
+
       <style jsx>{`
         .wrap {
-          padding: 28px 32px;
+          padding: 20px 24px 16px;
           background: var(--bg-card);
           border: 1px solid var(--border);
           border-radius: 12px;
@@ -450,20 +540,21 @@ function ScanningView({ progress }: { progress: { idx: number; total: number; na
         .head {
           display: flex; align-items: baseline; justify-content: space-between;
           gap: 12px;
-          margin-bottom: 14px;
+          margin-bottom: 12px;
           font-family: var(--mono);
           font-size: 13px;
           color: var(--text);
           letter-spacing: 0.04em;
         }
         .title { text-transform: uppercase; letter-spacing: 0.06em; }
-        .pct { color: var(--text-muted); }
-        .pct .num { color: var(--accent); }
+        .meta { color: var(--text-muted); }
+        .meta .num { color: var(--accent); font-weight: 600; }
         .bar {
-          height: 4px;
+          height: 3px;
           background: var(--border);
           border-radius: 2px;
           overflow: hidden;
+          margin-bottom: 16px;
         }
         .bar span {
           display: block;
@@ -471,18 +562,99 @@ function ScanningView({ progress }: { progress: { idx: number; total: number; na
           background: var(--accent);
           transition: width 0.25s ease;
         }
-        .cur {
-          margin-top: 12px;
+        .rows {
+          list-style: none;
+          margin: 0;
+          padding: 0;
           font-family: var(--mono);
           font-size: 12px;
-          color: var(--text-muted);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          min-height: 1em;
+          max-height: 60vh;
+          overflow-y: auto;
         }
       `}</style>
     </div>
+  );
+}
+
+function ScanRow({ row }: { row: AlbumScanRow }) {
+  const icon =
+    row.status === 'done' ? '✓'
+    : row.status === 'scanning' ? '▶'
+    : row.status === 'error' ? '✗'
+    : '·';
+  return (
+    <li className={`row ${row.status}`}>
+      <span className="icon">{icon}</span>
+      <span className="name" title={row.ref.url}>{row.ref.name}</span>
+      <span className="stats">
+        {row.status === 'done' && (
+          <>{row.total ?? 0} photo{row.total === 1 ? '' : 's'}</>
+        )}
+        {row.status === 'scanning' && <span className="dots">scanning</span>}
+        {row.status === 'error' && (row.error ?? 'failed')}
+        {row.status === 'queued' && 'queued'}
+      </span>
+      <style jsx>{`
+        .row {
+          display: grid;
+          grid-template-columns: 18px 1fr auto;
+          gap: 12px;
+          padding: 5px 4px;
+          border-radius: 4px;
+          color: var(--text);
+          align-items: center;
+          animation: shrink-row-fade 0.25s ease;
+        }
+        @keyframes shrink-row-fade {
+          from { opacity: 0; transform: translateY(-2px); }
+          to { opacity: 1; transform: none; }
+        }
+        .row.queued { color: var(--text-faint); }
+        .row.queued .icon { color: var(--text-faint); }
+        .row.scanning .icon {
+          color: var(--accent);
+          animation: shrink-pulse 1.1s ease-in-out infinite;
+        }
+        @keyframes shrink-pulse {
+          0%, 100% { opacity: 0.45; }
+          50% { opacity: 1; }
+        }
+        .row.done .icon { color: rgba(116, 188, 120, 0.9); }
+        .row.error { color: #d97a4a; }
+        .row.error .icon { color: #d97a4a; }
+        .icon {
+          font-family: var(--mono);
+          text-align: center;
+          font-size: 13px;
+        }
+        .name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .stats {
+          color: var(--text-muted);
+          letter-spacing: 0.04em;
+        }
+        .row.scanning .stats { color: var(--accent); }
+        .stats .hot { color: var(--accent); font-weight: 600; }
+
+        .dots::after {
+          content: '';
+          display: inline-block;
+          width: 1.4em;
+          text-align: left;
+          animation: shrink-dots 1.2s steps(4, end) infinite;
+        }
+        @keyframes shrink-dots {
+          0%   { content: ''; }
+          25%  { content: '.'; }
+          50%  { content: '..'; }
+          75%  { content: '...'; }
+          100% { content: ''; }
+        }
+      `}</style>
+    </li>
   );
 }
 
@@ -756,22 +928,26 @@ function CompressingView({
   progress,
   onCancel,
 }: {
-  progress: { done: number; total: number; current?: string } | null;
+  progress: { done: number; total: number; inFlight: number } | null;
   onCancel: () => void;
 }) {
   const pct = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
   return (
     <div className="wrap">
       <div className="head">
-        <span>Compressing {progress?.done ?? 0} / {progress?.total ?? 0}</span>
+        <span>
+          Compressing {progress?.done ?? 0} / {progress?.total ?? 0}
+          {progress && progress.inFlight > 0 && (
+            <span className="inflight">
+              {' · '}<span className="num">{progress.inFlight}</span> in progress
+            </span>
+          )}
+        </span>
         <button type="button" className="btn ghost small" onClick={onCancel}>
           Cancel
         </button>
       </div>
       <div className="bar"><span style={{ width: `${pct}%` }} /></div>
-      {progress?.current && (
-        <div className="cur" title={progress.current}>{progress.current}</div>
-      )}
       <style jsx>{`
         .wrap {
           padding: 32px;
@@ -786,6 +962,8 @@ function CompressingView({
           font-size: 13px;
           color: var(--text);
         }
+        .inflight { color: var(--text-muted); }
+        .inflight .num { color: var(--accent); font-weight: 600; }
         .bar {
           height: 4px;
           background: var(--border);
@@ -797,15 +975,6 @@ function CompressingView({
           height: 100%;
           background: var(--accent);
           transition: width 0.2s ease;
-        }
-        .cur {
-          margin-top: 12px;
-          font-family: var(--mono);
-          font-size: 11px;
-          color: var(--text-muted);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
         }
       `}</style>
     </div>
