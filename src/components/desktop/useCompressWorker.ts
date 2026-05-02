@@ -45,8 +45,16 @@ export function useCompressWorker(): {
         const entry = pendingRef.current.get(e.data.id);
         if (!entry) return;
         pendingRef.current.delete(e.data.id);
-        if (e.data.ok) entry.resolve(e.data.file);
-        else entry.reject(new Error(e.data.error));
+        if (e.data.ok) {
+          // Reconstitute the File on the receiving side. Worker sent the
+          // bytes as a transferable buffer to avoid structured-clone
+          // dropping the underlying Blob (which manifested as a 0-byte
+          // compressed file in earlier builds).
+          const file = new File([e.data.buffer], e.data.name, { type: e.data.type });
+          entry.resolve(file);
+        } else {
+          entry.reject(new Error(e.data.error));
+        }
       });
       workerRef.current = worker;
     }

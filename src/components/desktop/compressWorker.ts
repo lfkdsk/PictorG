@@ -5,8 +5,12 @@
 // FileReader.readAsBinaryString step are synchronous and operate on multi-MB
 // binary strings — that's what was freezing UI between photos.
 //
-// Pattern: dedicated worker, request/response keyed by id. The renderer side
-// (useCompressWorker) wraps it in a simple per-call Promise.
+// Pattern: dedicated worker, request/response keyed by id. We send back the
+// compressed bytes as a transferable ArrayBuffer + filename/type, and let
+// the renderer reconstruct the File. Sending the File object directly went
+// through structured clone, which intermittently dropped its underlying
+// Blob data in Electron renderers (resulting in file.size === 0 and an
+// empty buffer landing in the eventual git commit).
 
 import { compressImage } from '@/lib/compress-image';
 
@@ -16,15 +20,30 @@ export type CompressRequest = {
 };
 
 export type CompressResponse =
-  | { id: string; ok: true; file: File }
+  | {
+      id: string;
+      ok: true;
+      buffer: ArrayBuffer;
+      name: string;
+      type: string;
+    }
   | { id: string; ok: false; error: string };
 
 self.addEventListener('message', async (event: MessageEvent<CompressRequest>) => {
   const { id, file } = event.data;
   try {
     const result = await compressImage(file);
-    const response: CompressResponse = { id, ok: true, file: result };
-    (self as unknown as Worker).postMessage(response);
+    const buffer = await result.arrayBuffer();
+    const response: CompressResponse = {
+      id,
+      ok: true,
+      buffer,
+      name: result.name,
+      type: result.type,
+    };
+    // Transfer the buffer (zero-copy) — keeps it as a real ArrayBuffer on
+    // the receiving side and side-steps the structured-clone size-loss.
+    (self as unknown as Worker).postMessage(response, [buffer]);
   } catch (err) {
     const response: CompressResponse = {
       id,
