@@ -244,6 +244,134 @@ export function DesktopTheme() {
       .picg-card-link { text-decoration: none; color: inherit; display: block; }
       .picg-card-link:hover .card-title { color: var(--accent); }
 
+      /* Album card (detail page → album list) */
+      .picg-album-card {
+        display: flex; flex-direction: column; gap: 8px;
+        text-decoration: none; color: inherit;
+      }
+      .picg-album-cover {
+        position: relative;
+        aspect-ratio: 4 / 3;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+      }
+      .picg-album-card:hover .picg-album-cover {
+        border-color: var(--border-strong);
+        transform: translateY(-2px);
+      }
+      .picg-album-cover img {
+        width: 100%; height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .picg-album-cover-placeholder {
+        width: 100%; height: 100%;
+        background: linear-gradient(135deg, var(--bg-card-hover), var(--bg-card));
+      }
+      .picg-album-cover-error {
+        position: absolute; inset: 0;
+        display: grid; place-items: center;
+        color: var(--text-faint);
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 12px;
+        text-align: center;
+      }
+      .picg-album-name {
+        font-family: var(--serif);
+        font-size: 18px;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        color: var(--text);
+        line-height: 1.25;
+      }
+      .picg-album-card:hover .picg-album-name { color: var(--accent); }
+      .picg-album-meta {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        display: flex; gap: 6px; align-items: center;
+      }
+      .picg-album-meta-dot { color: var(--text-faint); }
+
+      /* Thumbnail grid (album page) */
+      .picg-thumbs {
+        list-style: none; margin: 0; padding: 0;
+        display: grid; gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      }
+      .picg-thumb {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: border-color 0.15s ease, transform 0.1s ease;
+        padding: 0;
+      }
+      .picg-thumb:hover {
+        border-color: var(--border-strong);
+        transform: translateY(-1px);
+      }
+      .picg-thumb img {
+        width: 100%; height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .picg-thumb-placeholder {
+        width: 100%; height: 100%;
+        background: linear-gradient(135deg, var(--bg-card-hover), var(--bg-card));
+      }
+
+      /* Lightbox */
+      .picg-lightbox {
+        position: fixed; inset: 0;
+        background: rgba(0, 0, 0, 0.92);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 300;
+        padding: 32px;
+        animation: picg-fade 0.15s ease;
+      }
+      .picg-lightbox img {
+        max-width: 100%; max-height: 100%;
+        object-fit: contain;
+        border-radius: 4px;
+        box-shadow: 0 8px 48px rgba(0, 0, 0, 0.6);
+      }
+      .picg-lightbox-meta {
+        position: absolute; bottom: 24px; left: 50%;
+        transform: translateX(-50%);
+        background: rgba(20, 18, 14, 0.85);
+        backdrop-filter: blur(8px);
+        padding: 8px 16px;
+        border-radius: 999px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        display: flex; gap: 12px; align-items: center;
+      }
+      .picg-lightbox-close {
+        position: absolute; top: 24px; right: 24px;
+        background: rgba(20, 18, 14, 0.7);
+        backdrop-filter: blur(8px);
+        border: 0;
+        width: 36px; height: 36px;
+        border-radius: 50%;
+        color: var(--text);
+        font-size: 18px;
+        cursor: pointer;
+        display: grid; place-items: center;
+      }
+      .picg-lightbox-close:hover { background: rgba(20, 18, 14, 0.95); }
+
       /* Modal — global so styled-jsx scoping can't accidentally break it. */
       .picg-modal-backdrop {
         position: fixed; inset: 0;
