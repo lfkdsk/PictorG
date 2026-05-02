@@ -220,23 +220,28 @@ export default function GalleriesPage() {
 
       <main>
         <section className="hero">
-          <h1>My galleries</h1>
-          <p className="meta">
-            <span>{galleries.length} managed</span>
-            <span className="dot">•</span>
-            <span>{formatBytes(totalSize)} on disk</span>
-            {cloningEntries.length > 0 && (
-              <>
+          <div className="hero-row">
+            <div>
+              <h1>My galleries</h1>
+              <p className="meta">
+                <span>{galleries.length} managed</span>
                 <span className="dot">•</span>
-                <span>{cloningEntries.length} cloning</span>
-              </>
-            )}
-          </p>
+                <span>{formatBytes(totalSize)} on disk</span>
+                {cloningEntries.length > 0 && (
+                  <>
+                    <span className="dot">•</span>
+                    <span>{cloningEntries.length} cloning</span>
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="hero-actions">
+              <button className="btn primary" onClick={openPicker}>
+                + Add gallery
+              </button>
+            </div>
+          </div>
         </section>
-
-        <div className="actions-row">
-          <button className="btn primary" onClick={openPicker}>+ Add gallery</button>
-        </div>
 
         {error && (
           <div className="banner">
@@ -382,7 +387,15 @@ export default function GalleriesPage() {
         }
         .dot { color: var(--text-faint); }
 
-        .actions-row { margin-bottom: 24px; }
+        .hero-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 24px;
+        }
+        .hero-actions {
+          display: flex; gap: 8px; align-items: center; flex-shrink: 0;
+        }
 
         .banner {
           background: rgba(216, 90, 70, 0.12);
