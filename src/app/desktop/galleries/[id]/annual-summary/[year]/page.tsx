@@ -88,27 +88,36 @@ export default function AnnualSummaryPicker() {
     let cancelled = false;
     (async () => {
       try {
+        // Read any in-progress draft BEFORE we touch React state. If we
+        // setCandidates first, the persistence effect below will fire with
+        // the still-empty `selections` and overwrite a real draft with `{}`
+        // — and the subsequent `existing` load gets shadowed by that empty
+        // draft, so the picker opens with nothing checked.
+        let draft: AnnualSummary | null = null;
+        try {
+          const raw = sessionStorage.getItem(draftKey(galleryId, year));
+          if (raw) draft = JSON.parse(raw) as AnnualSummary;
+        } catch {
+          /* ignore */
+        }
+
         const db = await openDeployedGalleryDb(adapter);
         if (cancelled) return;
         const cands = listMonthlyCandidates(db, year);
         const presentMonths = ALL_MONTHS.filter(
           (m) => (cands[m]?.length ?? 0) > 0
         );
-        setCandidates(cands);
-        setMonths(presentMonths);
 
-        // Prefer in-progress draft over the saved file when both exist.
         const existing = await loadAnnualSummary(adapter, year);
-        let initial: AnnualSummary = existing ?? {};
-        try {
-          const raw = sessionStorage.getItem(draftKey(galleryId, year));
-          if (raw) initial = JSON.parse(raw);
-        } catch {
-          /* ignore */
-        }
         if (cancelled) return;
+        const initial: AnnualSummary = draft ?? existing ?? {};
+
+        // Batch all updates so the persistence effect only ever sees the
+        // resolved `initial`, never the transient empty state.
         setSelections(initial);
         setStepIdx(0);
+        setMonths(presentMonths);
+        setCandidates(cands);
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : String(err));
