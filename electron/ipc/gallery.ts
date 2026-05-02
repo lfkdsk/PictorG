@@ -10,9 +10,15 @@ import { GalleryRegistry } from '../galleries/GalleryRegistry';
 import { CHANNELS } from './contract';
 import type { GalleryCloneArgs } from './contract';
 
+// Module-level singleton, exported so the picg:// protocol handler in
+// main.ts can use the SAME instance (and therefore the same cache).
+// Previously main.ts did `new GalleryRegistry()` itself — a separate
+// instance whose cache never saw galleries cloned later by the IPC
+// path. The picg:// protocol handler then 404'd every cover for any
+// gallery cloned after app startup.
 let registry: GalleryRegistry | null = null;
 
-function getRegistry(): GalleryRegistry {
+export function getRegistry(): GalleryRegistry {
   if (!registry) registry = new GalleryRegistry();
   return registry;
 }

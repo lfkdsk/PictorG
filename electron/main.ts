@@ -28,13 +28,11 @@ process.on('unhandledRejection', (reason) => {
   );
 });
 
-import { GalleryRegistry } from './galleries/GalleryRegistry';
-
 import { CHANNELS } from './ipc/contract';
 import type { OAuthCallbackPayload } from './ipc/contract';
 import { registerAuthIpcHandlers } from './ipc/auth';
 import { registerCompressIpcHandlers } from './ipc/compress';
-import { registerGalleryIpcHandlers } from './ipc/gallery';
+import { getRegistry, registerGalleryIpcHandlers } from './ipc/gallery';
 import { registerStorageIpcHandlers } from './ipc/storage';
 
 // `picg://oauth/#oauth_token=...` is the redirect URL the lfkdsk-auth
@@ -297,6 +295,24 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// Structured error body for the picg:// handler. The renderer's
+// useAdapterImage probes failed thumb URLs and rendrs the JSON
+// `error` + `message` fields in the failure overlay; plain-text
+// 404s used to fall through that parser and show as "picg:// 404".
+function jsonError(
+  status: number,
+  payload: { error: string; message?: string; [k: string]: unknown }
+): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      'X-Picg-Error': '1',
+    },
+  });
+}
+
 function mimeForPath(p: string): string {
   const ext = p.toLowerCase().split('.').pop() ?? '';
   switch (ext) {
@@ -421,17 +437,21 @@ app.whenReady().then(async () => {
   // renderer pull files straight from the on-disk clone without an IPC
   // round-trip + base64 re-encode through the StorageAdapter. The gallery
   // id is the manifest id (owner__repo); the path is whatever follows.
-  const galleryRegistry = new GalleryRegistry();
+  //
+  // Share the same GalleryRegistry as the IPC handlers (singleton from
+  // ipc/gallery.ts). A separate instance here had its own manifest
+  // cache that never saw galleries cloned after app startup, so every
+  // picg:// fetch for a freshly-added gallery 404'd "Gallery not
+  // found" until the next launch.
+  const galleryRegistry = getRegistry();
   protocol.handle('picg', async (request) => {
     const requestUrl = new URL(request.url);
     if (requestUrl.host !== 'gallery') {
-      // OAuth callbacks come in via the OS-level open-url event, not fetch.
-      // Anything else under picg:// gets a 404 from this handler.
-      return new Response('Not found', { status: 404 });
+      return jsonError(404, { error: 'not-picg-gallery', host: requestUrl.host });
     }
     const segments = requestUrl.pathname.split('/').filter(Boolean);
     if (segments.length < 2) {
-      return new Response('Bad path', { status: 400 });
+      return jsonError(400, { error: 'bad-path', pathname: requestUrl.pathname });
     }
     const galleryId = decodeURIComponent(segments[0]);
     const relPath = segments
@@ -441,7 +461,16 @@ app.whenReady().then(async () => {
 
     const gallery = await galleryRegistry.resolve(galleryId);
     if (!gallery) {
-      return new Response('Gallery not found', { status: 404 });
+      // Most common cause: a gallery cloned via IPC after a stale
+      // protocol-side cache was read. We fixed that by sharing one
+      // GalleryRegistry instance, but if it ever happens again the
+      // structured body tells the renderer overlay which gallery id
+      // failed to resolve.
+      return jsonError(404, {
+        error: 'gallery-not-found',
+        galleryId,
+        message: `No gallery in manifest with id "${galleryId}".`,
+      });
     }
 
     // Resolve and confirm the resolved path stays inside gallery.localPath.

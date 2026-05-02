@@ -124,14 +124,19 @@ export function useAdapterImage(
         .then(async (res) => {
           if (reqId.current !== myReq) return;
           if (res.ok) return;
+          // Read the body as text first — calling res.json() then
+          // res.text() on the same response throws "body already used"
+          // after a failed parse, swallowing the actual error message
+          // and leaving us with just the status code in the overlay.
+          const raw = await res.text().catch(() => '');
           let detail = '';
           try {
-            const data = await res.json();
+            const data = JSON.parse(raw);
             detail = data?.message
               ? `${data.error ?? 'error'}: ${data.message}`
-              : data?.error ?? '';
+              : data?.error ?? raw;
           } catch {
-            detail = await res.text().catch(() => '');
+            detail = raw;
           }
           setError(detail || `picg:// ${res.status}`);
         })
