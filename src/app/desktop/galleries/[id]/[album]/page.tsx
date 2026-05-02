@@ -141,6 +141,7 @@ export default function AlbumPage() {
   const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false);
   const [deleteAlbumBusy, setDeleteAlbumBusy] = useState(false);
   const [deleteAlbumError, setDeleteAlbumError] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -461,28 +462,76 @@ export default function AlbumPage() {
                 )}
               </p>
             </div>
-            <div className="hero-actions">
-              <Link
-                href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(albumUrl)}/add` as any}
-                className="btn primary"
-              >
-                + Add photos
-              </Link>
-              {albumMeta && (
-                <button className="btn ghost" onClick={openEdit}>Edit</button>
-              )}
-              {albumMeta && (
-                <button
-                  className="btn ghost danger"
-                  onClick={() => {
-                    setDeleteAlbumError(null);
-                    setDeleteAlbumOpen(true);
-                  }}
+            {!selectMode && (
+              <div className="hero-actions">
+                <Link
+                  href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/${encodeURIComponent(albumUrl)}/add` as any}
+                  className="btn primary"
                 >
-                  Delete
-                </button>
-              )}
-            </div>
+                  + Add photos
+                </Link>
+                <div className="picg-menu-anchor">
+                  <button
+                    type="button"
+                    className="picg-icon-btn"
+                    aria-label="Album actions"
+                    aria-haspopup="menu"
+                    aria-expanded={moreMenuOpen}
+                    onClick={() => setMoreMenuOpen((v) => !v)}
+                  >
+                    ⋯
+                  </button>
+                  {moreMenuOpen && (
+                    <>
+                      <div
+                        className="picg-menu-overlay"
+                        onClick={() => setMoreMenuOpen(false)}
+                      />
+                      <div className="picg-menu" role="menu">
+                        <button
+                          type="button"
+                          className="picg-menu-item"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            openEdit();
+                          }}
+                          disabled={!albumMeta}
+                          role="menuitem"
+                        >
+                          Edit album
+                        </button>
+                        <button
+                          type="button"
+                          className="picg-menu-item"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            setSelectMode(true);
+                          }}
+                          disabled={!images || images.length === 0}
+                          role="menuitem"
+                        >
+                          Select photos
+                        </button>
+                        <div className="picg-menu-divider" />
+                        <button
+                          type="button"
+                          className="picg-menu-item danger"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            setDeleteAlbumError(null);
+                            setDeleteAlbumOpen(true);
+                          }}
+                          disabled={!albumMeta}
+                          role="menuitem"
+                        >
+                          Delete album
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -498,43 +547,28 @@ export default function AlbumPage() {
 
         {images && images.length > 0 && (
           <>
-            <div className="photos-toolbar">
-              {selectMode ? (
-                <>
-                  <span className="selected-count">
-                    {selected.size} selected
-                  </span>
-                  <div className="toolbar-spacer" />
-                  <button
-                    className="btn ghost danger"
-                    onClick={deleteSelectedPhotos}
-                    disabled={deleting || selected.size === 0}
-                  >
-                    {deleting ? 'Deleting…' : `Delete ${selected.size}`}
-                  </button>
-                  <button
-                    className="btn ghost"
-                    onClick={exitSelectMode}
-                    disabled={deleting}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="photos-count">
-                    {images.length} photo{images.length === 1 ? '' : 's'}
-                  </span>
-                  <div className="toolbar-spacer" />
-                  <button
-                    className="btn ghost"
-                    onClick={() => setSelectMode(true)}
-                  >
-                    Select
-                  </button>
-                </>
-              )}
-            </div>
+            {selectMode && (
+              <div className="photos-toolbar">
+                <span className="selected-count">
+                  {selected.size} selected
+                </span>
+                <div className="toolbar-spacer" />
+                <button
+                  className="btn ghost danger"
+                  onClick={deleteSelectedPhotos}
+                  disabled={deleting || selected.size === 0}
+                >
+                  {deleting ? 'Deleting…' : `Delete ${selected.size}`}
+                </button>
+                <button
+                  className="btn ghost"
+                  onClick={exitSelectMode}
+                  disabled={deleting}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             <ul className="picg-thumbs">
               {images.map((img) => (
                 <Thumb

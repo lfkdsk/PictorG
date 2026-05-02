@@ -262,6 +262,75 @@ export function DesktopTheme() {
         font-weight: 600;
       }
 
+      /* Icon-only button (e.g. ⋯ "more actions"). Ghost transparent
+         until hover, then a soft fill — sits next to a primary CTA
+         without competing visually. */
+      .picg-icon-btn {
+        width: 36px; height: 36px;
+        border-radius: 8px;
+        background: transparent;
+        border: 0;
+        color: var(--text-muted);
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        display: grid; place-items: center;
+        transition: background 0.15s ease, color 0.15s ease;
+        font-family: inherit;
+        padding: 0;
+      }
+      .picg-icon-btn:hover { background: var(--bg-card-hover); color: var(--text); }
+      .picg-icon-btn[aria-expanded="true"] {
+        background: var(--bg-card-hover);
+        color: var(--text);
+      }
+
+      /* Anchor for popovers — wrap the trigger + menu in this so the
+         absolute-positioned menu lines up under the trigger. */
+      .picg-menu-anchor { position: relative; }
+      .picg-menu-overlay {
+        position: fixed; inset: 0; z-index: 100;
+      }
+      .picg-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        min-width: 180px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        padding: 4px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+        z-index: 101;
+      }
+      .picg-menu-item {
+        display: block;
+        width: 100%;
+        padding: 9px 12px;
+        background: transparent;
+        border: 0;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+        border-radius: 6px;
+        text-decoration: none;
+        line-height: 1.3;
+      }
+      .picg-menu-item:hover:not(:disabled) { background: var(--bg-card-hover); }
+      .picg-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
+      .picg-menu-item.danger { color: #f0857b; }
+      .picg-menu-item.danger:hover:not(:disabled) {
+        background: rgba(216, 90, 70, 0.12);
+        color: #ff7b72;
+      }
+      .picg-menu-divider {
+        height: 1px;
+        background: var(--border);
+        margin: 4px 0;
+      }
+
       /* Back link — global because styled-jsx occasionally misses next/link's
          rendered <a> when the page also has many scoped rules. */
       .picg-back-link {
