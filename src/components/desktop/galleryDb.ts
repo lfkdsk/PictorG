@@ -1,61 +1,36 @@
 'use client';
 
-// Desktop equivalent of src/lib/sqlite.ts. The web flow fetches
-// `${siteUrl}/sqlite.db` from the deployed gallery's CDN; in the desktop
-// app we read it straight out of the local clone through the
-// StorageAdapter. sql.js itself is the same — Electron's renderer is
-// Chromium, so the WASM module loads exactly like it does on web.
+// Desktop adapter-flavored helpers around the existing web sqlite.ts /
+// annualSummary.ts. The sqlite.db itself is a CI-built derivative
+// (template + theme + scan) that lives on the deployed site, NOT in
+// the gallery repo — so desktop reads it from the same CDN URL the web
+// flow uses. Building the DB locally would mean owning the rendering
+// layer (template / theme / build.py), which is firmly outside the
+// desktop tool's scope.
 
-import type { Database, SqlJsStatic } from 'sql.js';
+import type { Database } from 'sql.js';
 
 import type { StorageAdapter } from '@/core/storage';
-import type {
-  AnnualSummary,
-  MonthKey,
+import {
+  parseGalleryConfig,
+  type AnnualSummary,
+  type MonthKey,
 } from '@/lib/annualSummary';
+import { openGalleryDb } from '@/lib/sqlite';
 
-const SQL_JS_VERSION = '1.14.1';
-const SQL_WASM_URL = `https://cdn.jsdelivr.net/npm/sql.js@${SQL_JS_VERSION}/dist/sql-wasm.wasm`;
-const DB_PATH = 'sqlite.db';
 export const SUMMARY_DIR = '.analysis/annual-summary';
+const CONFIG_PATH = 'CONFIG.yml';
 
-let sqlJsPromise: Promise<SqlJsStatic> | null = null;
-
-async function getSqlJs(): Promise<SqlJsStatic> {
-  if (!sqlJsPromise) {
-    sqlJsPromise = (async () => {
-      const initSqlJs = (await import('sql.js')).default;
-      return initSqlJs({ locateFile: () => SQL_WASM_URL });
-    })();
-  }
-  return sqlJsPromise;
-}
-
-// Process-wide cache keyed by adapter id so re-entering the page (or
-// hopping between year and picker) doesn't refetch the file from disk.
-// Lives across React mounts but a renderer reload drops it.
-const dbCache = new Map<string, Promise<Database>>();
-
-export async function openLocalGalleryDb(
+// Reads CONFIG.yml from the local clone, pulls the deployed site URL,
+// then loads sqlite.db from that site's CDN through the shared
+// openGalleryDb cache. Throws "CONFIG.yml 缺少 url 字段" if the gallery
+// hasn't been configured for deployment.
+export async function openDeployedGalleryDb(
   adapter: StorageAdapter
 ): Promise<Database> {
-  const key = adapter.id;
-  let promise = dbCache.get(key);
-  if (!promise) {
-    promise = (async () => {
-      const SQL = await getSqlJs();
-      const file = await adapter.readFile(DB_PATH);
-      return new SQL.Database(file.data);
-    })();
-    dbCache.set(key, promise);
-    promise.catch(() => dbCache.delete(key));
-  }
-  return promise;
-}
-
-export function clearGalleryDbCache(adapterId?: string): void {
-  if (adapterId) dbCache.delete(adapterId);
-  else dbCache.clear();
+  const file = await adapter.readFile(CONFIG_PATH);
+  const cfg = parseGalleryConfig(file.text());
+  return openGalleryDb(cfg.siteUrl);
 }
 
 // Adapter-flavored equivalents of fetchSummary / saveSummary in

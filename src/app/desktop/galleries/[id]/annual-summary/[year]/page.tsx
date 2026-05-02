@@ -15,7 +15,7 @@ import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import {
   loadAnnualSummary,
-  openLocalGalleryDb,
+  openDeployedGalleryDb,
   saveAnnualSummary,
 } from '@/components/desktop/galleryDb';
 import {
@@ -87,7 +87,7 @@ export default function AnnualSummaryPicker() {
     let cancelled = false;
     (async () => {
       try {
-        const db = await openLocalGalleryDb(adapter);
+        const db = await openDeployedGalleryDb(adapter);
         if (cancelled) return;
         const cands = listMonthlyCandidates(db, year);
         const presentMonths = ALL_MONTHS.filter(
@@ -215,7 +215,7 @@ export default function AnnualSummaryPicker() {
           <h1>{year} 年度精选</h1>
           <p className="meta">
             {candidates == null
-              ? 'Reading sqlite.db…'
+              ? 'Loading sqlite.db from deployed site…'
               : months.length === 0
                 ? 'No photos with EXIF date in this year.'
                 : `${completedCount} / ${months.length} months filled`}

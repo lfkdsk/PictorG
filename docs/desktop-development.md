@@ -12,6 +12,38 @@ abstractions.
 
 ---
 
+## 0. Scope — desktop is a data-layer editor
+
+PicG splits across three repos in production:
+
+1. **gallery repo** — what the user owns: `README.yml`, `CONFIG.yml`, the
+   per-album image directories.
+2. **gallery-template** — Python SSG that pulls a gallery + a theme and
+   produces the deployed static site, including `sqlite.db` (an EXIF
+   index over every photo).
+3. **theme** — the look-and-feel module the template clones in alongside
+   the gallery.
+
+CI clones all three and runs `build.py`. The desktop app only owns the
+first one. Everything that's a CI derivative — the static HTML, the
+thumbnails the deployed site serves, `sqlite.db` — is consumed *from*
+the deployed site, never built locally.
+
+This boundary keeps the desktop tool small (no Python, no theme version
+matrix, no duplicated build path) and gives the user one mental model:
+edit locally → push → CI deploys → desktop reads the new derivatives.
+The trade-off: anything that depends on a CI-built file (annual summary,
+which queries `sqlite.db`) reflects the *last deployed* state. Photos
+the user just added but hasn't pushed yet won't appear there until the
+next CI run completes. That matches the web flow exactly and is on
+purpose.
+
+If a future feature seems to want a local `build.py` invocation —
+"preview my site before pushing", "annual summary based on local edits"
+— treat it as a request to cross this boundary. Push back hard.
+
+---
+
 ## 1. Architecture
 
 ```
@@ -300,12 +332,14 @@ that's also running dev.
 These are deliberately undone, and listed here so the next person
 doesn't redo investigations.
 
-- **`DatabaseAdapter`** — annual summary uses sql.js loaded from a CDN
-  in the web flow (`src/lib/sqlite.ts`). Desktop should swap it for
-  `adapter.readFile('sqlite.db')` + sql.js (renderer can run sql.js
-  fine; no need for `better-sqlite3` in main). The sqlite querying
-  logic in `src/lib/annualSummary.ts` is platform-agnostic and reusable
-  as-is. Blocks the "年度精选 / 每月印象" port.
+- **`DatabaseAdapter`** — *not* needed and not worth doing. Annual
+  summary now lives at `/desktop/galleries/[id]/annual-summary[/year]`
+  and intentionally reads `sqlite.db` from the same CDN URL the web
+  flow uses (see `openDeployedGalleryDb` in
+  `src/components/desktop/galleryDb.ts`). Building the DB locally
+  would mean owning the rendering layer (template + theme + build.py)
+  — an explicit non-goal per §0. If you find yourself wanting a local
+  DB, the answer is "push and let CI rebuild it".
 - **OAuth in Electron** — currently the user has to paste a PAT at
   `/login/token`. The web OAuth flow does
   `window.location.href = github.com/...` which will replace the

@@ -14,7 +14,7 @@ import {
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import {
   listSavedSummaryYears,
-  openLocalGalleryDb,
+  openDeployedGalleryDb,
 } from '@/components/desktop/galleryDb';
 import { listYearsWithPhotos } from '@/lib/annualSummary';
 
@@ -55,7 +55,7 @@ export default function AnnualSummaryYearsPage() {
     (async () => {
       try {
         const [db, savedYears] = await Promise.all([
-          openLocalGalleryDb(adapter),
+          openDeployedGalleryDb(adapter),
           listSavedSummaryYears(adapter),
         ]);
         if (cancelled) return;
@@ -120,10 +120,16 @@ export default function AnnualSummaryYearsPage() {
 
         {loadError && (
           <div className="picg-banner">
-            {/sqlite\.db/i.test(loadError) ? (
+            {/CONFIG\.yml|url 字段/.test(loadError) ? (
               <>
-                Could not read <code>sqlite.db</code> — this gallery hasn&apos;t
-                been indexed yet, or the DB file is missing.
+                <code>CONFIG.yml</code> doesn&apos;t have a <code>url</code> field
+                — annual summary reads <code>sqlite.db</code> from the deployed
+                site, so the gallery has to be deployed at least once first.
+              </>
+            ) : /sqlite\.db|Failed to fetch/.test(loadError) ? (
+              <>
+                Could not fetch <code>sqlite.db</code> from the deployed site
+                — check your network or that the gallery has been deployed.
               </>
             ) : (
               loadError
@@ -132,7 +138,7 @@ export default function AnnualSummaryYearsPage() {
         )}
 
         {!loadError && entries == null && (
-          <div className="hint">Reading sqlite.db…</div>
+          <div className="hint">Loading sqlite.db from deployed site…</div>
         )}
 
         {entries && entries.length === 0 && !loadError && (
