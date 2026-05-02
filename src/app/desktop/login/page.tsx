@@ -155,7 +155,7 @@ export default function DesktopLoginPage() {
           )}
 
           <div className="advanced">
-            <Link href="/login/token" className="picg-back-link">
+            <Link href="/desktop/login/token" className="picg-back-link">
               Use a personal access token instead
             </Link>
           </div>
