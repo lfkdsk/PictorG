@@ -160,6 +160,10 @@ export type CompressImageRequest = {
   originalName: string;
   outputFormat: 'webp' | 'jpeg';
   preserveExif: boolean;
+  // When true: WebP lossless encode, no 50 MP resize cap. JPEG ignores
+  // this flag (JPEG has no lossless mode). Set from the renderer's
+  // CompressionSettings.lossless.
+  lossless?: boolean;
 };
 
 export type CompressImageResult = {
@@ -184,7 +188,16 @@ export interface PicgBridge {
     installNow(): Promise<void>;
     onUpdateDownloaded(handler: (info: { version?: string }) => void): () => void;
     getPending(): Promise<{ version?: string } | null>;
-    checkNow(): Promise<{ ok: true; version?: string } | { ok: false; error: string }>;
+    checkNow(): Promise<
+      | {
+          ok: true;
+          currentVersion: string;
+          manifestVersion: string | null;
+          updateAvailable: boolean;
+          downloaded: { version?: string } | null;
+        }
+      | { ok: false; error: string }
+    >;
   };
   gallery: {
     list(): Promise<LocalGallery[]>;

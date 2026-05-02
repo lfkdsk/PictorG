@@ -60,16 +60,29 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     setMenuOpen(false);
     try {
       const r = await bridge.updater.checkNow();
-      if (r.ok) {
-        // If a new version is available, electron-updater starts the
-        // download and `onUpdateDownloaded` will fire shortly. If we're
-        // already on the latest, no event fires — let the user know.
-        if (!r.version) {
-          alert('You are on the latest version.');
-        }
-      } else {
+      if (!r.ok) {
         alert(`Update check failed: ${r.error}`);
+        return;
       }
+      // If something already finished downloading, surface the pill
+      // immediately — the user shouldn't have to wait for the next
+      // broadcast cycle to discover it.
+      if (r.downloaded) {
+        setUpdateReady(r.downloaded);
+        alert(
+          `Update ${r.downloaded.version ?? ''} downloaded — click "Update ready" in the topbar to install.`
+        );
+        return;
+      }
+      if (r.updateAvailable && r.manifestVersion) {
+        alert(
+          `Update found: ${r.manifestVersion} (current ${r.currentVersion}). Downloading in the background — the topbar will show "Update ready" when it's done.`
+        );
+        return;
+      }
+      alert(
+        `You are on the latest version (${r.currentVersion}).`
+      );
     } catch (err) {
       alert(`Update check failed: ${err instanceof Error ? err.message : err}`);
     }

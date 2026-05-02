@@ -88,15 +88,32 @@ export function initAutoUpdater(): void {
   ipcMain.handle(CHANNELS.updater.getPending, () => pendingDownloadedUpdate);
 
   // Manual check trigger from the avatar menu — useful when you want
-  // to verify update plumbing without waiting for the 4 h poll. Just
-  // re-runs the same checkForUpdates() the boot path uses; resolves
-  // to whatever electron-updater reports.
+  // to verify update plumbing without waiting for the 4 h poll.
+  //
+  // Note on the return shape: `checkForUpdates()` resolves to the
+  // *manifest* version (whatever's on the GitHub Release page),
+  // *whether or not* it differs from the running app. We need the
+  // diff to give the user useful feedback ("on latest" vs "found
+  // 0.1.6, downloading"), so compare to app.getVersion() ourselves.
+  // `downloadPromise` is only present when an actual download was
+  // kicked off — its presence is a more reliable "is there an update"
+  // signal than version comparison alone.
   ipcMain.handle(CHANNELS.updater.checkNow, async () => {
     try {
       const r = await autoUpdater.checkForUpdates();
+      const manifestVersion = r?.updateInfo?.version ?? null;
+      const currentVersion = app.getVersion();
+      const updateAvailable =
+        !!r?.downloadPromise ||
+        (manifestVersion != null && manifestVersion !== currentVersion);
       return {
         ok: true,
-        version: r?.updateInfo?.version,
+        currentVersion,
+        manifestVersion,
+        updateAvailable,
+        // Already-downloaded? Renderer can immediately show the install
+        // pill instead of waiting for the broadcast on next event.
+        downloaded: pendingDownloadedUpdate,
       };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? String(err) };

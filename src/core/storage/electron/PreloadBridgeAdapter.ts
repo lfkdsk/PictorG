@@ -228,7 +228,14 @@ export type PreloadUpdaterBridge = {
   ): () => void;
   getPending(): Promise<{ version?: string } | null>;
   checkNow(): Promise<
-    { ok: true; version?: string } | { ok: false; error: string }
+    | {
+        ok: true;
+        currentVersion: string;
+        manifestVersion: string | null;
+        updateAvailable: boolean;
+        downloaded: { version?: string } | null;
+      }
+    | { ok: false; error: string }
   >;
 };
 

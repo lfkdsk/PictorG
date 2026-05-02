@@ -15,6 +15,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
+import { makePreviewUrl } from '@/components/desktop/makePreview';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
 
 const README_PATH = 'README.yml';
@@ -147,14 +148,26 @@ export default function NewAlbumPage() {
   function addFiles(list: FileList | File[]) {
     const incoming = Array.from(list).filter(isImageFile);
     if (incoming.length === 0) return;
+    // Add the cards immediately with an empty preview so the grid pops
+    // up without latency, then fill each preview asynchronously as the
+    // downsampled blob lands. Lets the user see their drop right away
+    // while the actual decode + resize for the thumbnail happens in
+    // the background.
     const items: Photo[] = incoming.map((file) => ({
       id: crypto.randomUUID(),
       original: file,
-      preview: URL.createObjectURL(file),
+      preview: '',
       status: 'pending',
     }));
     setPhotos((prev) => [...prev, ...items]);
     setCoverId((cur) => cur ?? items[0].id);
+    items.forEach((item) => {
+      makePreviewUrl(item.original).then((url) => {
+        setPhotos((prev) =>
+          prev.map((p) => (p.id === item.id ? { ...p, preview: url } : p))
+        );
+      });
+    });
   }
 
   function removePhoto(id: string) {

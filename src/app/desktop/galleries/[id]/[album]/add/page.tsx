@@ -14,6 +14,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
+import { makePreviewUrl } from '@/components/desktop/makePreview';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
 
 type PhotoStatus = 'pending' | 'compressing' | 'ready' | 'error';
@@ -123,13 +124,24 @@ export default function AddPhotosPage() {
   function addFiles(list: FileList | File[]) {
     const incoming = Array.from(list).filter(isImageFile);
     if (incoming.length === 0) return;
+    // Add cards immediately with empty preview, fill each in the
+    // background with a downsampled blob (createImageBitmap →
+    // OffscreenCanvas → webp). Avoids the browser decoding 30 MB
+    // originals just to render 200 px thumbnails.
     const items: Photo[] = incoming.map((file) => ({
       id: crypto.randomUUID(),
       original: file,
-      preview: URL.createObjectURL(file),
+      preview: '',
       status: 'pending',
     }));
     setPhotos((prev) => [...prev, ...items]);
+    items.forEach((item) => {
+      makePreviewUrl(item.original).then((url) => {
+        setPhotos((prev) =>
+          prev.map((p) => (p.id === item.id ? { ...p, preview: url } : p))
+        );
+      });
+    });
   }
 
   function removePhoto(id: string) {

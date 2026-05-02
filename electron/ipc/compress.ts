@@ -168,15 +168,19 @@ async function compressImage(
   // Cap output at 50 MP. Below that, leave the image alone (24 MP DSLR,
   // iPhone 12 MP, etc. all pass through untouched). Above it — typical
   // 60–100 MP medium-format / high-res mirrorless cameras — scale the
-  // image down to exactly 50 MP, preserving aspect ratio. 50 MP is
-  // ~8660×5773 at 3:2; even on a Retina 5K display full-screen view
-  // (5120 × 2880) you've got room to zoom. The output is dramatically
-  // smaller (a 100 MP source roughly halves to 50 MP, with a ~50 %
-  // file-size drop on top of WebP's normal compression).
+  // image down to exactly 50 MP, preserving aspect ratio.
+  //
+  // Skipped entirely in lossless mode: the user's intent there is
+  // "preserve everything," and silently downsizing breaks that promise.
   const inWidth = inMeta.width ?? 0;
   const inHeight = inMeta.height ?? 0;
   const inPixels = inWidth * inHeight;
-  if (inPixels > MAX_PIXELS && inWidth > 0 && inHeight > 0) {
+  if (
+    !request.lossless &&
+    inPixels > MAX_PIXELS &&
+    inWidth > 0 &&
+    inHeight > 0
+  ) {
     const scale = Math.sqrt(MAX_PIXELS / inPixels);
     const targetWidth = Math.round(inWidth * scale);
     pipeline = pipeline.resize({
@@ -195,6 +199,16 @@ async function compressImage(
       .toBuffer();
     extension = '.jpg';
     mimeType = 'image/jpeg';
+  } else if (request.lossless) {
+    // Lossless WebP — every pixel preserved. quality is ignored in
+    // lossless mode; effort still gates how hard the encoder works
+    // to find redundant patterns. Output is 5–10× larger than lossy
+    // q=75 but typically still smaller than the source HEIC/JPEG.
+    outBuffer = await pipeline
+      .webp({ lossless: true, effort: 6 })
+      .toBuffer();
+    extension = '.webp';
+    mimeType = 'image/webp';
   } else {
     // effort: 6 is sharp's slowest/best WebP setting. ~30 % slower than
     // the default 4, ~5 – 15 % smaller output for the same quality.

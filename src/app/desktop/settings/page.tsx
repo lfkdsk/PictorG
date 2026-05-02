@@ -89,9 +89,32 @@ export default function DesktopSettingsPage() {
                 value="jpeg"
                 selected={settings.outputFormat === 'jpeg'}
                 onSelect={() => update({ outputFormat: 'jpeg' })}
-                disabled={!settings.enableWebP}
+                disabled={!settings.enableWebP || settings.lossless}
               />
             </div>
+          </div>
+
+          <div className="row">
+            <div className="row-text">
+              <div className="row-title">Lossless mode</div>
+              <div className="row-desc">
+                Pixel-perfect WebP output — no quality loss, no resize cap.
+                Files are 5–10× larger than the default lossy mode but
+                typically still smaller than the source. JPEG output is
+                disabled while this is on.
+              </div>
+            </div>
+            <Toggle
+              checked={settings.lossless}
+              onChange={(v) =>
+                update({
+                  lossless: v,
+                  // Lossless only makes sense for WebP — flip to webp on enable.
+                  ...(v ? { outputFormat: 'webp' as const } : {}),
+                })
+              }
+              disabled={!settings.enableWebP}
+            />
           </div>
         </section>
       </main>

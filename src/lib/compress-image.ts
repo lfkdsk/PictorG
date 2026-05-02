@@ -30,8 +30,26 @@ const initializeLibraries = async () => {
   }
 };
 
-export const isNeedCompress = (imageType: string): boolean => { 
-  return /(png|jpg|jpeg|webp|avif)$/.test(imageType) 
+export const isNeedCompress = (imageType: string): boolean => {
+  return /(png|jpg|jpeg|webp|avif)$/.test(imageType)
+}
+
+// Read the natural dimensions of an image File, used to decide whether
+// to enable the 50 MP downsize processor. createImageBitmap is fast
+// (decode happens off-thread in Chromium) and avoids us having to
+// keep an <img> mounted just for measurement. Returns null on
+// formats the browser can't decode (e.g. HEIC outside Safari).
+async function readImageDimensions(
+  file: File
+): Promise<{ width: number; height: number } | null> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const dims = { width: bmp.width, height: bmp.height };
+    bmp.close?.();
+    return dims;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -52,13 +70,50 @@ export const compressImage = async (file: File, customSettings?: CompressionSett
   }
 
   const encoderType = settings.outputFormat === 'jpeg' ? 'mozJPEG' : 'webP';
+
+  // Build encoder options. Lossless WebP flips the lossless flag and
+  // ignores quality; squoosh's webP encoder option `lossless: 1` is the
+  // signal. JPEG ignores this — there's no JPEG lossless mode worth
+  // shipping, and the UI gates the toggle to webp output anyway.
+  let encoderOptions = { ...encoderMap[encoderType].meta.defaultOptions };
+  if (settings.lossless && encoderType === 'webP') {
+    encoderOptions = { ...encoderOptions, lossless: 1, exact: 1 };
+  }
+
+  // Mirror the desktop's 50 MP cap. Skipped in lossless mode so a user
+  // who explicitly opted into "preserve everything" doesn't get
+  // silently downsized. squoosh's resize processor takes width/height
+  // in target pixels and respects fitMethod='contain'.
+  let processorState = defaultProcessorState;
+  if (!settings.lossless) {
+    try {
+      const dims = await readImageDimensions(file);
+      if (dims && dims.width * dims.height > 50_000_000) {
+        const scale = Math.sqrt(50_000_000 / (dims.width * dims.height));
+        processorState = {
+          ...defaultProcessorState,
+          resize: {
+            ...defaultProcessorState.resize,
+            enabled: true,
+            width: Math.round(dims.width * scale),
+            height: Math.round(dims.height * scale),
+            method: 'lanczos3',
+            fitMethod: 'contain',
+          },
+        };
+      }
+    } catch {
+      /* dimension read failed — skip the cap, behave like before */
+    }
+  }
+
   const compress = new Compress(file, {
     encoderState: {
       type: encoderType,
-      options: encoderMap[encoderType].meta.defaultOptions
+      options: encoderOptions,
     },
-    processorState: defaultProcessorState,
-    preprocessorState: defaultPreprocessorState
+    processorState,
+    preprocessorState: defaultPreprocessorState,
   });
 
   function readFileAsString(file: File): Promise<string> {

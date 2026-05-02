@@ -2,12 +2,19 @@ export interface CompressionSettings {
   enableWebP: boolean;
   preserveEXIF: boolean;
   outputFormat: 'webp' | 'jpeg';
+  // When true, encode WebP in lossless mode (every pixel preserved,
+  // no resize cap applied). Output is ~3–10× larger than lossy WebP
+  // but still smaller than the original HEIC/JPEG and pixel-perfect
+  // for archival use. Only meaningful when enableWebP=true and
+  // outputFormat='webp' — JPEG has no lossless mode.
+  lossless: boolean;
 }
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   enableWebP: true,
   preserveEXIF: true,
-  outputFormat: 'webp'
+  outputFormat: 'webp',
+  lossless: false,
 };
 
 export const getCompressionSettings = (): CompressionSettings => {

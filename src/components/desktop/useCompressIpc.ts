@@ -16,7 +16,10 @@ import { useCallback } from 'react';
 import { getPicgBridge } from '@/core/storage';
 import { getCompressionSettings } from '@/lib/settings';
 
-const COMPRESSIBLE_TYPES = /^image\/(png|jpe?g|webp|avif|tiff|gif)$/i;
+// HEIC slips into this list because the desktop main now transcodes it
+// via macOS sips before sharp encode (see electron/ipc/compress.ts).
+const COMPRESSIBLE_TYPES = /^image\/(png|jpe?g|webp|avif|tiff|gif|hei[cf])$/i;
+const COMPRESSIBLE_EXTS = /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i;
 
 export function useCompressIpc(): {
   compress: (file: File) => Promise<File>;
@@ -28,7 +31,11 @@ export function useCompressIpc(): {
     // Skip cases — return the original file untouched, same shape as the
     // squoosh path used to.
     if (!settings.enableWebP) return file;
-    if (!COMPRESSIBLE_TYPES.test(file.type)) return file;
+    // Some browsers report image/heic as application/octet-stream or empty
+    // type; fall back to filename extension when the MIME is unknown.
+    const looksCompressible =
+      COMPRESSIBLE_TYPES.test(file.type) || COMPRESSIBLE_EXTS.test(file.name);
+    if (!looksCompressible) return file;
 
     if (!bridge) {
       // Running outside Electron (e.g. previewing the desktop pages in a
@@ -44,6 +51,7 @@ export function useCompressIpc(): {
       originalName: file.name,
       outputFormat: settings.outputFormat,
       preserveExif: settings.preserveEXIF,
+      lossless: settings.lossless,
     });
     return new File([result.buffer], result.name, { type: result.type });
   }, []);

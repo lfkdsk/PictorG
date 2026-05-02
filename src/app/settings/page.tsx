@@ -115,11 +115,39 @@ export default function SettingsPage() {
                     value="jpeg"
                     checked={settings.outputFormat === 'jpeg'}
                     onChange={() => handleFormatChange('jpeg')}
+                    disabled={settings.lossless}
                   />
                   <span>JPEG</span>
                   <small>通用格式，所有设备支持</small>
                 </label>
               </div>
+            </div>
+
+            <div className="setting-row">
+              <div className="setting-info">
+                <label className="setting-label">无损模式</label>
+                <p className="setting-desc">
+                  WebP 无损输出，像素级保留原图，不做 50&nbsp;MP 缩放上限。文件
+                  比有损 WebP 大 5–10 倍，但通常仍比原始 HEIC/JPEG 小。
+                </p>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.lossless}
+                  disabled={!settings.enableWebP}
+                  onChange={(e) => {
+                    const next: typeof settings = {
+                      ...settings,
+                      lossless: e.target.checked,
+                    };
+                    if (e.target.checked) next.outputFormat = 'webp';
+                    setSettings(next);
+                    saveCompressionSettings(next);
+                  }}
+                />
+                <span className="slider"></span>
+              </label>
             </div>
           </div>
         </div>
