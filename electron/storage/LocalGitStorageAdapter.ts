@@ -1,7 +1,9 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import simpleGit, { SimpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
 
+import { buildIsolatedGit } from '../galleries/isolatedGit';
+import { getStoredToken } from '../ipc/auth';
 import type { StorageAdapter } from '../../src/core/storage/StorageAdapter';
 import type {
   BatchFile,
@@ -37,13 +39,21 @@ function toBytes(content: WriteContent): Uint8Array {
 export class LocalGitStorageAdapter implements StorageAdapter {
   readonly id: string;
   private readonly repoPath: string;
-  private readonly git: SimpleGit;
+  // SimpleGit instance, built lazily with the isolated env + config
+  // so child `git` processes ignore ~/.gitconfig, /etc/gitconfig, the
+  // user's SSH keys, and any credential helpers. See
+  // electron/galleries/isolatedGit.ts for what's neutralized and why.
+  //
+  // Stored as a Promise so the constructor stays sync — the first
+  // method call awaits it; subsequent calls re-use the resolved value.
+  // forCommits: true because every write path here ends in `git commit`.
+  private readonly git: Promise<SimpleGit>;
   private readonly autoPush: boolean;
 
   constructor(config: LocalGitStorageAdapterConfig) {
     this.repoPath = path.resolve(config.repoPath);
     this.id = this.repoPath;
-    this.git = simpleGit(this.repoPath);
+    this.git = buildIsolatedGit(this.repoPath, { forCommits: true });
     this.autoPush = config.autoPush ?? true;
   }
 
@@ -51,7 +61,8 @@ export class LocalGitStorageAdapter implements StorageAdapter {
 
   async getDefaultBranch(): Promise<string> {
     try {
-      const head = (await this.git.raw(['symbolic-ref', '--short', 'HEAD'])).trim();
+      const git = await this.git;
+      const head = (await git.raw(['symbolic-ref', '--short', 'HEAD'])).trim();
       if (head) return head;
     } catch {
       /* fall through */
@@ -131,8 +142,9 @@ export class LocalGitStorageAdapter implements StorageAdapter {
     _options?: WriteOptions
   ): Promise<void> {
     await this.writeFileToDisk(relPath, content);
-    await this.git.add([relPath]);
-    await this.git.commit(message);
+    const git = await this.git;
+    await git.add([relPath]);
+    await git.commit(message);
     await this.maybePush();
   }
 
@@ -145,8 +157,9 @@ export class LocalGitStorageAdapter implements StorageAdapter {
     for (const file of files) {
       await this.writeFileToDisk(file.path, file.content);
     }
-    await this.git.add(files.map((f) => f.path));
-    await this.git.commit(message);
+    const git = await this.git;
+    await git.add(files.map((f) => f.path));
+    await git.commit(message);
     await this.maybePush();
   }
 
@@ -169,8 +182,9 @@ export class LocalGitStorageAdapter implements StorageAdapter {
     if (unique.length === 0) {
       throw new Error('没有可删除的文件');
     }
-    await this.git.rm(unique);
-    await this.git.commit(message);
+    const git = await this.git;
+    await git.rm(unique);
+    await git.commit(message);
     await this.maybePush();
   }
 
@@ -190,12 +204,13 @@ export class LocalGitStorageAdapter implements StorageAdapter {
       throw err;
     }
 
+    const git = await this.git;
     // `git rm -r` handles tracked files; untracked files inside aren't tracked
     // so we drop them with fs.rm afterwards. Order matters — git first so it
     // doesn't complain about missing paths.
-    await this.git.rm(['-r', relDir]);
+    await git.rm(['-r', relDir]);
     await fs.rm(absDir, { recursive: true, force: true });
-    await this.git.commit(message);
+    await git.commit(message);
     await this.maybePush();
   }
 
@@ -219,7 +234,8 @@ export class LocalGitStorageAdapter implements StorageAdapter {
 
   private async tryFileSha(relPath: string): Promise<string | undefined> {
     try {
-      const sha = (await this.git.raw(['rev-parse', `HEAD:${relPath}`])).trim();
+      const git = await this.git;
+      const sha = (await git.raw(['rev-parse', `HEAD:${relPath}`])).trim();
       return sha || undefined;
     } catch {
       return undefined;
@@ -229,7 +245,35 @@ export class LocalGitStorageAdapter implements StorageAdapter {
   private async maybePush(): Promise<void> {
     if (!this.autoPush) return;
     try {
-      await this.git.push();
+      const git = await this.git;
+      // Same approach as GalleryRegistry.push(): push to the tokenized
+      // URL POSITIONALLY (not via `-c remote.origin.url=`, which git
+      // silently strips credentials from), then update the tracking
+      // ref locally. Kept narrowly here because this autoPush path
+      // is dev-only (PICG_AUTOPUSH=1) and the primary publish flow
+      // goes through GalleryRegistry.
+      const token = getStoredToken();
+      if (!token) {
+        throw new Error(
+          'Not signed in — open Pictor and complete GitHub sign-in before auto-pushing.'
+        );
+      }
+      const originUrl = (await git.remote(['get-url', 'origin']))?.toString().trim() ?? '';
+      if (!originUrl.startsWith('https://')) {
+        throw new Error(`Unsupported origin URL for tokenized push: ${originUrl || '<empty>'}`);
+      }
+      const tokenizedUrl = originUrl.replace(
+        'https://',
+        `https://oauth2:${encodeURIComponent(token)}@`
+      );
+      const branchInfo = await git.branch();
+      const branch = branchInfo.current || 'HEAD';
+      await git.raw(['push', tokenizedUrl, `HEAD:${branch}`]);
+      await git
+        .raw(['update-ref', `refs/remotes/origin/${branch}`, 'HEAD'])
+        .catch(() => {
+          /* non-fatal — see GalleryRegistry.push() comment */
+        });
     } catch (err) {
       // Surface push failures without rolling back the commit — same shape as
       // GitHub adapter errors. Caller decides whether to retry.

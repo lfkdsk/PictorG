@@ -7,9 +7,10 @@ import { app, WebContents } from 'electron';
 import { exec } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import simpleGit from 'simple-git';
+import type { SimpleGit } from 'simple-git';
 
 import { getStoredToken } from '../ipc/auth';
+import { buildIsolatedGit } from './isolatedGit';
 import type { UndoResult } from '../ipc/contract';
 import type {
   CloneProgress,
@@ -213,7 +214,11 @@ export class GalleryRegistry {
       `https://oauth2:${encodeURIComponent(token)}@`
     );
 
-    const git = simpleGit({
+    // Clone runs from the parent of the eventual repo dir (the dir
+    // doesn't exist yet) — simple-git's `baseDir` just decides where
+    // the child process spawns; the actual destination is the second
+    // arg to `git.clone(url, dest)`.
+    const git = await buildIsolatedGit(this.galleriesRoot, {
       abort: abortController.signal,
       progress: ({ method, stage, progress, processed, total }) => {
         // simple-git emits progress for both clone and other methods; filter.
@@ -264,7 +269,8 @@ export class GalleryRegistry {
 
     // Strip token from the persisted remote URL.
     try {
-      await simpleGit(localPath).remote(['set-url', 'origin', request.cloneUrl]);
+      const cleanGit = await buildIsolatedGit(localPath);
+      await cleanGit.remote(['set-url', 'origin', request.cloneUrl]);
     } catch {
       /* non-fatal — leaving tokenized URL would be a security concern but the
          clone itself succeeded; surface via console for the spike */
@@ -327,7 +333,10 @@ export class GalleryRegistry {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
 
-    const git = simpleGit(gallery.localPath);
+    // forCommits: true because `git pull` may need to author a merge
+    // commit when the remote isn't a fast-forward. With the global
+    // gitconfig wiped we have to supply user.name/user.email ourselves.
+    const git = await buildIsolatedGit(gallery.localPath, { forCommits: true });
     const branch = await currentBranch(git);
     await git.pull(this.tokenizedUrl(gallery), branch);
 
@@ -346,7 +355,10 @@ export class GalleryRegistry {
   async push(id: string): Promise<void> {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
-    const git = simpleGit(gallery.localPath);
+    // forCommits: true because maybeSquash() runs a `git commit` to
+    // record the squashed commit. Identity comes from the OAuth token,
+    // not from the user's (now-ignored) ~/.gitconfig.
+    const git = await buildIsolatedGit(gallery.localPath, { forCommits: true });
     const branch = await currentBranch(git);
 
     // Squash all unpushed commits into one before pushing. The renderer
@@ -364,35 +376,39 @@ export class GalleryRegistry {
     // from reflog even after a hard reset.
     const preSquashSha = await this.maybeSquash(git, branch);
 
-    // Push through the `origin` *name*, not a bare URL. Pushing to a bare
-    // URL does the upload but skips updating `refs/remotes/origin/<branch>`,
-    // so a follow-up `git status` keeps reporting ahead > 0 — which makes
-    // the Topbar badge look stuck even after a successful push.
+    // Two competing requirements for how we get the OAuth token to git:
     //
-    // We override `remote.origin.url` ephemerally with `-c` so the push
-    // sees the tokenized URL but the persisted .git/config (de-tokenized
-    // after clone) stays untouched.
+    //   (a) the token must NOT live in .git/config (would persist on
+    //       disk, leak via backups / iCloud sync / accidental commits)
+    //   (b) `refs/remotes/origin/<branch>` must update after a push,
+    //       otherwise the Topbar's ahead-counter looks stuck on N
+    //       forever even though origin actually got the commits
     //
-    // The other two `-c` flags fix two common GitHub transport failures
-    // we hit with photo galleries (commits that include many MB of
-    // binaries):
-    //   - http.postBuffer=524288000 (500 MB): default is 1 MB, way too
-    //     small. Symptom is HTTP 400 + "send-pack: unexpected disconnect
-    //     while reading sideband packet".
-    //   - http.version=HTTP/1.1: GitHub's HTTP/2 occasionally drops large
-    //     chunked uploads with the same sideband error. Forcing 1.1 is a
-    //     stable workaround that costs nothing here.
+    // The previous trick — `git -c remote.origin.url=https://oauth2:<token>@... push origin <branch>` —
+    // looked like it satisfied both, but doesn't actually work:
+    // git SILENTLY drops credentials supplied via -c config. They only
+    // reach git's HTTP transport when they're either persisted in
+    // .git/config or passed positionally to push/pull. (Verified
+    // 2026-05-04 against git 2.39: the -c path produces the exact
+    // "could not read Username for 'https://github.com'" error the
+    // user was hitting after the §4.2 isolation locked SSH off.)
+    //
+    // The fix: push POSITIONALLY (creds reach the transport), then
+    // update the tracking ref ourselves with `update-ref` (purely
+    // local, no second network round trip). `git push <url> HEAD:<branch>`
+    // updates HEAD on the remote but doesn't touch the local
+    // `refs/remotes/origin/<branch>`, so we explicitly bump it to the
+    // newly-pushed SHA — which by definition equals HEAD because the
+    // push just succeeded.
+    //
+    // Note: http.postBuffer / http.version / credential.helper-clear /
+    // SSH disablement / askPass disablement are all baked into the
+    // isolated-git helper now — see electron/galleries/isolatedGit.ts.
     try {
       await git.raw([
-        '-c',
-        `remote.origin.url=${this.tokenizedUrl(gallery)}`,
-        '-c',
-        'http.postBuffer=524288000',
-        '-c',
-        'http.version=HTTP/1.1',
         'push',
-        'origin',
-        branch,
+        this.tokenizedUrl(gallery),
+        `HEAD:${branch}`,
       ]);
     } catch (err) {
       if (preSquashSha) {
@@ -402,13 +418,27 @@ export class GalleryRegistry {
       }
       throw err;
     }
+
+    // Push succeeded — sync the local tracking ref. Failures here
+    // are non-fatal: the push happened, the user's data is on origin,
+    // and the worst symptom of a missed update-ref is a stale ahead
+    // count that next push() will recompute. We log instead of
+    // throwing so we don't trigger the squash rollback above on a
+    // post-success error.
+    await git
+      .raw(['update-ref', `refs/remotes/origin/${branch}`, 'HEAD'])
+      .catch((err: unknown) => {
+        console.warn(
+          `[picg] push to ${gallery.fullName} succeeded but update-ref failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      });
   }
 
   // Returns the pre-squash SHA if a squash happened, null if no-op.
   // A no-op means: no upstream tracking ref yet, or fewer than 2
   // commits ahead (nothing to collapse).
   private async maybeSquash(
-    git: ReturnType<typeof simpleGit>,
+    git: SimpleGit,
     branch: string
   ): Promise<string | null> {
     const upstream = `origin/${branch}`;
@@ -481,7 +511,9 @@ export class GalleryRegistry {
   async undoLastCommit(id: string): Promise<UndoResult> {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
-    const git = simpleGit(gallery.localPath);
+    // Read-only-ish — we hard-reset HEAD~1, no new commit authored,
+    // so identity isn't required.
+    const git = await buildIsolatedGit(gallery.localPath);
 
     const status = await git.status();
     if (!status.isClean()) return { ok: false, refused: 'dirty' };
@@ -530,7 +562,7 @@ export class GalleryRegistry {
   ): Promise<{ current: string; ahead: number; behind: number; dirty: boolean }> {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
-    const git = simpleGit(gallery.localPath);
+    const git = await buildIsolatedGit(gallery.localPath);
     const s = await git.status();
     return {
       current: s.current ?? '',
@@ -810,9 +842,8 @@ export class GalleryRegistry {
 
     let remoteUrl = '';
     try {
-      remoteUrl = (
-        await simpleGit(dirPath).remote(['get-url', 'origin'])
-      )
+      const probe = await buildIsolatedGit(dirPath);
+      remoteUrl = (await probe.remote(['get-url', 'origin']))
         ?.toString()
         .trim() ?? '';
     } catch {
@@ -839,7 +870,8 @@ export class GalleryRegistry {
     // undefined in that case rather than guessing.
     let defaultBranch: string | undefined;
     try {
-      const branchInfo = await simpleGit(dirPath).branch();
+      const probe = await buildIsolatedGit(dirPath);
+      const branchInfo = await probe.branch();
       defaultBranch = branchInfo.current || undefined;
     } catch {
       /* leave undefined */
@@ -956,7 +988,7 @@ function normalizeStage(stage: string): CloneProgress['stage'] {
   return 'other';
 }
 
-async function currentBranch(git: ReturnType<typeof simpleGit>): Promise<string> {
+async function currentBranch(git: SimpleGit): Promise<string> {
   // simple-git's `branch()` returns { current, ...all } — `current` is the
   // checked-out branch name. Default to 'HEAD' so push/pull still works
   // on a freshly-cloned repo where the branch metadata isn't fully

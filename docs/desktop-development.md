@@ -244,7 +244,7 @@ locally; getting changes onto GitHub is a separate user gesture
 (currently absent — see §6). To enable auto-push during local
 testing: `PICG_AUTOPUSH=1 npm run electron:dev`.
 
-### 4.2 Token handling
+### 4.2 Token handling + git isolation
 
 When the user picks a repo to clone, the renderer hands the token to
 main over IPC. Main embeds it in the clone URL once
@@ -252,6 +252,48 @@ main over IPC. Main embeds it in the clone URL once
 **immediately** resets `origin` to the un-tokenized URL so the token
 doesn't persist in `.git/config`. Main doesn't store the token
 elsewhere. macOS Keychain integration is a future improvement.
+
+Every git child process spawned by the desktop app is run through
+`buildIsolatedGit(localPath, opts)` (in `electron/galleries/isolatedGit.ts`).
+That helper deliberately makes git **forget the user's environment**
+so the OAuth flow stays the only thing controlling auth. Specifically:
+
+* `GIT_CONFIG_GLOBAL=/dev/null` — skip `~/.gitconfig`. This kills any
+  `url."git@github.com:".insteadOf https://github.com/` rewrites the
+  user has set up (a near-universal config among GitHub power users)
+  that would otherwise silently turn our tokenized HTTPS URL into an
+  SSH URL, drop the token, and fall through to `~/.ssh/` keys that
+  may belong to a different account or not be present at all.
+* `GIT_CONFIG_NOSYSTEM=1` — same for `/etc/gitconfig`.
+* `GIT_SSH_COMMAND=/usr/bin/false` and `GIT_ASKPASS=/usr/bin/false` —
+  defense in depth: if some other path reintroduces an SSH or
+  credential-prompt code path, it fails loudly instead of quietly
+  authenticating as the wrong user.
+* `GIT_TERMINAL_PROMPT=0` — never block waiting on stdin.
+
+Because we wiped the user's gitconfig, we re-supply everything we
+actually want via per-command `-c key=value` flags (simple-git's
+`config: string[]`):
+
+* `credential.helper=` — neutralize osxkeychain / `gh` helpers that
+  might volunteer stale tokens.
+* `core.askPass=` — same shape.
+* `commit.gpgsign=false` / `tag.gpgsign=false` — defensive; we wiped
+  the global config anyway.
+* `http.postBuffer=524288000`, `http.version=HTTP/1.1` — transport
+  tweaks for big binary push (formerly inline at push time, now
+  applied to every command).
+* `user.name=<login>`, `user.email=<github noreply>` — only injected
+  when `forCommits: true`. Identity is fetched lazily from
+  `GET https://api.github.com/user` using the OAuth token, cached
+  in-process and persisted to `<userData>/auth.json` so subsequent
+  sessions don't re-fetch. Falls back to a generic `PicG <noreply@picg.app>`
+  identity if the API is unreachable, so commits don't block.
+
+Net effect: the desktop app's git invocations are entirely defined by
+what we hand them — token, identity, transport flags. Nothing is
+inherited from `~/.gitconfig`, `~/.ssh/config`, the user's keychain,
+or whatever `git`-flavored helpers the user has installed.
 
 ### 4.3 Path traversal
 
@@ -560,17 +602,54 @@ one, new origin, localStorage gone. `cachedAppUrl` in
 `electron/main.ts` reuses the URL until the spawned server actually
 exits.
 
-### 9.4 Push must go through `origin`, not a raw URL
+### 9.4 Pushing without persisting the token (and without losing the tracking ref)
 
-`git push <token-url> <branch>` does the upload but doesn't update
-`refs/remotes/origin/<branch>`. The Topbar's ahead-counter then
-shows the same number forever, even after a successful push. Fix:
-override the URL inline with `git -c remote.origin.url=<token-url>
-push origin <branch>`. The `-c` keeps the token off `.git/config`.
+Two competing requirements at push time:
 
-Same call path also pins `http.postBuffer=524288000` and
-`http.version=HTTP/1.1` to dodge GitHub's HTTP/2 sideband-disconnect
-on multi-MB pushes.
+1. The OAuth token must NOT live in `.git/config`. iCloud sync, manual
+   backups, accidental commits — any of those can leak a long-lived
+   token out of a working tree.
+2. `refs/remotes/origin/<branch>` must update after a successful push,
+   or the Topbar's ahead-counter looks stuck on N forever even though
+   origin actually got the commits.
+
+The obvious-looking trick — `git -c remote.origin.url=https://oauth2:<token>@... push origin <branch>` —
+**does not work**. git silently drops credentials supplied via `-c
+config`; they only reach the HTTP transport when the URL is either
+persisted in `.git/config` or passed positionally to push/pull.
+Verified 2026-05-04 against git 2.39 (Apple): the `-c` form produces
+a `could not read Username for 'https://github.com'` error because
+git's transport layer never sees the embedded creds and falls
+through to credential-helper / askpass, which we've also
+neutralized.
+
+(This bug was hidden for a long time because the user's `~/.gitconfig`
+typically has `url."git@github.com:".insteadOf https://github.com/`,
+which silently rewrote our HTTPS URL to SSH *before* the credential
+drop could even matter. Once §4.2 isolation neutralized `insteadOf`,
+this layer surfaced.)
+
+Working approach (in `GalleryRegistry.push` and `LocalGitStorageAdapter.maybePush`):
+
+```ts
+// 1. Push positionally — credentials in the URL DO reach the
+//    HTTP transport when given as a positional argument.
+await git.raw(['push', tokenizedUrl, `HEAD:${branch}`]);
+
+// 2. After success, fix the local tracking ref ourselves. Purely
+//    local (no second network round trip) and the new SHA equals
+//    HEAD by definition because the push just succeeded.
+await git.raw(['update-ref', `refs/remotes/origin/${branch}`, 'HEAD']);
+```
+
+`update-ref` failures are non-fatal: the push happened, user's data
+is on origin, worst case is a stale ahead count that the next push
+recomputes. Don't roll back the squash on update-ref errors.
+
+`http.postBuffer=524288000` and `http.version=HTTP/1.1` (which dodge
+GitHub's HTTP/2 sideband-disconnect on multi-MB pushes) used to be
+appended at this call site too. They now live in `buildIsolatedGit`
+(see §4.2) so every git invocation gets them, not just push.
 
 ### 9.5 Squash unpushed commits at push time
 
@@ -767,7 +846,8 @@ electron/                                  Electron main process
 │  ├ gallery.ts                            getRegistry() singleton — used by both IPC and protocol handler
 │  └ storage.ts                            StorageAdapter handlers (read / write / delete)
 ├ galleries/
-│  └ GalleryRegistry.ts                    manifest + on-disk repo management; squash-on-push lives here
+│  ├ GalleryRegistry.ts                    manifest + on-disk repo management; squash-on-push lives here
+│  └ isolatedGit.ts                        builds simple-git instances that ignore ~/.gitconfig + ~/.ssh (see §4.2)
 └ storage/
    └ LocalGitStorageAdapter.ts             fs/promises + simple-git impl
 
