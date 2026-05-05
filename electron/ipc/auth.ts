@@ -25,14 +25,30 @@ import { CHANNELS } from './contract';
 // Shape of <userData>/auth.json. `identity` is filled lazily the first
 // time a git commit needs an author — see ensureGitIdentity(). We
 // persist it so subsequent sessions don't re-hit the GitHub API.
+//
+// `identity.source` is optional on the wire because pre-2026-05-04
+// builds wrote `{ name, email }` without it. The reader normalizes
+// missing source → 'oauth' (legacy persistence only happened from
+// successful fetches).
 type AuthFile = {
   token?: string;
-  identity?: GitIdentity;
+  identity?: {
+    name: string;
+    email: string;
+    source?: GitIdentity['source'];
+  };
 };
 
 export type GitIdentity = {
   name: string;
   email: string;
+  // Where the identity came from. 'oauth' means it was derived from
+  // the GitHub /user response (fresh or persisted-from-prior-session).
+  // 'fallback' means we couldn't reach GitHub or had no token, and
+  // are using the generic PicG identity so commits don't block.
+  // Surfaced in PushReceipt so the UI can explain to the user why
+  // commits are attributed the way they are.
+  source: 'oauth' | 'fallback';
 };
 
 function tokenPath(): string {
@@ -96,6 +112,7 @@ let identityFetchInFlight: Promise<GitIdentity> | null = null;
 const FALLBACK_IDENTITY: GitIdentity = {
   name: 'PicG',
   email: 'noreply@picg.app',
+  source: 'fallback',
 };
 
 // Resolve a (name, email) tuple to embed in commits. Three-tier lookup:
@@ -112,8 +129,15 @@ export async function ensureGitIdentity(): Promise<GitIdentity> {
 
   const persisted = readAuthFile().identity;
   if (persisted?.name && persisted?.email) {
-    cachedIdentity = persisted;
-    return persisted;
+    // Legacy auth.json entries (pre-source field) were always written
+    // by fetchAndStoreIdentity, so default to 'oauth' on read.
+    const normalized: GitIdentity = {
+      name: persisted.name,
+      email: persisted.email,
+      source: persisted.source ?? 'oauth',
+    };
+    cachedIdentity = normalized;
+    return normalized;
   }
 
   if (identityFetchInFlight) return identityFetchInFlight;
@@ -169,7 +193,7 @@ async function fetchAndStoreIdentity(): Promise<GitIdentity> {
     `${login}@users.noreply.github.com`;
   const name = body.name || login;
 
-  const identity: GitIdentity = { name, email };
+  const identity: GitIdentity = { name, email, source: 'oauth' };
   cachedIdentity = identity;
 
   // Persist alongside the token. Don't overwrite the token itself

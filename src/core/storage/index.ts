@@ -51,4 +51,6 @@ export type {
   InFlightClone,
   MigrateDirection,
   MigrateProgress,
+  GalleryChangedEvent,
+  PushReceipt,
 } from './electron';

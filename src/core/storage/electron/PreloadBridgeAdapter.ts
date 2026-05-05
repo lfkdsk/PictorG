@@ -236,7 +236,7 @@ export type PreloadGalleryBridge = {
   cancelClone(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   sync(id: string): Promise<LocalGallery>;
-  push(id: string): Promise<void>;
+  push(id: string): Promise<PushReceipt>;
   status(id: string): Promise<GalleryStatus>;
   undoLastCommit(id: string): Promise<UndoResult>;
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
@@ -260,6 +260,47 @@ export type PreloadGalleryBridge = {
   // Subscribe to migrate-progress events. Same shape as
   // onCloneProgress: returns an unsubscribe fn.
   onMigrateProgress(handler: (event: MigrateProgress) => void): () => void;
+  // Subscribe to git-state-change broadcasts. Main fires these
+  // after every storage mutation (write/delete/etc.) and after
+  // pull/push/undo. Lets the renderer keep its ahead/behind/dirty
+  // state live without remembering to refetch at every mutation
+  // call site. Returns an unsubscribe fn.
+  onChanged(handler: (event: GalleryChangedEvent) => void): () => void;
+};
+
+// Mirror of GalleryChangedEvent in electron/ipc/contract.ts. Kept
+// duplicated rather than imported because renderer code can't reach
+// across the electron/ boundary; the shape MUST stay in sync.
+export type GalleryChangedEvent = {
+  galleryId?: string;
+  repoPath?: string;
+  cause:
+    | 'write'
+    | 'batch-write'
+    | 'delete'
+    | 'delete-many'
+    | 'delete-dir'
+    | 'pull'
+    | 'push'
+    | 'undo';
+};
+
+// Mirror of PushReceipt in electron/ipc/contract.ts. Same sync rule —
+// keep this in lockstep with the main-side definition.
+export type PushReceipt = {
+  identity: {
+    name: string;
+    email: string;
+    source: 'oauth' | 'fallback';
+  };
+  target: {
+    fullName: string;
+    branch: string;
+    remoteUrl: string;
+  };
+  pushedSha: string;
+  squash: { collapsed: string[] } | null;
+  authors: Array<{ name: string; email: string }>;
 };
 
 export type PreloadUpdaterBridge = {

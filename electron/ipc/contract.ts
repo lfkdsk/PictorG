@@ -79,6 +79,20 @@ export const CHANNELS = {
     discover: 'gallery:discover',
     migrateProgress: 'gallery:migrate-progress',
     iCloudRoot: 'gallery:icloud-root',
+    // Main → renderer broadcast: a gallery's git state changed in a
+    // way that probably affects ahead/behind/dirty. Fired after every
+    // mutation handler in storage.ts (write/delete) and after pull /
+    // push / undo in gallery.ts. The renderer subscribes once per
+    // gallery page and re-fetches `gallery.status(id)` on each event,
+    // so the Topbar's ↑N badge stays in sync with the on-disk repo
+    // without the user needing to manually refresh.
+    //
+    // Payload includes `repoPath` so a renderer mounted on a
+    // different gallery can ignore events for galleries it doesn't
+    // own. `repoPath` is what the storage adapter is keyed on, while
+    // gallery handlers carry an `id` — both are emitted so
+    // subscribers can match either.
+    changed: 'gallery:changed',
   },
   storage: {
     getDefaultBranch: 'storage:get-default-branch',
@@ -168,6 +182,29 @@ export type GalleryStatus = {
   dirty: boolean;
 };
 
+// Payload of CHANNELS.gallery.changed. Either field may be absent
+// depending on which handler fired the event:
+//   * storage.ts mutation handlers know the repoPath only
+//   * gallery.ts (push/sync/undo) knows both the gallery id and the
+//     repoPath via the resolved gallery
+// Subscribers should match on whichever field is relevant to them.
+export type GalleryChangedEvent = {
+  galleryId?: string;
+  repoPath?: string;
+  // Cause of the change — purely informational, may be used for
+  // logging or to skip refetch in cases where it's a no-op (e.g. a
+  // pull that resulted in no commits). All known senders set this.
+  cause:
+    | 'write'
+    | 'batch-write'
+    | 'delete'
+    | 'delete-many'
+    | 'delete-dir'
+    | 'pull'
+    | 'push'
+    | 'undo';
+};
+
 // Returned by gallery.undoLastCommit. `reverted` is the subject line of
 // the commit we just rolled back, useful for the toast that confirms it.
 // `refused` means we declined to undo because the commit was already
@@ -176,6 +213,54 @@ export type GalleryStatus = {
 export type UndoResult =
   | { ok: true; reverted: string }
   | { ok: false; refused: 'already-pushed' | 'no-prior-commit' | 'dirty' };
+
+// Returned by gallery.push. Surfaces what just got sent so the
+// renderer can show a transparent "post-push receipt" — the user
+// sees which identity went on the squash commit, what subjects got
+// collapsed, and the exact SHA on origin.
+//
+// Why this exists: the desktop wraps git in two non-obvious ways
+// (commit identity is OAuth-derived, not from ~/.gitconfig; and N
+// granular ops get squashed into 1 push commit). Both are invisible
+// without a receipt, and the latter rewrites local history at push
+// time — so giving the user a passive after-action summary is the
+// least-friction way to keep them informed without a confirmation
+// modal on every push.
+export type PushReceipt = {
+  // Author embedded in the squash commit (and any new commits
+  // authored on this run). `source` lets the UI explain why this
+  // identity is shown (OAuth-fetched vs. fallback because GitHub was
+  // unreachable).
+  identity: {
+    name: string;
+    email: string;
+    source: 'oauth' | 'fallback';
+  };
+  // Where the push went. `remoteUrl` is the de-tokenized origin URL
+  // (never includes the token); the renderer can build a
+  // github.com/<full>/commit/<pushedSha> link from `pushedSha` +
+  // `fullName` if it wants.
+  target: {
+    fullName: string;
+    branch: string;
+    remoteUrl: string;
+  };
+  pushedSha: string;
+  // Non-null when 2+ commits were ahead of origin and got collapsed
+  // into one push commit. `collapsed` is the subject lines of those
+  // commits, in chronological order. null means a 0- or 1-commit
+  // push (squash is a no-op below 2).
+  squash: {
+    collapsed: string[];
+  } | null;
+  // Distinct authors among the un-pushed commits BEFORE squashing.
+  // Almost always 1 entry (the OAuth identity). 2+ when the user
+  // signed in mid-session: prior commits had whatever ~/.gitconfig
+  // user.name/email said, new commits use the OAuth identity, and
+  // the receipt highlights this transition so attribution doesn't
+  // surprise the user.
+  authors: Array<{ name: string; email: string }>;
+};
 
 // Sent by main when picg://oauth/#... is dispatched to the app, after
 // extracting the fragment params. The renderer is responsible for
@@ -259,7 +344,7 @@ export interface PicgBridge {
     cancelClone(id: string): Promise<void>;
     remove(id: string): Promise<void>;
     sync(id: string): Promise<LocalGallery>;
-    push(id: string): Promise<void>;
+    push(id: string): Promise<PushReceipt>;
     status(id: string): Promise<GalleryStatus>;
     undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
@@ -267,6 +352,8 @@ export interface PicgBridge {
     discover(): Promise<LocalGallery[]>;
     iCloudRoot(): Promise<string>;
     onMigrateProgress(handler: (event: MigrateProgress) => void): () => void;
+    // Subscribe to git-state-change broadcasts. See CHANNELS.gallery.changed.
+    onChanged(handler: (event: GalleryChangedEvent) => void): () => void;
   };
   storage: {
     getDefaultBranch(repoPath: string): Promise<string>;

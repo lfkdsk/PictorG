@@ -6,7 +6,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import { CHANNELS } from './ipc/contract';
-import type { OAuthCallbackPayload, PicgBridge } from './ipc/contract';
+import type {
+  GalleryChangedEvent,
+  OAuthCallbackPayload,
+  PicgBridge,
+} from './ipc/contract';
 import type {
   CloneProgress,
   MigrateProgress,
@@ -85,6 +89,11 @@ const bridge: PicgBridge = {
       const listener = (_e: unknown, evt: MigrateProgress) => handler(evt);
       ipcRenderer.on(CHANNELS.gallery.migrateProgress, listener);
       return () => ipcRenderer.off(CHANNELS.gallery.migrateProgress, listener);
+    },
+    onChanged: (handler: (event: GalleryChangedEvent) => void) => {
+      const listener = (_e: unknown, evt: GalleryChangedEvent) => handler(evt);
+      ipcRenderer.on(CHANNELS.gallery.changed, listener);
+      return () => ipcRenderer.off(CHANNELS.gallery.changed, listener);
     },
   },
 

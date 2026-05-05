@@ -12,12 +12,14 @@ import {
   type MigrateDirection,
   type MigrateProgress,
   type PicgBridge,
+  type PushReceipt,
   type StorageAdapter,
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { EditGalleryModal } from '@/components/desktop/EditGalleryModal';
 import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
+import { PushReceiptCard } from '@/components/desktop/PushReceiptCard';
 
 type Album = {
   name: string;        // YAML key — display name (often Chinese)
@@ -79,6 +81,11 @@ export default function GalleryDetailPage() {
   const [pushing, setPushing] = useState(false);
   const [ahead, setAhead] = useState(0);
   const [opError, setOpError] = useState<string | null>(null);
+  // Last push's receipt — surfaces identity, squashed-op count, and
+  // the resulting commit SHA in a passive card below the topbar.
+  // Cleared on dismiss or when this gallery unloads. See
+  // PushReceiptCard for the rendered shape.
+  const [pushReceipt, setPushReceipt] = useState<PushReceipt | null>(null);
   // Storage migration (move between userData and iCloud Drive). Lives
   // on the detail page rather than the list card so it's harder to
   // mis-tap — every successful trigger has gone through "open the
@@ -102,19 +109,39 @@ export default function GalleryDetailPage() {
     });
   }, [bridge, id]);
 
-  // Pull the unpushed-commit count once the gallery is resolved. Cheap
-  // (local git status, no fetch); refreshed after push.
+  // Pull the unpushed-commit count once the gallery is resolved, then
+  // keep it live by subscribing to gallery.changed broadcasts. Main
+  // fires that event after every storage mutation (drag reorder,
+  // photo upload, album edit, …) and after pull/push/undo, so the
+  // ↑N badge no longer goes stale until the user remembers to
+  // refresh. Cheap to refetch — `status` is local-only git plumbing,
+  // no fetch.
   useEffect(() => {
     if (!bridge || !gallery) return;
     let cancelled = false;
-    bridge.gallery
-      .status(gallery.id)
-      .then((s) => {
-        if (!cancelled) setAhead(s.ahead);
-      })
-      .catch(() => {});
+
+    const refetch = () => {
+      bridge.gallery
+        .status(gallery.id)
+        .then((s) => {
+          if (!cancelled) setAhead(s.ahead);
+        })
+        .catch(() => {});
+    };
+
+    refetch();
+
+    const unsubscribe = bridge.gallery.onChanged((evt) => {
+      // Filter on either galleryId (gallery.ts handlers) or repoPath
+      // (storage.ts handlers) — both senders fill in what they know.
+      if (evt.galleryId && evt.galleryId !== gallery.id) return;
+      if (evt.repoPath && evt.repoPath !== gallery.localPath) return;
+      refetch();
+    });
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [bridge, gallery]);
 
@@ -246,9 +273,15 @@ export default function GalleryDetailPage() {
     setPushing(true);
     setOpError(null);
     try {
-      await bridge.gallery.push(gallery.id);
-      // Push doesn't change local content; just refresh the unpushed
-      // counter so the badge updates without a full page reload.
+      const receipt = await bridge.gallery.push(gallery.id);
+      // Surface what just got sent — identity, squashed ops, the
+      // resulting commit SHA. Replaces any previous receipt; auto-
+      // dismisses on a timer inside PushReceiptCard.
+      setPushReceipt(receipt);
+      // The post-push status refetch is now handled by the
+      // gallery.changed broadcast subscription (see useEffect at the
+      // top of this component). Kept this explicit call as a
+      // belt-and-braces in case the broadcast ever drops.
       const s = await bridge.gallery.status(gallery.id);
       setAhead(s.ahead);
     } catch (err) {
@@ -445,6 +478,13 @@ export default function GalleryDetailPage() {
           <div className="banner">
             <span>{opError}</span>
           </div>
+        )}
+
+        {pushReceipt && (
+          <PushReceiptCard
+            receipt={pushReceipt}
+            onDismiss={() => setPushReceipt(null)}
+          />
         )}
 
         {albums && albums.length > 0 && (

@@ -14,6 +14,8 @@ export type {
   CompressImageRequest,
   CompressImageResult,
   OAuthCallbackPayload,
+  GalleryChangedEvent,
+  PushReceipt,
 } from './PreloadBridgeAdapter';
 export type {
   LocalGallery,

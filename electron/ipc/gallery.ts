@@ -8,6 +8,7 @@ import { ipcMain } from 'electron';
 
 import { GalleryRegistry } from '../galleries/GalleryRegistry';
 import { CHANNELS } from './contract';
+import { emitGalleryChanged } from './events';
 import type { GalleryCloneArgs, GalleryMigrateArgs } from './contract';
 
 // Module-level singleton, exported so the picg:// protocol handler in
@@ -53,11 +54,27 @@ export function registerGalleryIpcHandlers(): void {
   });
 
   ipcMain.handle(CHANNELS.gallery.sync, async (_e, id: string) => {
-    return getRegistry().sync(id);
+    const updated = await getRegistry().sync(id);
+    // sync = pull → likely changes behind/ahead. Resolve repoPath
+    // from the updated gallery so renderers keyed on either id or
+    // repoPath can match.
+    emitGalleryChanged({
+      galleryId: id,
+      repoPath: updated.localPath,
+      cause: 'pull',
+    });
+    return updated;
   });
 
   ipcMain.handle(CHANNELS.gallery.push, async (_e, id: string) => {
-    await getRegistry().push(id);
+    const receipt = await getRegistry().push(id);
+    const gallery = await getRegistry().resolve(id);
+    emitGalleryChanged({
+      galleryId: id,
+      repoPath: gallery?.localPath,
+      cause: 'push',
+    });
+    return receipt;
   });
 
   ipcMain.handle(CHANNELS.gallery.status, async (_e, id: string) => {
@@ -65,7 +82,18 @@ export function registerGalleryIpcHandlers(): void {
   });
 
   ipcMain.handle(CHANNELS.gallery.undoLastCommit, async (_e, id: string) => {
-    return getRegistry().undoLastCommit(id);
+    const result = await getRegistry().undoLastCommit(id);
+    // Only emit when an undo actually happened — refused undos don't
+    // change git state, so subscribers shouldn't refetch.
+    if (result.ok) {
+      const gallery = await getRegistry().resolve(id);
+      emitGalleryChanged({
+        galleryId: id,
+        repoPath: gallery?.localPath,
+        cause: 'undo',
+      });
+    }
+    return result;
   });
 
   // Migration is the only gallery op besides clone that streams progress.

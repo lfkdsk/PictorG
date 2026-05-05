@@ -9,9 +9,9 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { SimpleGit } from 'simple-git';
 
-import { getStoredToken } from '../ipc/auth';
+import { ensureGitIdentity, getStoredToken } from '../ipc/auth';
 import { buildIsolatedGit } from './isolatedGit';
-import type { UndoResult } from '../ipc/contract';
+import type { PushReceipt, UndoResult } from '../ipc/contract';
 import type {
   CloneProgress,
   InFlightClone,
@@ -352,7 +352,7 @@ export class GalleryRegistry {
     return this.decorate(updated);
   }
 
-  async push(id: string): Promise<void> {
+  async push(id: string): Promise<PushReceipt> {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
     // forCommits: true because maybeSquash() runs a `git commit` to
@@ -360,6 +360,12 @@ export class GalleryRegistry {
     // not from the user's (now-ignored) ~/.gitconfig.
     const git = await buildIsolatedGit(gallery.localPath, { forCommits: true });
     const branch = await currentBranch(git);
+
+    // Snapshot the pending commits BEFORE squashing — we need their
+    // subjects + authors for the PushReceipt, and after the soft-reset
+    // in maybeSquash() the original commits are no longer reachable
+    // from HEAD (they live in reflog only).
+    const pending = await this.collectPendingCommits(git, branch);
 
     // Squash all unpushed commits into one before pushing. The renderer
     // commits per individual operation (drag reorder → 1, edit album →
@@ -432,6 +438,57 @@ export class GalleryRegistry {
           `[picg] push to ${gallery.fullName} succeeded but update-ref failed: ${err instanceof Error ? err.message : String(err)}`
         );
       });
+
+    // Build the receipt the renderer surfaces as a post-push card.
+    // `pushedSha` is whatever HEAD points at right now — equal to the
+    // squash commit when we squashed, equal to the granular HEAD when
+    // we didn't.
+    const pushedSha = (await git.revparse(['HEAD'])).trim();
+    const identity = await ensureGitIdentity();
+    const distinctAuthors = dedupeAuthors(pending.map((c) => c.author));
+
+    return {
+      identity,
+      target: {
+        fullName: gallery.fullName,
+        branch,
+        remoteUrl: gallery.cloneUrl,
+      },
+      pushedSha,
+      // Squash receipt only when 2+ commits actually got collapsed.
+      // Single-commit pushes don't trigger maybeSquash, so reporting
+      // a "1 op was collapsed" would be misleading.
+      squash:
+        pending.length >= 2
+          ? { collapsed: pending.map((c) => c.subject) }
+          : null,
+      authors: distinctAuthors,
+    };
+  }
+
+  // Snapshot of un-pushed commits, oldest-first, for the PushReceipt.
+  // Returns [] when there's no upstream tracking ref (first push) —
+  // we don't have a baseline to diff against. Errors swallowed for
+  // the same reason as maybeSquash: a missing upstream is normal.
+  private async collectPendingCommits(
+    git: SimpleGit,
+    branch: string
+  ): Promise<Array<{ sha: string; subject: string; author: { name: string; email: string } }>> {
+    try {
+      const log = await git.log({ from: `origin/${branch}`, to: 'HEAD' });
+      // simple-git's `log.all` is newest-first; reverse for chronological
+      // (oldest-first) order so the renderer can show "first you did X,
+      // then Y, then Z, all squashed into one commit".
+      return log.all
+        .map((c) => ({
+          sha: c.hash,
+          subject: c.message.split('\n')[0],
+          author: { name: c.author_name, email: c.author_email },
+        }))
+        .reverse();
+    } catch {
+      return [];
+    }
   }
 
   // Returns the pre-squash SHA if a squash happened, null if no-op.
@@ -995,4 +1052,23 @@ async function currentBranch(git: SimpleGit): Promise<string> {
   // populated yet (rare, but cheap to guard against).
   const info = await git.branch();
   return info.current || 'HEAD';
+}
+
+// Distinct-by-email author dedupe for the PushReceipt. Stable order
+// (first occurrence wins) so the renderer can show authors in the
+// chronological order they appeared in the un-pushed range. Email is
+// the dedupe key because GitHub web display name can drift while the
+// noreply email is canonical.
+function dedupeAuthors(
+  authors: Array<{ name: string; email: string }>
+): Array<{ name: string; email: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ name: string; email: string }> = [];
+  for (const a of authors) {
+    const key = a.email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
 }

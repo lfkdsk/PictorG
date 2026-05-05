@@ -7,6 +7,7 @@ import { dialog, ipcMain, BrowserWindow } from 'electron';
 
 import { LocalGitStorageAdapter } from '../storage/LocalGitStorageAdapter';
 import { CHANNELS } from './contract';
+import { emitGalleryChanged } from './events';
 import type {
   StorageBatchWriteFilesArgs,
   StorageDeleteDirectoryArgs,
@@ -69,11 +70,16 @@ export function registerStorageIpcHandlers(): void {
     }
   );
 
+  // After every successful mutation we broadcast `gallery.changed` so
+  // the renderer's ahead/behind/dirty badges stay in sync without
+  // having to remember to refetch at every renderer-side mutation
+  // call site. See electron/ipc/events.ts for the broadcaster.
   ipcMain.handle(
     CHANNELS.storage.writeFile,
     async (_e, ...args: StorageWriteFileArgs) => {
       const [repoPath, p, content, message, options] = args;
       await adapterFor(repoPath).writeFile(p, content, message, options);
+      emitGalleryChanged({ repoPath, cause: 'write' });
     }
   );
 
@@ -82,6 +88,7 @@ export function registerStorageIpcHandlers(): void {
     async (_e, ...args: StorageBatchWriteFilesArgs) => {
       const [repoPath, files, message, options] = args;
       await adapterFor(repoPath).batchWriteFiles(files, message, options);
+      emitGalleryChanged({ repoPath, cause: 'batch-write' });
     }
   );
 
@@ -90,6 +97,7 @@ export function registerStorageIpcHandlers(): void {
     async (_e, ...args: StorageDeleteFileArgs) => {
       const [repoPath, p, message, options] = args;
       await adapterFor(repoPath).deleteFile(p, message, options);
+      emitGalleryChanged({ repoPath, cause: 'delete' });
     }
   );
 
@@ -98,6 +106,7 @@ export function registerStorageIpcHandlers(): void {
     async (_e, ...args: StorageDeleteFilesArgs) => {
       const [repoPath, paths, message, options] = args;
       await adapterFor(repoPath).deleteFiles(paths, message, options);
+      emitGalleryChanged({ repoPath, cause: 'delete-many' });
     }
   );
 
@@ -106,6 +115,7 @@ export function registerStorageIpcHandlers(): void {
     async (_e, ...args: StorageDeleteDirectoryArgs) => {
       const [repoPath, dirPath, message, options] = args;
       await adapterFor(repoPath).deleteDirectory(dirPath, message, options);
+      emitGalleryChanged({ repoPath, cause: 'delete-dir' });
     }
   );
 }
