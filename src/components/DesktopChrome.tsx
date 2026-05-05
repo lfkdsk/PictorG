@@ -20,55 +20,57 @@ import { InfoToastHost, fireInfoToast } from '@/components/desktop/InfoToast';
 export function Topbar({ actions }: { actions?: ReactNode }) {
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [updateReady, setUpdateReady] = useState<{ version?: string } | null>(
-    null
-  );
-  // null when no download is in flight, 0–100 while bytes stream in.
-  // Stays at the last reported value until the "downloaded" event
-  // flips us to the install pill — the visible progress vanishing
-  // for a moment between the last percent and the pill would feel
-  // glitchy.
-  const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
+  // Set when a newer version is on the GitHub release page. The pill
+  // doesn't trigger a download — it opens the release page in the
+  // user's browser, since unsigned macOS builds can't use Squirrel's
+  // silent install. See electron/updater.ts for the rationale.
+  const [updateAvailable, setUpdateAvailable] = useState<{
+    version: string;
+    releaseUrl: string;
+  } | null>(null);
 
-  // Subscribe to updater "downloaded" broadcasts from the main process,
-  // AND replay any update that was already downloaded before this
-  // Topbar mounted. The replay matters because electron-updater fires
-  // `update-downloaded` exactly once per session — if the user happened
-  // to be navigating between pages at the moment download finished,
-  // the listener wasn't attached yet and the broadcast was lost. Now
-  // Topbar asks main on mount: "is there a pending update?", and
-  // fills the pill from that cached state.
+  // Subscribe to updater "available" broadcasts AND replay any update
+  // that was already detected before this Topbar mounted. The replay
+  // matters because the broadcast fires once per check — if the user
+  // was mid-navigation when it landed, the listener wasn't attached
+  // yet. On mount we ask main "is there a pending update?" and fill
+  // the pill from that cached state.
   useEffect(() => {
     const bridge = getPicgBridge();
     if (!bridge?.updater) return;
     bridge.updater
       .getPending()
       .then((pending) => {
-        if (pending) setUpdateReady(pending);
+        if (pending) setUpdateAvailable(pending);
       })
       .catch(() => {
         /* old preload without getPending — fall back to live event */
       });
-    const offDownloaded = bridge.updater.onUpdateDownloaded((info) => {
-      setUpdateReady({ version: info?.version });
-      // Once it's downloaded, the install pill takes over from the
-      // progress bar. Hide the bar so the topbar doesn't show both.
-      setDownloadPercent(null);
+    const offAvailable = bridge.updater.onUpdateAvailable((info) => {
+      setUpdateAvailable({
+        version: info.version,
+        releaseUrl: info.releaseUrl,
+      });
     });
-    const offProgress = bridge.updater.onDownloadProgress?.((info) => {
-      const pct = Math.max(0, Math.min(100, Math.round(info?.percent ?? 0)));
-      setDownloadPercent(pct);
+    // Background-poll errors used to be completely silent — surface
+    // them as error toasts so the user has SOME signal when the
+    // updater can't reach GitHub.
+    const offError = bridge.updater.onUpdateError((info) => {
+      fireInfoToast({
+        message: `Update check failed: ${info.message}`,
+        kind: 'error',
+      });
     });
     return () => {
-      offDownloaded();
-      offProgress?.();
+      offAvailable();
+      offError();
     };
   }, []);
 
-  async function handleInstallUpdate() {
+  async function handleDownloadUpdate() {
     const bridge = getPicgBridge();
     if (!bridge?.updater) return;
-    await bridge.updater.installNow();
+    await bridge.updater.openReleasePage();
   }
 
   async function handleManualCheck() {
@@ -81,18 +83,24 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         fireInfoToast({ message: `Update check failed: ${r.error}`, kind: 'error' });
         return;
       }
-      if (r.downloaded) {
-        // Already cached an update from an earlier check — show the
-        // install pill at once, no need to wait for the next event.
-        setUpdateReady(r.downloaded);
+      if (r.available) {
+        setUpdateAvailable(r.available);
         fireInfoToast({
-          message: `Update ${r.downloaded.version ?? ''} ready — click the topbar pill to install.`,
+          message: `Update ${r.available.version} available — click the topbar pill to download.`,
         });
         return;
       }
       if (r.updateAvailable && r.manifestVersion) {
+        // Manifest says newer version exists but the broadcast hasn't
+        // landed yet (race between check resolution and the
+        // update-available event firing). Synthesize the pill state
+        // ourselves so the user gets immediate feedback.
+        setUpdateAvailable({
+          version: r.manifestVersion,
+          releaseUrl: r.releaseUrl,
+        });
         fireInfoToast({
-          message: `Update ${r.manifestVersion} found — downloading. Topbar shows progress.`,
+          message: `Update ${r.manifestVersion} available — click the topbar pill to download.`,
         });
         return;
       }
@@ -195,46 +203,18 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
       <div className="brand">
         <span className="brand-mark">P</span>
         <span className="brand-name">Pictor</span>
-        {/* Slim auto-update download bar. Lives in the brand cluster
-            so it's visible on every page without taking real estate
-            away from the per-page actions. Hides when there's no
-            in-flight download. The "Update ready" pill below
-            replaces it once the download finishes. */}
-        {downloadPercent != null && !updateReady && (
-          <div
-            className="picg-update-progress"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={downloadPercent}
-            aria-label="Downloading update"
-            title={`Downloading update — ${downloadPercent}%`}
-          >
-            <div
-              className="picg-update-progress-fill"
-              style={{ width: `${downloadPercent}%` }}
-            />
-            <span className="picg-update-progress-label">
-              ↓ {downloadPercent}%
-            </span>
-          </div>
-        )}
       </div>
       {actions && <div className="topbar-actions">{actions}</div>}
-      {updateReady && (
+      {updateAvailable && (
         <button
           type="button"
           className="picg-update-pill"
-          onClick={handleInstallUpdate}
-          title={
-            updateReady.version
-              ? `Update ${updateReady.version} downloaded — click to restart and install`
-              : 'Update downloaded — click to restart and install'
-          }
+          onClick={handleDownloadUpdate}
+          title={`Open the GitHub release page to download v${updateAvailable.version}`}
         >
           <span className="picg-update-pill-dot" aria-hidden="true" />
           <span className="picg-update-pill-text">
-            Update ready{updateReady.version ? ` · ${updateReady.version}` : ''}
+            v{updateAvailable.version} available · Download
           </span>
         </button>
       )}
@@ -380,33 +360,6 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
           50%      { opacity: 0.45; }
         }
         .picg-update-pill-text { white-space: nowrap; }
-
-        .picg-update-progress {
-          position: relative;
-          margin-left: 12px;
-          width: 120px;
-          height: 18px;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 999px;
-          overflow: hidden;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .picg-update-progress-fill {
-          position: absolute;
-          inset: 0 auto 0 0;
-          background: rgba(217, 119, 87, 0.45);
-          transition: width 0.18s ease-out;
-        }
-        .picg-update-progress-label {
-          position: relative;
-          z-index: 1;
-          font-family: var(--mono);
-          font-size: 10px;
-          letter-spacing: 0.04em;
-          color: var(--text);
-          white-space: nowrap;
-        }
       `}</style>
     </header>
     <InfoToastHost />

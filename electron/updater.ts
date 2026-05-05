@@ -1,21 +1,27 @@
-// Auto-update wiring against electron-updater. The publish target is
-// configured in electron-builder.yml (provider: github, owner: lfkdsk,
-// repo: PicG); electron-updater reads the matching `latest-mac.yml`
-// off the GitHub release on launch, compares versions, and downloads
-// the newer .dmg in the background.
+// Notify-only update flow.
 //
-// Behavior we want:
-//   - Check on startup, then every 4h while the app is running.
-//   - Download silently. Surface "ready to install" via a Topbar
-//     affordance later; for now log + IPC channel for the renderer
-//     to pick up if it wants to show a banner.
-//   - User-initiated install on app quit (auto-installer triggers a
-//     restart, which is jarring mid-edit — defer to next quit).
+// We don't run electron-updater's silent download / Squirrel.Mac
+// install path: the app is ad-hoc signed (no Apple Developer cert),
+// and Squirrel.Mac refuses to swap a .app whose code-signature team
+// doesn't match the running binary. Even if we shipped the .zip
+// artifact electron-updater wants on macOS, the install step would
+// still fail — and the failure is invisible to the renderer.
 //
-// Skipped on dev (`!app.isPackaged`) — no asar to swap, and the dev
-// channel doesn't have a GitHub release tied to it.
+// Instead: keep electron-updater for the cheap part (parse
+// latest-mac.yml off the GitHub release, semver-compare against
+// app.getVersion()), and when an update exists, surface a "vX.Y.Z
+// available — Download" pill in the topbar. Click → opens the
+// GitHub release page in the user's browser; they grab the new DMG
+// and replace /Applications/PicG.app the same way they did the first
+// install. Same flow Fix-Gatekeeper.command was designed around.
+//
+// We can revisit silent updates once the app is properly signed +
+// notarized; until then this is the only channel that actually
+// works for unsigned macOS builds.
+//
+// Skipped on dev (`!app.isPackaged`).
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import semver from 'semver';
 
@@ -27,19 +33,23 @@ function log(...parts: unknown[]): void {
 
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
-// Module-level cache of the most recent "downloaded" event. Replayed to
+// Owner/repo for the GitHub release page we send the user to. Must
+// match electron-builder.yml's publish target. Hardcoded rather than
+// read out of electron-updater's private state — it only changes
+// when the publish target changes.
+const RELEASE_PAGE_URL =
+  'https://github.com/lfkdsk/PictorG/releases/latest';
+
+// Module-level cache of the most recent "available" event. Replayed to
 // any renderer that mounts a listener AFTER the broadcast already
 // fired — without this, the Topbar pill silently misses an update if
 // the user happened to be navigating between pages at the moment
-// download finished.
-let pendingDownloadedUpdate: { version?: string } | null = null;
+// the check completed.
+let pendingAvailableUpdate: { version: string; releaseUrl: string } | null = null;
 
 // Most recent updater error message + ISO timestamp. Surfaced via
 // checkNow's response so the avatar-menu manual check can tell the
-// user "last attempt failed N min ago because X" — until we add
-// this, a silent error during background poll leaves the user with
-// no signal at all (the toast that fires on `error` events only
-// catches errors that happen while the renderer is mounted).
+// user "last attempt failed N min ago because X".
 let lastUpdateError: { message: string; at: string } | null = null;
 
 export function initAutoUpdater(): void {
@@ -48,9 +58,6 @@ export function initAutoUpdater(): void {
     return;
   }
 
-  // Pipe electron-updater's own logs through our debug-log file. Helps
-  // triage "user reports they didn't get an update" without asking
-  // them to open a terminal.
   autoUpdater.logger = {
     info: (m: unknown) => log('updater info', m),
     warn: (m: unknown) => log('updater warn', m),
@@ -58,89 +65,21 @@ export function initAutoUpdater(): void {
     debug: (m: unknown) => log('updater debug', m),
   } as any;
 
-  // Don't auto-restart mid-session. We download in the background but
-  // wait until the user quits (or explicitly clicks Install) to swap
-  // the binary — restarting unprompted would lose any in-progress
-  // album edit.
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Notify-only: we never let electron-updater download or install.
+  // The "Download" CTA in the renderer opens the release page in the
+  // browser instead.
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('update-available', (info) => {
-    log('update-available', info?.version);
-    broadcastChan(CHANNELS.updater.updateAvailable, { version: info?.version });
+    const version = info?.version;
+    if (!version) return;
+    log('update-available', version);
+    pendingAvailableUpdate = { version, releaseUrl: RELEASE_PAGE_URL };
+    broadcastChan(CHANNELS.updater.updateAvailable, pendingAvailableUpdate);
   });
   autoUpdater.on('update-not-available', () => {
     log('update-not-available');
-  });
-  autoUpdater.on('download-progress', (progress) => {
-    broadcastChan(CHANNELS.updater.downloadProgress, {
-      percent: Math.round(progress?.percent ?? 0),
-    });
-  });
-  autoUpdater.on('update-downloaded', (info) => {
-    log('update-downloaded', info?.version);
-    pendingDownloadedUpdate = { version: info?.version };
-    broadcastChan(CHANNELS.updater.updateDownloaded, pendingDownloadedUpdate);
-  });
-
-  // Renderer-driven "Install now" — quitAndInstall closes all windows,
-  // exits the app, and re-launches into the new version. We don't
-  // hook this onto Cmd+Q because autoInstallOnAppQuit already covers
-  // the lazy path (next normal quit installs).
-  ipcMain.handle(CHANNELS.updater.installNow, () => {
-    autoUpdater.quitAndInstall();
-  });
-
-  // Renderer query: "is there already a downloaded update I missed?"
-  // Topbar calls this on mount; if we have a cached event, the pill
-  // shows immediately without waiting for the next broadcast.
-  ipcMain.handle(CHANNELS.updater.getPending, () => pendingDownloadedUpdate);
-
-  // Manual check trigger from the avatar menu — useful when you want
-  // to verify update plumbing without waiting for the 4 h poll.
-  //
-  // Note on the return shape: `checkForUpdates()` resolves to the
-  // *manifest* version (whatever's on the GitHub Release page),
-  // *whether or not* it differs from the running app. We need the
-  // diff to give the user useful feedback ("on latest" vs "found
-  // 0.1.6, downloading"), so compare to app.getVersion() ourselves.
-  // `downloadPromise` is only present when an actual download was
-  // kicked off — its presence is a more reliable "is there an update"
-  // signal than version comparison alone.
-  ipcMain.handle(CHANNELS.updater.checkNow, async () => {
-    try {
-      const r = await autoUpdater.checkForUpdates();
-      const manifestVersion = r?.updateInfo?.version ?? null;
-      const currentVersion = app.getVersion();
-      // Semver-aware: an update is "available" only when the manifest
-      // version is strictly *greater* than the running version. The
-      // earlier `manifestVersion !== currentVersion` check announced
-      // downgrades as updates — a real failure mode when GitHub's
-      // "latest release" auto-detection trails behind us (an old
-      // non-draft release wins over newer drafts, so its
-      // latest-mac.yml claims an older version is the latest).
-      const updateAvailable =
-        !!r?.downloadPromise ||
-        (manifestVersion != null &&
-          semver.valid(manifestVersion) != null &&
-          semver.valid(currentVersion) != null &&
-          semver.gt(manifestVersion, currentVersion));
-      return {
-        ok: true,
-        currentVersion,
-        manifestVersion,
-        updateAvailable,
-        // Already-downloaded? Renderer can immediately show the install
-        // pill instead of waiting for the broadcast on next event.
-        downloaded: pendingDownloadedUpdate,
-        // Background-poll errors that fired before the renderer was
-        // ready surface here so the manual-check toast can say
-        // "last attempt failed at <time> because X".
-        lastError: lastUpdateError,
-      };
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? String(err) };
-    }
   });
   autoUpdater.on('error', (err) => {
     const message = err?.message ?? String(err);
@@ -149,9 +88,58 @@ export function initAutoUpdater(): void {
     broadcastChan(CHANNELS.updater.updateError, { message });
   });
 
-  // Initial check + a recurring poll. checkForUpdatesAndNotify shows
-  // a native notification on completion, which we don't want; use the
-  // bare check instead.
+  // Renderer asks main to open the GitHub release page in the user's
+  // default browser. URL is fixed (not passed by the renderer) so an
+  // injected payload can't redirect users somewhere else.
+  ipcMain.handle(CHANNELS.updater.openReleasePage, async () => {
+    await shell.openExternal(RELEASE_PAGE_URL);
+  });
+
+  // Topbar mount-time replay: "is there already an available update I
+  // missed?" If we have a cached event, the pill shows immediately
+  // without waiting for the next broadcast.
+  ipcMain.handle(CHANNELS.updater.getPending, () => pendingAvailableUpdate);
+
+  // Manual check trigger from the avatar menu — useful when you want
+  // to verify the update plumbing without waiting for the 4 h poll.
+  //
+  // checkForUpdates() resolves to the manifest version (whatever's on
+  // the GitHub release), regardless of whether it differs from the
+  // running app. Compare against app.getVersion() ourselves.
+  ipcMain.handle(CHANNELS.updater.checkNow, async () => {
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      const manifestVersion = r?.updateInfo?.version ?? null;
+      const currentVersion = app.getVersion();
+      // Semver-aware: an update is "available" only when the manifest
+      // version is strictly greater than the running version. The
+      // earlier `manifestVersion !== currentVersion` check announced
+      // downgrades as updates — a real failure mode when GitHub's
+      // "latest release" auto-detection trails behind us.
+      const updateAvailable =
+        manifestVersion != null &&
+        semver.valid(manifestVersion) != null &&
+        semver.valid(currentVersion) != null &&
+        semver.gt(manifestVersion, currentVersion);
+      return {
+        ok: true as const,
+        currentVersion,
+        manifestVersion,
+        updateAvailable,
+        // Already-cached available update? Renderer can show the pill
+        // without waiting for the broadcast on the next event.
+        available: pendingAvailableUpdate,
+        releaseUrl: RELEASE_PAGE_URL,
+        lastError: lastUpdateError,
+      };
+    } catch (err: any) {
+      return { ok: false as const, error: err?.message ?? String(err) };
+    }
+  });
+
+  // Initial check + recurring poll. checkForUpdatesAndNotify shows a
+  // native notification on completion which we don't want — the
+  // renderer pill is the only surface.
   autoUpdater.checkForUpdates().catch((err) => {
     log('updater initial check failed', err?.message ?? String(err));
   });

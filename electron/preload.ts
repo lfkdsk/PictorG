@@ -36,24 +36,15 @@ const bridge: PicgBridge = {
   },
 
   updater: {
-    installNow: () => ipcRenderer.invoke(CHANNELS.updater.installNow),
+    openReleasePage: () =>
+      ipcRenderer.invoke(CHANNELS.updater.openReleasePage),
     onUpdateAvailable: (handler) => {
-      const listener = (_e: unknown, payload: { version?: string }) =>
-        handler(payload);
+      const listener = (
+        _e: unknown,
+        payload: { version: string; releaseUrl: string }
+      ) => handler(payload);
       ipcRenderer.on(CHANNELS.updater.updateAvailable, listener);
       return () => ipcRenderer.off(CHANNELS.updater.updateAvailable, listener);
-    },
-    onUpdateDownloaded: (handler) => {
-      const listener = (_e: unknown, payload: { version?: string }) =>
-        handler(payload);
-      ipcRenderer.on(CHANNELS.updater.updateDownloaded, listener);
-      return () => ipcRenderer.off(CHANNELS.updater.updateDownloaded, listener);
-    },
-    onDownloadProgress: (handler) => {
-      const listener = (_e: unknown, payload: { percent: number }) =>
-        handler(payload);
-      ipcRenderer.on(CHANNELS.updater.downloadProgress, listener);
-      return () => ipcRenderer.off(CHANNELS.updater.downloadProgress, listener);
     },
     onUpdateError: (handler) => {
       const listener = (_e: unknown, payload: { message: string }) =>
@@ -74,6 +65,8 @@ const bridge: PicgBridge = {
     remove: (id) => ipcRenderer.invoke(CHANNELS.gallery.remove, id),
     sync: (id) => ipcRenderer.invoke(CHANNELS.gallery.sync, id),
     push: (id) => ipcRenderer.invoke(CHANNELS.gallery.push, id),
+    unpushedCommits: (id) =>
+      ipcRenderer.invoke(CHANNELS.gallery.unpushedCommits, id),
     status: (id) => ipcRenderer.invoke(CHANNELS.gallery.status, id),
     undoLastCommit: (id) =>
       ipcRenderer.invoke(CHANNELS.gallery.undoLastCommit, id),

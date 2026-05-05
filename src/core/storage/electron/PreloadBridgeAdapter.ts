@@ -167,6 +167,14 @@ export type GalleryStatus = {
   dirty: boolean;
 };
 
+// Mirror of UnpushedCommit in electron/ipc/contract.ts. Same sync
+// rule — keep in lockstep with the main-side definition.
+export type UnpushedCommit = {
+  sha: string;
+  subject: string;
+  author: { name: string; email: string };
+};
+
 export type CompressImageRequest = {
   bytes: Uint8Array;
   originalName: string;
@@ -237,6 +245,11 @@ export type PreloadGalleryBridge = {
   remove(id: string): Promise<void>;
   sync(id: string): Promise<LocalGallery>;
   push(id: string): Promise<PushReceipt>;
+  // Subjects of the commits sitting between origin/<branch> and
+  // HEAD, oldest-first. Empty when there's no upstream or nothing
+  // ahead. Backed by `git log origin/<branch>..HEAD` in main; the
+  // tooltip on the push button reads this on hover.
+  unpushedCommits(id: string): Promise<UnpushedCommit[]>;
   status(id: string): Promise<GalleryStatus>;
   undoLastCommit(id: string): Promise<UndoResult>;
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
@@ -304,21 +317,21 @@ export type PushReceipt = {
 };
 
 export type PreloadUpdaterBridge = {
-  installNow(): Promise<void>;
-  onUpdateDownloaded(
-    handler: (info: { version?: string }) => void
+  openReleasePage(): Promise<void>;
+  onUpdateAvailable(
+    handler: (info: { version: string; releaseUrl: string }) => void
   ): () => void;
-  onDownloadProgress(
-    handler: (info: { percent: number }) => void
-  ): () => void;
-  getPending(): Promise<{ version?: string } | null>;
+  onUpdateError(handler: (info: { message: string }) => void): () => void;
+  getPending(): Promise<{ version: string; releaseUrl: string } | null>;
   checkNow(): Promise<
     | {
         ok: true;
         currentVersion: string;
         manifestVersion: string | null;
         updateAvailable: boolean;
-        downloaded: { version?: string } | null;
+        available: { version: string; releaseUrl: string } | null;
+        releaseUrl: string;
+        lastError: { message: string; at: string } | null;
       }
     | { ok: false; error: string }
   >;

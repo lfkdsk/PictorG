@@ -33,29 +33,24 @@ export const CHANNELS = {
     image: 'compress:image',
   },
   updater: {
-    // Renderer → main: quit the app and install the downloaded update
-    // immediately. Triggered by the Topbar "Update ready" button.
-    installNow: 'updater:install-now',
-    // Main → renderer broadcast: an update was found and a download
-    // is about to start (autoDownload is on). Topbar uses this to
-    // flip the progress bar into an indeterminate (pulsing) state
-    // immediately, so the user sees *something* even when the delta
-    // is small enough that download-progress events fire too few
-    // times to register before update-downloaded lands.
+    // Renderer → main: open the GitHub release page in the user's
+    // default browser. The Topbar "vX.Y.Z available — Download" pill
+    // calls this; we ship unsigned macOS builds, so users grab the
+    // new DMG manually rather than the (broken-without-signing)
+    // electron-updater silent install path.
+    openReleasePage: 'updater:open-release-page',
+    // Main → renderer broadcast: a newer version is available.
+    // Payload is { version, releaseUrl } — the renderer pill uses
+    // version for the label and releaseUrl is informational (the
+    // actual click goes through openReleasePage so an injected
+    // payload can't redirect the user).
     updateAvailable: 'updater:update-available',
-    // Main → renderer broadcast: a new version finished downloading
-    // and will install on next quit (or now via installNow).
-    updateDownloaded: 'updater:update-downloaded',
-    // Main → renderer broadcast: incremental download progress
-    // (0–100). Topbar uses this for the slim progress bar next to
-    // the brand logo while the .dmg streams in.
-    downloadProgress: 'updater:download-progress',
     // Main → renderer broadcast: electron-updater fired an `error`
     // event. Topbar surfaces this as a toast so a silent background
-    // failure (network down, signature mismatch, GitHub API hiccup)
-    // doesn't leave the user wondering why auto-update never landed.
+    // failure (network down, GitHub API hiccup, manifest parse error)
+    // doesn't leave the user wondering why the check never resolved.
     updateError: 'updater:update-error',
-    // Renderer → main: replay the most recent update-downloaded event
+    // Renderer → main: replay the most recent update-available event
     // if one fired before the renderer's listener was attached. Used
     // by the Topbar on mount.
     getPending: 'updater:get-pending',
@@ -72,6 +67,7 @@ export const CHANNELS = {
     remove: 'gallery:remove',
     sync: 'gallery:sync',
     push: 'gallery:push',
+    unpushedCommits: 'gallery:unpushed-commits',
     status: 'gallery:status',
     cloneProgress: 'gallery:clone-progress',
     undoLastCommit: 'gallery:undo-last-commit',
@@ -180,6 +176,17 @@ export type GalleryStatus = {
   ahead: number;
   behind: number;
   dirty: boolean;
+};
+
+// One entry returned by gallery.unpushedCommits — the subject is the
+// already-human-readable message every storage adapter call site
+// supplies (e.g. "Add 5 photos to landscape", "Reorder albums"); the
+// renderer renders subjects as a hover tooltip on the push button so
+// the user knows exactly what the next push will ship.
+export type UnpushedCommit = {
+  sha: string;
+  subject: string;
+  author: { name: string; email: string };
 };
 
 // Payload of CHANNELS.gallery.changed. Either field may be absent
@@ -310,21 +317,20 @@ export interface PicgBridge {
     image(request: CompressImageRequest): Promise<CompressImageResult>;
   };
   updater: {
-    installNow(): Promise<void>;
+    openReleasePage(): Promise<void>;
     onUpdateAvailable(
-      handler: (info: { version?: string }) => void
+      handler: (info: { version: string; releaseUrl: string }) => void
     ): () => void;
-    onUpdateDownloaded(handler: (info: { version?: string }) => void): () => void;
-    onDownloadProgress(handler: (info: { percent: number }) => void): () => void;
     onUpdateError(handler: (info: { message: string }) => void): () => void;
-    getPending(): Promise<{ version?: string } | null>;
+    getPending(): Promise<{ version: string; releaseUrl: string } | null>;
     checkNow(): Promise<
       | {
           ok: true;
           currentVersion: string;
           manifestVersion: string | null;
           updateAvailable: boolean;
-          downloaded: { version?: string } | null;
+          available: { version: string; releaseUrl: string } | null;
+          releaseUrl: string;
           // Most recent updater error captured in this session, if
           // any. Lets the manual-check toast surface "last attempt
           // failed because X" instead of leaving the user guessing.
@@ -345,6 +351,7 @@ export interface PicgBridge {
     remove(id: string): Promise<void>;
     sync(id: string): Promise<LocalGallery>;
     push(id: string): Promise<PushReceipt>;
+    unpushedCommits(id: string): Promise<UnpushedCommit[]>;
     status(id: string): Promise<GalleryStatus>;
     undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
