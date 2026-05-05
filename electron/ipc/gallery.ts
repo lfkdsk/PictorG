@@ -81,6 +81,10 @@ export function registerGalleryIpcHandlers(): void {
     return getRegistry().status(id);
   });
 
+  ipcMain.handle(CHANNELS.gallery.unpushedCommits, async (_e, id: string) => {
+    return getRegistry().unpushedCommits(id);
+  });
+
   ipcMain.handle(CHANNELS.gallery.undoLastCommit, async (_e, id: string) => {
     const result = await getRegistry().undoLastCommit(id);
     // Only emit when an undo actually happened — refused undos don't

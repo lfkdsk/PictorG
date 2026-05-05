@@ -16,6 +16,7 @@ import {
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
+import { PushButton } from '@/components/desktop/PushButton';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp'];
 
@@ -516,17 +517,13 @@ export default function AlbumPage() {
       >
         <span className={pulling ? 'picg-spin' : ''}>↓</span>
       </button>
-      <button
-        type="button"
-        className="picg-icon-btn"
-        aria-label={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} to remote` : 'Push to remote'}
-        title={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} (git push)` : 'Push to remote (git push)'}
-        onClick={handlePush}
+      <PushButton
+        galleryId={gallery.id}
+        ahead={ahead}
+        pushing={pushing}
         disabled={pulling || pushing}
-      >
-        <span className={pushing ? 'picg-spin' : ''}>↑</span>
-        {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
-      </button>
+        onClick={handlePush}
+      />
     </>
   );
 

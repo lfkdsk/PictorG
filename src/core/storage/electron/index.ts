@@ -16,6 +16,7 @@ export type {
   OAuthCallbackPayload,
   GalleryChangedEvent,
   PushReceipt,
+  UnpushedCommit,
 } from './PreloadBridgeAdapter';
 export type {
   LocalGallery,

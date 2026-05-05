@@ -491,6 +491,29 @@ export class GalleryRegistry {
     }
   }
 
+  // Public read-only view of the un-pushed commit list — what the
+  // Topbar push button's hover tooltip displays so the user can see
+  // exactly which operations the next push will ship before clicking.
+  // Same data source as collectPendingCommits (which fuels the
+  // post-push receipt and the squash-message body); promoted here so
+  // the renderer can read it without triggering a push.
+  //
+  // Returns [] when there's no upstream / nothing ahead. Errors are
+  // swallowed by collectPendingCommits, so this is best-effort: if the
+  // log query fails for any reason the tooltip simply shows the
+  // ahead-counter without a list, never an error.
+  async unpushedCommits(
+    id: string
+  ): Promise<Array<{ sha: string; subject: string; author: { name: string; email: string } }>> {
+    const gallery = await this.resolve(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+    const git = await buildIsolatedGit(gallery.localPath);
+    const status = await git.status();
+    const branch = status.current ?? '';
+    if (!branch) return [];
+    return this.collectPendingCommits(git, branch);
+  }
+
   // Returns the pre-squash SHA if a squash happened, null if no-op.
   // A no-op means: no upstream tracking ref yet, or fewer than 2
   // commits ahead (nothing to collapse).

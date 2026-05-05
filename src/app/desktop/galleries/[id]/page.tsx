@@ -20,6 +20,7 @@ import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { EditGalleryModal } from '@/components/desktop/EditGalleryModal';
 import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
 import { PushReceiptCard } from '@/components/desktop/PushReceiptCard';
+import { PushButton } from '@/components/desktop/PushButton';
 
 type Album = {
   name: string;        // YAML key — display name (often Chinese)
@@ -331,17 +332,14 @@ export default function GalleryDetailPage() {
       >
         <span className={pulling ? 'picg-spin' : ''}>↓</span>
       </button>
-      <button
-        type="button"
-        className="picg-icon-btn"
-        aria-label={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} to remote` : 'Push to remote'}
-        title={ahead > 0 ? `Push ${ahead} commit${ahead === 1 ? '' : 's'} (git push)` : 'Push to remote (git push)'}
-        onClick={handlePush}
+      <PushButton
+        galleryId={gallery.id}
+        ahead={ahead}
+        pushing={pushing}
         disabled={pulling || pushing}
-      >
-        <span className={pushing ? 'picg-spin' : ''}>↑</span>
-        {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
-      </button>
+        onClick={handlePush}
+      />
+
     </>
   );
 
