@@ -496,7 +496,7 @@ function DropZone({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif,.mov"
         multiple
         hidden
         onChange={(e) => {
