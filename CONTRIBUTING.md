@@ -5,12 +5,12 @@
 ## 🤝 如何贡献
 
 ### 报告问题
-- 使用 [Issues](https://github.com/your-username/PicG/issues) 报告bug
+- 使用 [Issues](https://github.com/lfkdsk/PictorG/issues) 报告bug
 - 提供详细的复现步骤
 - 包含错误截图或日志
 
 ### 功能建议
-- 在 [Discussions](https://github.com/your-username/PicG/discussions) 中讨论新功能
+- 在 [Discussions](https://github.com/lfkdsk/PictorG/discussions) 中讨论新功能
 - 描述功能的使用场景和价值
 
 ### 代码贡献
@@ -19,8 +19,8 @@
 1. Fork项目到你的GitHub账号
 2. 克隆你的fork：
    ```bash
-   git clone https://github.com/your-username/PicG.git
-   cd PicG
+   git clone https://github.com/<your-username>/PictorG.git
+   cd PictorG
    ```
 3. 安装依赖：
    ```bash
@@ -138,8 +138,8 @@
 
 如果你在贡献过程中遇到问题：
 
-- 查看现有的 [Issues](https://github.com/your-username/PicG/issues)
-- 在 [Discussions](https://github.com/your-username/PicG/discussions) 中提问
+- 查看现有的 [Issues](https://github.com/lfkdsk/PictorG/issues)
+- 在 [Discussions](https://github.com/lfkdsk/PictorG/discussions) 中提问
 - 联系维护者
 
 ## 🏆 贡献者

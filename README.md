@@ -241,7 +241,7 @@ OAuth应用需要以下权限：
 3. 配置环境变量
 4. 更新GitHub OAuth回调URL
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/PicG)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/lfkdsk/PictorG)
 
 ### Docker部署
 
@@ -331,9 +331,9 @@ PORT=3001 npm run dev
 
 ## 📞 联系我们
 
-- 项目主页: [https://github.com/your-username/PicG](https://github.com/your-username/PicG)
-- 问题反馈: [Issues](https://github.com/your-username/PicG/issues)
-- 功能建议: [Discussions](https://github.com/your-username/PicG/discussions)
+- 项目主页: [https://github.com/lfkdsk/PictorG](https://github.com/lfkdsk/PictorG)
+- 问题反馈: [Issues](https://github.com/lfkdsk/PictorG/issues)
+- 功能建议: [Discussions](https://github.com/lfkdsk/PictorG/discussions)
 
 ---
 
@@ -341,6 +341,6 @@ PORT=3001 npm run dev
 
 **如果这个项目对你有帮助，请给它一个 ⭐️**
 
-Made with ❤️ by [Your Name](https://github.com/your-username)
+Made with ❤️ by [lfkdsk](https://github.com/lfkdsk)
 
 </div>

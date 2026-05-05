@@ -12,13 +12,13 @@
   ],
   "author": "PicG Contributors",
   "license": "MIT",
-  "homepage": "https://github.com/your-username/PicG#readme",
+  "homepage": "https://github.com/lfkdsk/PictorG#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/PicG.git"
+    "url": "https://github.com/lfkdsk/PictorG.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/PicG/issues"
+    "url": "https://github.com/lfkdsk/PictorG/issues"
   },
   "private": true,
   "main": "electron/dist/electron/main.js",

@@ -87,7 +87,7 @@ src/
 ## 🚀 部署
 
 ### Vercel一键部署
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/PicG)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/lfkdsk/PictorG)
 
 ### Docker部署
 ```bash
