@@ -8,9 +8,12 @@
 # refusing to launch any unsigned binary that was downloaded from
 # the internet.
 #
-# This script runs `xattr -c` on /Applications/PicG.app, which clears
-# the com.apple.quarantine flag macOS adds to downloaded files. After
-# that the app launches normally on every subsequent open.
+# This script runs `xattr -cr` on /Applications/PicG.app, which clears
+# the com.apple.quarantine flag macOS adds to downloaded files —
+# recursively, so the bundled portable git binary under
+# Contents/Resources/git/bin/git also passes Gatekeeper when main
+# spawns it for clone/push. After that the app launches normally on
+# every subsequent open.
 #
 # Run this once, after dragging PicG into Applications. You'll see
 # a "this app was downloaded from the internet" prompt the first
@@ -30,7 +33,7 @@ if [ ! -d "$APP" ]; then
 fi
 
 echo "Clearing quarantine flag on $APP…"
-xattr -c "$APP"
+xattr -cr "$APP"
 echo "Done. You can now open PicG from the Applications folder."
 echo
 read -n 1 -s -r -p "Press any key to close…"

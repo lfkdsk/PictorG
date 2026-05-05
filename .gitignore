@@ -13,3 +13,11 @@ dist-electron/
 # Generated from build/icon.svg by scripts/build-icon.js
 build/icon.icns
 build/icon.png
+
+# Fetched by scripts/fetch-dugite-native.js (postinstall) — portable git
+# binaries, ~60 MB per arch. Re-fetched on demand; not source of truth.
+build/git/
+
+# Claude Code project-local state (cache, scheduled-task lock, .DS_Store).
+# Per-developer machine state, not source.
+.claude/

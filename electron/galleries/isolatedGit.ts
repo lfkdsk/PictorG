@@ -77,6 +77,10 @@
 //     });
 //     await git.clone(tokenizedUrl, dest, ['--progress']);
 
+import path from 'node:path';
+import fs from 'node:fs';
+
+import { app } from 'electron';
 import simpleGit, { SimpleGit, SimpleGitProgressEvent } from 'simple-git';
 
 import { ensureGitIdentity } from '../ipc/auth';
@@ -107,6 +111,37 @@ const CORE_CONFIG: readonly string[] = Object.freeze([
   'http.version=HTTP/1.1',
 ]);
 
+// Resolves the git binary we shell out to. We bundle dugite-native
+// (the same portable build GitHub Desktop ships) so PicG works on a
+// clean Mac without Xcode Command Line Tools — see desktop-development.md
+// §4.6.
+//
+// In dev: `build/git/<arch>/bin/git`, populated by `npm run fetch:git`
+// (also wired into postinstall + electron:dev). In packaged builds:
+// `Contents/Resources/git/bin/git`, placed there per-arch by
+// electron-builder's `extraResources` (see electron-builder.yml).
+//
+// Cached because the lookup is invariant for the process lifetime and
+// a missing-binary error message is worth printing only once.
+let cachedGitBinary: string | null = null;
+
+function resolveGitBinary(): string {
+  if (cachedGitBinary) return cachedGitBinary;
+  const candidate = app.isPackaged
+    ? path.join(process.resourcesPath, 'git', 'bin', 'git')
+    : path.join(app.getAppPath(), 'build', 'git', process.arch, 'bin', 'git');
+  if (!fs.existsSync(candidate)) {
+    throw new Error(
+      `Bundled git binary missing at ${candidate}. ` +
+        (app.isPackaged
+          ? 'This is a packaging bug — the dmg should ship git under Contents/Resources/git/.'
+          : 'Run `npm run fetch:git` to download dugite-native for your arch.')
+    );
+  }
+  cachedGitBinary = candidate;
+  return candidate;
+}
+
 // Always-on env overlay. Merged onto process.env so PATH, HOME, etc.
 // stay intact — we only override the gitconfig/SSH/prompt knobs and
 // strip a small set of inherited vars that simple-git's argv-parser
@@ -127,8 +162,18 @@ function isolationEnv(): NodeJS.ProcessEnv {
   delete base.GIT_EXTERNAL_DIFF;
   delete base.GIT_PROXY_COMMAND;
 
+  // The bundled dugite-native git is built with RUNTIME_PREFIX, but the
+  // prefix-from-argv0 logic resolves to an empty prefix when spawned by
+  // simple-git in an Electron main process (verified in dev: `git
+  // --exec-path` returned `//libexec/git-core`, and `git clone` failed
+  // with "unable to find remote helper for 'https'"). Pinning both env
+  // vars explicitly to the bundle layout sidesteps the discovery path
+  // entirely.
+  const gitRoot = path.dirname(path.dirname(resolveGitBinary())); // .../git/
   return {
     ...base,
+    GIT_EXEC_PATH: path.join(gitRoot, 'libexec', 'git-core'),
+    GIT_TEMPLATE_DIR: path.join(gitRoot, 'share', 'git-core', 'templates'),
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_SSH_COMMAND: '/usr/bin/false',
@@ -159,6 +204,7 @@ export async function buildIsolatedGit(
 
   const git = simpleGit({
     baseDir,
+    binary: resolveGitBinary(),
     config,
     abort: options.abort,
     progress: options.progress,
@@ -177,6 +223,18 @@ export async function buildIsolatedGit(
       // entire isolation strategy (skips ~/.gitconfig). Without this
       // flag simple-git refuses to forward it.
       allowUnsafeConfigPaths: true,
+      // The bundled-git path can contain characters simple-git's
+      // default binary validator rejects (the dev path embeds
+      // `process.cwd()`, the prod path embeds `/Applications/PicG.app`
+      // — both legal but the validator is conservative). We supply
+      // the path ourselves; it's not user-controlled.
+      allowUnsafeCustomBinary: true,
+      // GIT_TEMPLATE_DIR points at the bundled-git's template tree
+      // (see isolationEnv() — needed because dugite-native's runtime
+      // prefix doesn't resolve from argv0 under Electron). simple-git
+      // blocks this env var by default to prevent injection from
+      // user-controlled templates; we control the value.
+      allowUnsafeTemplateDir: true,
     },
   });
   // .env({...}) replaces the child env wholesale — we hand it the

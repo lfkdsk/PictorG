@@ -315,6 +315,49 @@ SPA-navigate. The data work is done by the time we route — losing
 the navigation to a webpack runtime crash strands the user looking
 at an error page even though state is consistent.
 
+### 4.6 Bundled portable git (no Xcode CLT required)
+
+End-user Macs don't ship git out of the box — `git` on macOS is a stub
+that triggers the Xcode Command Line Tools installer the first time
+it's invoked, and that flow is fragile (sometimes the install dialog
+never appears; sometimes the path gets stuck in a broken state where
+`xcode-select -p` points to a missing dir). PicG's audience is
+photographers, not developers, so we bundle git ourselves.
+
+**What we ship:** [dugite-native](https://github.com/desktop/dugite-native),
+the same portable git build GitHub Desktop ships. Statically linked
+against its own libcurl/openssl, no system dependencies. Pinned in
+`scripts/fetch-dugite-native.js` (bump the version constant +
+re-run with `--force` to upgrade).
+
+**Where it lives:**
+
+| | dev | packaged |
+|---|---|---|
+| path | `build/git/<arch>/bin/git` | `Contents/Resources/git/bin/git` |
+| populated by | `npm run fetch:git` (host arch only — wired into `postinstall` and `electron:dev`) | `npm run fetch:git:all` (both arches) → electron-builder `extraResources` ships the matching arch into each per-arch DMG |
+
+`isolatedGit.ts` resolves the right path via `app.isPackaged` and
+passes it to simple-git's `binary` option. All the §4.2 isolation
+(env vars, `-c` flags) keeps working unchanged — we just changed
+which `git` executable the child process spawns.
+
+**Why not `dugite` the npm package:** dugite's postinstall fetches
+only the host arch's binary, and our CI runner is one arch but ships
+two DMGs. Rather than fighting dugite's postinstall to download both,
+we use `dugite-native` directly and own the fetch script. Simpler,
+predictable.
+
+**Quarantine flag matters here.** Unsigned builds inherit
+`com.apple.quarantine` from the DMG, and macOS applies that check to
+the nested git binary too — not just the bundle's main executable.
+The `Fix Gatekeeper.command` shipped in the DMG runs `xattr -cr`
+(recursive) for exactly this reason; if you change it back to
+plain `xattr -c`, clone will fail post-install with a Gatekeeper
+denial on `Contents/Resources/git/bin/git`. Once we sign +
+notarize (see §8.2), the whole bundle including nested binaries
+gets trusted at install time and the script becomes vestigial.
+
 ---
 
 ## 5. Dev workflow
@@ -549,8 +592,13 @@ prompt instead of "is damaged → move to Trash."
 Manual fallback in the release notes for users who prefer Terminal:
 
 ```bash
-xattr -c /Applications/PicG.app
+xattr -cr /Applications/PicG.app
 ```
+
+`-r` is required because the bundled portable git under
+`Contents/Resources/git/bin/git` (see §4.6) carries its own quarantine
+xattr that Gatekeeper checks at spawn time. Plain `xattr -c` only
+clears the bundle's top-level attribute and leaves clone broken.
 
 To actually sign:
 
@@ -901,6 +949,7 @@ build/icon.svg                             single source of truth for app icon (
 scripts/build-icon.js                      svg → icns/png via sharp + iconutil
 scripts/stage-standalone.js                copies .next/static + public into .next/standalone for packaging
 scripts/after-pack.js                      strips Chromium locales except en/zh during electron-builder afterPack
+scripts/fetch-dugite-native.js             downloads portable git into build/git/<arch>/ (postinstall + dist:mac, see §4.6)
 
 electron-builder.yml                       packaging config (asarUnpack, max compression, locale strip, github publish)
 .github/workflows/release-desktop.yml      tag-push → DMG → publish to GitHub Release

@@ -123,6 +123,18 @@ extraResources:
       # — it's only called from the main process).
       - "!node_modules/@img/**"
       - "!node_modules/sharp/**"
+  # Bundled portable git (dugite-native — the same build GitHub Desktop
+  # ships). Lets clone/push/pull work on a clean Mac that doesn't have
+  # Xcode Command Line Tools installed. `${arch}` expands per-DMG so
+  # arm64 and x64 each ship the matching native binary; populated by
+  # `npm run fetch:git:all` (called from `dist:mac`). Layout inside
+  # the packaged app: Contents/Resources/git/{bin,libexec,share,etc}.
+  # Resolved at runtime by isolatedGit.ts.
+  - from: build/git/${arch}
+    to: git
+    filter:
+      - "**/*"
+      - "!.complete"
 
 # Rebuild native modules against the packaged Electron's node-abi.
 # Without this, sharp's prebuilt binaries are for system Node and crash

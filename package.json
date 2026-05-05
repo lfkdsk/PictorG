@@ -33,12 +33,15 @@
     "test:ci": "jest --ci --coverage --watchAll=false",
     "docker:build": "docker build -t picg .",
     "docker:run": "docker run -p 3000:3000 picg",
+    "fetch:git": "node scripts/fetch-dugite-native.js",
+    "fetch:git:all": "node scripts/fetch-dugite-native.js --all",
+    "postinstall": "node scripts/fetch-dugite-native.js || true",
     "electron:build": "tsc -p electron",
     "electron:start": "electron electron/dist/electron/main.js",
-    "electron:dev": "npm run electron:build && npm run electron:start",
+    "electron:dev": "npm run fetch:git && npm run electron:build && npm run electron:start",
     "next:build:packaging": "PICG_PACKAGING=1 next build && node scripts/stage-standalone.js",
-    "pack:dir": "npm run electron:build && npm run next:build:packaging && electron-builder --dir",
-    "dist:mac": "npm run electron:build && npm run next:build:packaging && electron-builder --mac"
+    "pack:dir": "npm run fetch:git:all && npm run electron:build && npm run next:build:packaging && electron-builder --dir",
+    "dist:mac": "npm run fetch:git:all && npm run electron:build && npm run next:build:packaging && electron-builder --mac"
   },
   "dependencies": {
     "@lfkdsk/exif-library": "^2.0.3",
