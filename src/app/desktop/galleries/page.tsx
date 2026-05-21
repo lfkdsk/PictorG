@@ -133,6 +133,19 @@ export default function GalleriesPage() {
       });
   }, [bridge]);
 
+  // Background iCloud discovery in main can add galleries to the manifest
+  // after this page already ran its initial list(). It broadcasts
+  // gallery.changed with cause 'discover'; refetch so those galleries
+  // appear without a manual reload.
+  useEffect(() => {
+    if (!bridge) return;
+    const unsub = bridge.gallery.onChanged((evt) => {
+      if (evt.cause !== 'discover') return;
+      bridge.gallery.list().then(setGalleries).catch(() => {});
+    });
+    return unsub;
+  }, [bridge]);
+
   useEffect(() => {
     if (!bridge) return;
     const unsub = bridge.gallery.onCloneProgress((evt) => {

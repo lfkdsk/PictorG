@@ -295,7 +295,8 @@ export type GalleryChangedEvent = {
     | 'delete-dir'
     | 'pull'
     | 'push'
-    | 'undo';
+    | 'undo'
+    | 'discover';
 };
 
 // Mirror of PushReceipt in electron/ipc/contract.ts. Same sync rule —

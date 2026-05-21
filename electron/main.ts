@@ -34,6 +34,7 @@ import { registerAuthIpcHandlers } from './ipc/auth';
 import { registerCompressIpcHandlers } from './ipc/compress';
 import { getRegistry, registerGalleryIpcHandlers } from './ipc/gallery';
 import { registerStorageIpcHandlers } from './ipc/storage';
+import { emitGalleryChanged } from './ipc/events';
 
 // `picg://oauth/#oauth_token=...` is the redirect URL the lfkdsk-auth
 // Worker hands back after a desktop sign-in. macOS routes that to this
@@ -573,30 +574,40 @@ app.whenReady().then(async () => {
     }
   });
 
-  // iCloud bootstrap: pick up any galleries another Mac migrated to
-  // ~/Library/Mobile Documents/com~apple~CloudDocs/PicG/ that this
-  // machine's manifest doesn't know about yet, and kick off a
-  // `brctl download` for every iCloud-rooted entry so files are
-  // materialized on disk before the renderer tries to read them.
-  // Both are best-effort — failures get logged but don't block the
-  // window from opening, since galleries already in this machine's
-  // manifest are unaffected.
-  try {
-    const added = await galleryRegistry.discoverICloud();
-    if (added.length > 0) {
-      console.log(`[picg] discovered ${added.length} iCloud gallery(ies)`);
+  // Open the window FIRST, before any iCloud work. discoverICloud()
+  // probes each not-yet-known iCloud gallery with git, and those reads
+  // BLOCK while macOS materializes the repo's `.git` objects from iCloud.
+  // When the files haven't synced down (offline, or the file provider
+  // stalls) the read never returns — and because this used to be
+  // `await`ed ahead of createWindow(), the whole window failed to appear.
+  // Creating the window up front guarantees the UI always opens; iCloud
+  // discovery runs in the background and refreshes the list when done.
+  createWindow();
+
+  // iCloud bootstrap (background, best-effort): pick up galleries another
+  // Mac migrated to ~/Library/Mobile Documents/com~apple~CloudDocs/PicG/
+  // that this machine's manifest doesn't know about yet, and kick off a
+  // `brctl download` for every iCloud-rooted entry so files materialize
+  // on disk for later reads. Deliberately NOT awaited on the startup path.
+  void (async () => {
+    try {
+      const added = await galleryRegistry.discoverICloud();
+      if (added.length > 0) {
+        console.log(`[picg] discovered ${added.length} iCloud gallery(ies)`);
+        // The galleries list already rendered (and ran its initial
+        // list()) before discovery finished, so it's missing these.
+        // Broadcast so any open list view refetches the manifest.
+        emitGalleryChanged({ cause: 'discover' });
+      }
+    } catch (err) {
+      console.warn('[picg] iCloud discovery failed', err);
     }
-    // Fire-and-forget — `brctl download` only queues the work in
-    // the file provider; we don't need to await its completion to
-    // open the window.
+    // `brctl download` only queues work in the file provider; nothing
+    // here waits for completion. Runs even if discovery threw above.
     galleryRegistry.triggerICloudDownload().catch((err) => {
       console.warn('[picg] triggerICloudDownload failed', err);
     });
-  } catch (err) {
-    console.warn('[picg] iCloud discovery failed', err);
-  }
-
-  createWindow();
+  })();
 
   // If the user clicked a picg:// link before the app was running, we
   // captured the URL but had nowhere to send it; now there's a window.

@@ -209,7 +209,11 @@ export type GalleryChangedEvent = {
     | 'delete-dir'
     | 'pull'
     | 'push'
-    | 'undo';
+    | 'undo'
+    // Background iCloud discovery added new galleries to the manifest
+    // after the window already loaded. Carries no galleryId/repoPath —
+    // it's a bulk manifest change, so list views refetch wholesale.
+    | 'discover';
 };
 
 // Returned by gallery.undoLastCommit. `reverted` is the subject line of
