@@ -117,8 +117,10 @@ const CORE_CONFIG: readonly string[] = Object.freeze([
 // §4.6.
 //
 // In dev: `build/git/<arch>/bin/git`, populated by `npm run fetch:git`
-// (also wired into postinstall + electron:dev). In packaged builds:
-// `Contents/Resources/git/bin/git`, placed there per-arch by
+// (also wired into postinstall + electron:dev). Dev Electron is launched
+// from `electron/dist/electron/main.js`, so `app.getAppPath()` points at
+// the compiled output; resolve through the package cwd first. In packaged
+// builds: `Contents/Resources/git/bin/git`, placed there per-arch by
 // electron-builder's `extraResources` (see electron-builder.yml).
 //
 // Cached because the lookup is invariant for the process lifetime and
@@ -127,15 +129,39 @@ let cachedGitBinary: string | null = null;
 
 function resolveGitBinary(): string {
   if (cachedGitBinary) return cachedGitBinary;
-  const candidate = app.isPackaged
-    ? path.join(process.resourcesPath, 'git', 'bin', 'git')
-    : path.join(app.getAppPath(), 'build', 'git', process.arch, 'bin', 'git');
-  if (!fs.existsSync(candidate)) {
+
+  if (app.isPackaged) {
+    const candidate = path.join(process.resourcesPath, 'git', 'bin', 'git');
+    if (!fs.existsSync(candidate)) {
+      throw new Error(
+        `Bundled git binary missing at ${candidate}. ` +
+          'This is a packaging bug — the dmg should ship git under Contents/Resources/git/.'
+      );
+    }
+    cachedGitBinary = candidate;
+    return candidate;
+  }
+
+  const candidates = [
+    path.join(process.cwd(), 'build', 'git', process.arch, 'bin', 'git'),
+    path.join(app.getAppPath(), 'build', 'git', process.arch, 'bin', 'git'),
+    path.join(
+      app.getAppPath(),
+      '..',
+      '..',
+      '..',
+      'build',
+      'git',
+      process.arch,
+      'bin',
+      'git'
+    ),
+  ];
+  const candidate = candidates.find((p) => fs.existsSync(p));
+  if (!candidate) {
     throw new Error(
-      `Bundled git binary missing at ${candidate}. ` +
-        (app.isPackaged
-          ? 'This is a packaging bug — the dmg should ship git under Contents/Resources/git/.'
-          : 'Run `npm run fetch:git` to download dugite-native for your arch.')
+      `Bundled git binary missing. Checked: ${candidates.join(', ')}. ` +
+        'Run `npm run fetch:git` to download dugite-native for your arch.'
     );
   }
   cachedGitBinary = candidate;
@@ -145,7 +171,7 @@ function resolveGitBinary(): string {
 // Always-on env overlay. Merged onto process.env so PATH, HOME, etc.
 // stay intact — we only override the gitconfig/SSH/prompt knobs and
 // strip a small set of inherited vars that simple-git's argv-parser
-// refuses to forward (it treats GIT_EDITOR / GIT_PAGER as injection
+// refuses to forward (it treats editor / pager env as injection
 // vectors regardless of value).
 //
 // `/dev/null` works on macOS + Linux; on Windows we'd need `NUL`.
@@ -155,8 +181,11 @@ function isolationEnv(): NodeJS.ProcessEnv {
   // Start from a copy of process.env, then prune env vars that are
   // either irrelevant to non-interactive git or would trip simple-git's
   // unsafe-env plugin without us explicitly opting them in. The user
-  // having `GIT_EDITOR=nvim` in their shell shouldn't break our push.
+  // having `EDITOR=nvim` in their shell shouldn't break our push.
   const base: NodeJS.ProcessEnv = { ...process.env };
+  delete base.EDITOR;
+  delete base.VISUAL;
+  delete base.PAGER;
   delete base.GIT_EDITOR;
   delete base.GIT_PAGER;
   delete base.GIT_EXTERNAL_DIFF;

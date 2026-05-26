@@ -81,6 +81,7 @@ export default function GalleryDetailPage() {
   const [pulling, setPulling] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [ahead, setAhead] = useState(0);
+  const [behind, setBehind] = useState(0);
   const [opError, setOpError] = useState<string | null>(null);
   // Last push's receipt — surfaces identity, squashed-op count, and
   // the resulting commit SHA in a passive card below the topbar.
@@ -110,34 +111,52 @@ export default function GalleryDetailPage() {
     });
   }, [bridge, id]);
 
-  // Pull the unpushed-commit count once the gallery is resolved, then
-  // keep it live by subscribing to gallery.changed broadcasts. Main
-  // fires that event after every storage mutation (drag reorder,
+  // Refresh remote status once when the gallery opens, then keep the
+  // local counters live by subscribing to gallery.changed broadcasts.
+  // Main fires that event after every storage mutation (drag reorder,
   // photo upload, album edit, …) and after pull/push/undo, so the
-  // ↑N badge no longer goes stale until the user remembers to
-  // refresh. Cheap to refetch — `status` is local-only git plumbing,
-  // no fetch.
+  // badges no longer go stale until the user remembers to refresh.
+  // Subsequent refetches use local-only git status; only the entry
+  // check hits the network.
   useEffect(() => {
     if (!bridge || !gallery) return;
     let cancelled = false;
+    setAhead(0);
+    setBehind(0);
 
-    const refetch = () => {
+    const applyStatus = (s: { ahead: number; behind: number }) => {
+      if (cancelled) return;
+      setAhead(s.ahead);
+      setBehind(s.behind);
+    };
+
+    const refetch = (remote = false) => {
+      const statusPromise = remote
+        ? bridge.gallery.refreshStatus(gallery.id)
+        : bridge.gallery.status(gallery.id);
+      statusPromise
+        .then(applyStatus)
+        .catch(() => {
+          if (!remote) return;
+          bridge.gallery.status(gallery.id).then(applyStatus).catch(() => {});
+        });
+    };
+
+    const refetchLocal = () => {
       bridge.gallery
         .status(gallery.id)
-        .then((s) => {
-          if (!cancelled) setAhead(s.ahead);
-        })
+        .then(applyStatus)
         .catch(() => {});
     };
 
-    refetch();
+    refetch(true);
 
     const unsubscribe = bridge.gallery.onChanged((evt) => {
       // Filter on either galleryId (gallery.ts handlers) or repoPath
       // (storage.ts handlers) — both senders fill in what they know.
       if (evt.galleryId && evt.galleryId !== gallery.id) return;
       if (evt.repoPath && evt.repoPath !== gallery.localPath) return;
-      refetch();
+      refetchLocal();
     });
 
     return () => {
@@ -285,6 +304,7 @@ export default function GalleryDetailPage() {
       // belt-and-braces in case the broadcast ever drops.
       const s = await bridge.gallery.status(gallery.id);
       setAhead(s.ahead);
+      setBehind(s.behind);
     } catch (err) {
       setOpError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -325,12 +345,21 @@ export default function GalleryDetailPage() {
       <button
         type="button"
         className="picg-icon-btn"
-        aria-label="Pull from remote"
-        title="Pull from remote (git pull)"
+        aria-label={
+          behind > 0
+            ? `Pull ${behind} commit${behind === 1 ? '' : 's'} from remote`
+            : 'Pull from remote'
+        }
+        title={
+          behind > 0
+            ? `Pull ${behind} commit${behind === 1 ? '' : 's'} from remote`
+            : 'Pull from remote (git pull)'
+        }
         onClick={handlePull}
         disabled={pulling || pushing}
       >
         <span className={pulling ? 'picg-spin' : ''}>↓</span>
+        {behind > 0 && <span className="picg-badge-count">{behind}</span>}
       </button>
       <PushButton
         galleryId={gallery.id}

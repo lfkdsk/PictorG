@@ -148,3 +148,9 @@ thumbnail_url: https://cdn.jsdelivr.net/gh/<user_name>/<repo>@thumbnail/
 3. 提醒用户填写 GH_PAGES_DEPLOY, 并打开本 repo 的 github action 页面
 4. 完成项目创建
 
+## Git 提交约定
+
+- 必须使用 semantic commit message，即 Conventional Commits 格式：`type(scope): subject`。
+- 常用 `type` 包括：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`。
+- `subject` 使用简短英文祈使句，不加句号，例如：`feat(desktop): add gallery sync status badges`。
+- 如果已经创建了不符合格式的提交，push 前必须 amend/rebase 修正；如果已经 push 到个人/任务分支，使用 `git push --force-with-lease` 更新远端。
