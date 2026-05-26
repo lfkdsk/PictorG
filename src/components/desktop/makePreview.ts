@@ -7,9 +7,10 @@
 // + composite the full bitmap, blowing GPU memory and slowing the
 // drop-twenty-files-at-once flow to a crawl.
 //
-// Approach: createImageBitmap with resizeWidth/Height + medium
-// quality. Chromium decodes off-thread, downsamples once, hands us
-// back a small bitmap. We draw it onto an OffscreenCanvas and
+// Approach: createImageBitmap with one resize edge + medium quality,
+// so the browser computes the other edge from the source aspect ratio.
+// Chromium decodes off-thread, downsamples, hands us back a small bitmap.
+// We draw it onto an OffscreenCanvas and
 // convertToBlob('image/webp', 0.7) for a tiny output (~30–80 KB
 // regardless of source size).
 //
@@ -26,11 +27,22 @@ const PREVIEW_QUALITY = 0.7;
 export async function makePreviewUrl(file: File): Promise<string> {
   try {
     if (typeof createImageBitmap !== 'function') throw new Error('no createImageBitmap');
-    const bmp = await createImageBitmap(file, {
+    let bmp = await createImageBitmap(file, {
       resizeWidth: PREVIEW_MAX_EDGE,
-      resizeHeight: PREVIEW_MAX_EDGE,
       resizeQuality: 'medium',
     });
+
+    if (bmp.height > PREVIEW_MAX_EDGE) {
+      const oversized = bmp;
+      try {
+        bmp = await createImageBitmap(oversized, {
+          resizeHeight: PREVIEW_MAX_EDGE,
+          resizeQuality: 'medium',
+        });
+      } finally {
+        oversized.close?.();
+      }
+    }
 
     // OffscreenCanvas may not be available in older renderer surfaces;
     // fall back to a regular canvas in that case.

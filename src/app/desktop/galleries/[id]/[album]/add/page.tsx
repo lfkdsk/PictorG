@@ -327,7 +327,7 @@ export default function AddPhotosPage() {
               {photos.map((p) => (
                 <li key={p.id}>
                   <div className="picg-thumb">
-                    <img src={p.preview} alt="" />
+                    <img src={p.preview} alt="" className="photo-preview" />
                     {p.status === 'pending' && <span className="state pending">queued</span>}
                     {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
                     {p.status === 'error' && <span className="state errored">{p.error ?? 'error'}</span>}
@@ -452,6 +452,11 @@ export default function AddPhotosPage() {
         }
         .state.compressing { color: var(--accent); }
         .state.errored { color: #f0857b; }
+
+        .photo-preview {
+          object-fit: contain;
+          background: var(--bg);
+        }
 
         .actions-row {
           display: flex; gap: 12px; align-items: center;

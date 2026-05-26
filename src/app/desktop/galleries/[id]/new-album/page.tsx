@@ -468,7 +468,7 @@ export default function NewAlbumPage() {
                     aria-label={`Set ${p.original.name} as cover`}
                     disabled={submitting}
                   >
-                    <img src={p.preview} alt="" />
+                    <img src={p.preview} alt="" className="photo-preview" />
                     {coverId === p.id && <span className="cover-badge">Cover</span>}
                     {p.status === 'pending' && <span className="state pending">queued</span>}
                     {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
@@ -631,6 +631,11 @@ export default function NewAlbumPage() {
           text-transform: uppercase;
           border-radius: 999px;
           font-weight: 600;
+        }
+
+        .photo-preview {
+          object-fit: contain;
+          background: var(--bg);
         }
 
         .banner {
