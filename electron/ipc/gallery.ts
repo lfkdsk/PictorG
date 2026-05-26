@@ -81,6 +81,10 @@ export function registerGalleryIpcHandlers(): void {
     return getRegistry().status(id);
   });
 
+  ipcMain.handle(CHANNELS.gallery.refreshStatus, async (_e, id: string) => {
+    return getRegistry().refreshStatus(id);
+  });
+
   ipcMain.handle(CHANNELS.gallery.unpushedCommits, async (_e, id: string) => {
     return getRegistry().unpushedCommits(id);
   });

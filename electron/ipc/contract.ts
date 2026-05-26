@@ -69,6 +69,7 @@ export const CHANNELS = {
     push: 'gallery:push',
     unpushedCommits: 'gallery:unpushed-commits',
     status: 'gallery:status',
+    refreshStatus: 'gallery:refresh-status',
     cloneProgress: 'gallery:clone-progress',
     undoLastCommit: 'gallery:undo-last-commit',
     migrate: 'gallery:migrate',
@@ -357,6 +358,7 @@ export interface PicgBridge {
     push(id: string): Promise<PushReceipt>;
     unpushedCommits(id: string): Promise<UnpushedCommit[]>;
     status(id: string): Promise<GalleryStatus>;
+    refreshStatus(id: string): Promise<GalleryStatus>;
     undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
     migrate(...args: GalleryMigrateArgs): Promise<LocalGallery>;

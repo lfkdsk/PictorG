@@ -251,6 +251,10 @@ export type PreloadGalleryBridge = {
   // tooltip on the push button reads this on hover.
   unpushedCommits(id: string): Promise<UnpushedCommit[]>;
   status(id: string): Promise<GalleryStatus>;
+  // Fetches the current branch from remote, then returns local
+  // ahead/behind status. Intended for page entry; status() stays
+  // local-only for cheap refreshes after gallery.changed broadcasts.
+  refreshStatus(id: string): Promise<GalleryStatus>;
   undoLastCommit(id: string): Promise<UndoResult>;
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
   // from a useEffect cleanup to avoid leaks.

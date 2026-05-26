@@ -68,6 +68,8 @@ const bridge: PicgBridge = {
     unpushedCommits: (id) =>
       ipcRenderer.invoke(CHANNELS.gallery.unpushedCommits, id),
     status: (id) => ipcRenderer.invoke(CHANNELS.gallery.status, id),
+    refreshStatus: (id) =>
+      ipcRenderer.invoke(CHANNELS.gallery.refreshStatus, id),
     undoLastCommit: (id) =>
       ipcRenderer.invoke(CHANNELS.gallery.undoLastCommit, id),
     onCloneProgress: (handler: (event: CloneProgress) => void) => {

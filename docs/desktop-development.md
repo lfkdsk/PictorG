@@ -368,19 +368,17 @@ Project requires Node 18+ (Next 14 hard requirement). `nvm use 20` is
 what the spike was developed against. If `node --version` shows < 18,
 switch before doing anything.
 
-### 5.2 Two-process dev loop
+### 5.2 Dev loop
 
 ```bash
-# Terminal A — Next dev server
 nvm use 20
-npm run dev          # webpack
-# or
-npm run dev:turbo    # turbopack (opt-in; doesn't have chunk-drift, but
-                     # styled-jsx + Web Worker compatibility is unverified)
-
-# Terminal B — Electron
-npm run electron:dev # tsc -p electron && electron electron/dist/electron/main.js
+npm run electron:dev
 ```
+
+`electron:dev` starts `next dev` when `PICG_DEV_URL` is not already
+responding, waits for it, then runs `fetch:git`, `electron:build`, and
+`electron:start`. If you want to run Turbopack or a custom Next command,
+start that server yourself first; `electron:dev` will reuse it.
 
 Default URL is `localhost:3000/desktop/galleries`; override with
 `PICG_DEV_URL`. `PICG_DEVTOOLS=1` opens the renderer DevTools on launch.

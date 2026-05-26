@@ -643,6 +643,35 @@ export class GalleryRegistry {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
     const git = await buildIsolatedGit(gallery.localPath);
+    return this.readStatus(git);
+  }
+
+  // Network-backed status refresh for page entry. We fetch the current
+  // branch into origin/<branch> using the one-shot tokenized URL, then
+  // read the same local status shape as status(). Keeping this separate
+  // preserves status() as cheap local plumbing for gallery.changed
+  // broadcasts after renderer-side writes.
+  async refreshStatus(
+    id: string
+  ): Promise<{ current: string; ahead: number; behind: number; dirty: boolean }> {
+    const gallery = await this.resolve(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+    const git = await buildIsolatedGit(gallery.localPath);
+    const branch = await currentBranch(git);
+    if (branch && branch !== 'HEAD') {
+      await git.raw([
+        'fetch',
+        '--prune',
+        this.tokenizedUrl(gallery),
+        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+      ]);
+    }
+    return this.readStatus(git);
+  }
+
+  private async readStatus(
+    git: SimpleGit
+  ): Promise<{ current: string; ahead: number; behind: number; dirty: boolean }> {
     const s = await git.status();
     return {
       current: s.current ?? '',
