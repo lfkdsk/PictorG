@@ -29,8 +29,11 @@
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
-    "test": "jest",
+    "test": "npm run test:unit",
+    "test:unit": "jest",
     "test:ci": "jest --ci --coverage --watchAll=false",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test:unit && npm run test:e2e",
     "docker:build": "docker build -t picg .",
     "docker:run": "docker run -p 3000:3000 picg",
     "fetch:git": "node scripts/fetch-dugite-native.js",
@@ -58,6 +61,7 @@
     "styled-jsx": "^5.1.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.0.1",
     "@types/jest": "29.5.12",
@@ -74,6 +78,7 @@
     "jest-environment-jsdom": "29.7.0",
     "prettier": "3.3.3",
     "ts-jest": "29.2.5",
+    "ts-node": "^10.9.2",
     "typescript": "5.6.2"
   }
 }
