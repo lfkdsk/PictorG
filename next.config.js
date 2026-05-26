@@ -1,9 +1,9 @@
+const path = require('path')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  experimental: {
-    typedRoutes: true
-  },
+  typedRoutes: true,
 
   // Standalone output: produces .next/standalone/server.js + a trimmed
   // node_modules tree — a self-contained server we can spawn from
@@ -15,6 +15,7 @@ const nextConfig = {
   // Gated on PICG_PACKAGING=1 so `next dev` and the regular web `next
   // build` aren't affected.
   output: process.env.PICG_PACKAGING === '1' ? 'standalone' : undefined,
+  outputFileTracingRoot: __dirname,
 
   // 图片优化配置
   images: {
@@ -28,11 +29,6 @@ const nextConfig = {
   // 环境变量配置
   env: {
     CUSTOM_KEY: process.env.CUSTOM_KEY,
-  },
-
-  // 构建时的环境变量
-  publicRuntimeConfig: {
-    basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   },
 
   // Webpack配置
@@ -77,7 +73,7 @@ const nextConfig = {
     // 添加resolve别名以避免循环依赖
     config.resolve.alias = {
       ...config.resolve.alias,
-      '@': require('path').resolve(__dirname, 'src'),
+      '@': path.resolve(__dirname, 'src'),
     };
 
     // sql.js 在浏览器端不需要 Node 内置模块，需要 stub 掉

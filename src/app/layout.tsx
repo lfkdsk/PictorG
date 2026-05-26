@@ -1,9 +1,8 @@
-import type { Metadata } from 'next';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import StyledJsxProvider from '@/components/StyledJsxProvider';
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'Pictor',
   description: 'A simple GitHub-based gallery app'
 };

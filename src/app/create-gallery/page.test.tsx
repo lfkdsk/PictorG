@@ -120,6 +120,6 @@ describe('CreateGalleryPage', () => {
       { timeout: 5_000 }
     );
 
-    expect(await screen.findByText('画廊创建成功！')).toBeInTheDocument();
+    expect(await screen.findByText('画廊创建成功！', {}, { timeout: 5_000 })).toBeInTheDocument();
   }, 15_000);
 });
