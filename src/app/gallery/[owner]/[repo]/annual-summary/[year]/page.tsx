@@ -166,8 +166,8 @@ export default function AnnualSummaryPicker() {
     <AuthGuard>
       <div className="container">
         <header className="header">
-          <Link href={`/gallery/${owner}/${repo}`} className="back-link">
-            ← 返回 {owner}/{repo}
+          <Link href={`/gallery/${owner}/${repo}`} legacyBehavior>
+            <a className="back-link">← 返回 {owner}/{repo}</a>
           </Link>
           <h1 className="title">{year} 年度精选</h1>
           <p className="subtitle">
@@ -274,7 +274,7 @@ export default function AnnualSummaryPicker() {
           .title { font-size: 26px; font-weight: 700; margin: 8px 0 4px; color: var(--text); }
           .subtitle { color: var(--text-secondary); margin: 0; font-size: 14px; }
           .info { padding: 24px; text-align: center; color: var(--text-secondary); }
-          .error { padding: 12px; color: #ef4444; }
+          .error { padding: 12px; color: var(--danger); }
           .month-tabs {
             display: flex;
             flex-wrap: wrap;
@@ -308,7 +308,7 @@ export default function AnnualSummaryPicker() {
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #10b981;
+            background: var(--success);
             margin-left: 6px;
             vertical-align: middle;
           }

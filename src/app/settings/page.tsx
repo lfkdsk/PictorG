@@ -33,7 +33,6 @@ export default function SettingsPage() {
         <div className="settings-header">
           <Link 
             href="/main" 
-            className="back-btn"
             style={{
               color: 'var(--primary)',
               textDecoration: 'none',
@@ -174,6 +173,7 @@ export default function SettingsPage() {
         
         .settings-header h1 {
           font-size: 20px;
+          font-family: var(--serif);
           font-weight: 600;
           color: var(--text);
           margin: 0;

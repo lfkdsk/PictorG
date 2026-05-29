@@ -1,39 +1,51 @@
 :root {
-  --bg: #fefdfb;
-  --text: #451a03;
-  --text-secondary: #78716c;
-  --surface: #f7f3f0;
-  --input: #faf8f5;
-  --border: #e7e5e4;
-  --primary: #a16207;
-  --hover: #f5f5f4;
+  --bg: #fdfaf6;
+  --text: #3a2415;
+  --text-secondary: #857567;
+  --surface: #f5efe8;
+  --input: #faf6f0;
+  --border: #e7ddd1;
+  --primary: #b5502e;       /* warm terracotta (deep, readable on light) */
+  --accent-fg: #ffffff;     /* text/icon color on an accent fill */
+  --hover: #f0e9e0;
+  /* Muted, earthy semantics (inktype) — tuned to take white text and to
+     sit beside the terracotta accent without screaming. */
+  --success: #5f7d4f;       /* moss */
+  --danger: #c0553c;        /* rust */
+  --warning: #b07d2e;       /* amber */
+  /* Editorial type — Fraunces serif headlines, JetBrains Mono metadata,
+     with graceful system fallbacks (Songti for CJK, Georgia for Latin). */
+  --serif: 'Fraunces', 'Songti SC', 'Noto Serif SC', Georgia, 'Times New Roman', serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
   color-scheme: light;
 }
 
 /* Dark mode via explicit attribute */
 :root[data-theme="dark"] {
-  --bg: #1c1917;
-  --text: #fef7ed;
-  --text-secondary: #d6d3d1;
-  --surface: #292524;
-  --input: #1c1917;
-  --border: #57534e;
-  --primary: #fbbf24;
-  --hover: #44403c;
+  --bg: #1a1614;
+  --text: #ede4d3;
+  --text-secondary: #b3a896;
+  --surface: #211c19;
+  --input: #1a1614;
+  --border: #38302a;
+  --primary: #d97757;       /* inktype terracotta — bright on warm near-black */
+  --accent-fg: #1f1714;
+  --hover: #2a241f;
   color-scheme: dark;
 }
 
 /* 只有在没有明确设置主题时才使用系统偏好 */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
-    --bg: #1c1917;
-    --text: #fef7ed;
-    --text-secondary: #d6d3d1;
-    --surface: #292524;
-    --input: #1c1917;
-    --border: #57534e;
-    --primary: #fbbf24;
-    --hover: #44403c;
+    --bg: #1a1614;
+    --text: #ede4d3;
+    --text-secondary: #b3a896;
+    --surface: #211c19;
+    --input: #1a1614;
+    --border: #38302a;
+    --primary: #d97757;
+    --accent-fg: #1f1714;
+    --hover: #2a241f;
     color-scheme: dark;
   }
 }

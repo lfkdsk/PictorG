@@ -434,7 +434,7 @@ export default function CreateGalleryPage() {
                   disabled={checkingPermissions}
                   style={{
                     padding: '8px 16px',
-                    backgroundColor: '#007bff',
+                    backgroundColor: 'var(--primary)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
@@ -448,13 +448,13 @@ export default function CreateGalleryPage() {
                 {tokenPermissions && (
                   <div style={{ marginTop: '10px' }}>
                     {tokenPermissions.error ? (
-                      <div style={{ color: '#dc3545', fontWeight: 'bold' }}>
+                      <div style={{ color: 'var(--danger)', fontWeight: 'bold' }}>
                         ❌ {tokenPermissions.error}
                       </div>
                     ) : (
                       <div>
                         <div style={{ 
-                          color: tokenPermissions.hasRepoAccess ? '#28a745' : '#dc3545',
+                          color: tokenPermissions.hasRepoAccess ? 'var(--success)' : 'var(--danger)',
                           fontWeight: 'bold'
                         }}>
                           {tokenPermissions.hasRepoAccess ? '✅' : '❌'} 仓库访问权限 
@@ -463,7 +463,7 @@ export default function CreateGalleryPage() {
                           </span>
                         </div>
                         <div style={{ 
-                          color: tokenPermissions.hasWorkflowAccess ? '#28a745' : '#dc3545',
+                          color: tokenPermissions.hasWorkflowAccess ? 'var(--success)' : 'var(--danger)',
                           fontWeight: 'bold'
                         }}>
                           {tokenPermissions.hasWorkflowAccess ? '✅' : '❌'} 工作流权限
@@ -602,7 +602,7 @@ export default function CreateGalleryPage() {
                     </div>
                   ))}
                   {loading && (
-                    <div className={styles.logItem} style={{ color: '#007bff' }}>
+                    <div className={styles.logItem} style={{ color: 'var(--primary)' }}>
                       <span className={styles.spinner}>⏳</span> 正在处理...
                     </div>
                   )}
@@ -666,7 +666,7 @@ export default function CreateGalleryPage() {
                       disabled={checkingSecret}
                       style={{
                         padding: '8px 16px',
-                        backgroundColor: secretConfigured ? '#28a745' : '#007bff',
+                        backgroundColor: secretConfigured ? 'var(--success)' : 'var(--primary)',
                         color: 'white',
                         border: 'none',
                         borderRadius: '4px',
@@ -678,12 +678,12 @@ export default function CreateGalleryPage() {
                        secretConfigured ? '✅ 密钥已配置' : '🔍 检查密钥配置'}
                     </button>
                     {hasCheckedSecret && secretConfigured && (
-                        <span style={{ marginLeft: '10px', color: '#28a745', fontWeight: 'bold' }}>
+                        <span style={{ marginLeft: '10px', color: 'var(--success)', fontWeight: 'bold' }}>
                           ✅ 部署密钥配置正确！
                         </span>
                       )}
                       {hasCheckedSecret && !checkingSecret && !secretConfigured && (
-                        <span style={{ marginLeft: '10px', color: '#dc3545', fontWeight: 'bold' }}>
+                        <span style={{ marginLeft: '10px', color: 'var(--danger)', fontWeight: 'bold' }}>
                           ❌ 未检测到 GH_PAGES_DEPLOY 密钥，请先配置
                         </span>
                       )}
@@ -741,7 +741,7 @@ export default function CreateGalleryPage() {
                 <button 
                   className={styles.primaryBtn}
                   onClick={() => window.open(`https://github.com/${formData.USER_NAME}/${formData.REPO_NAME}/actions/workflows/main.yml`, '_blank')}
-                  style={{ backgroundColor: '#28a745' }}
+                  style={{ backgroundColor: 'var(--success)' }}
                 >
                   🚀 触发首次部署
                 </button>

@@ -64,8 +64,8 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
         <div style={{ 
           width: '32px', 
           height: '32px', 
-          border: '3px solid #f3f3f3',
-          borderTop: '3px solid #3498db',
+          border: '3px solid var(--border)',
+          borderTop: '3px solid var(--primary)',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite'
         }}></div>
@@ -75,9 +75,9 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
             style={{
               marginTop: '20px',
               padding: '8px 16px',
-              border: '1px solid #dc2626',
+              border: '1px solid var(--danger)',
               background: 'transparent',
-              color: '#dc2626',
+              color: 'var(--danger)',
               borderRadius: '6px',
               cursor: 'pointer'
             }}

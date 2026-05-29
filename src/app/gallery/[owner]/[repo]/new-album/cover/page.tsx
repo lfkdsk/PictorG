@@ -263,6 +263,7 @@ export default function CoverSelectionPage() {
         
         .nav-title h1 {
           font-size: 20px;
+          font-family: var(--serif);
           font-weight: 600;
           margin: 0;
           color: var(--text);
@@ -308,7 +309,7 @@ export default function CoverSelectionPage() {
         .cover-option {
           background: var(--surface);
           border: 2px solid var(--border);
-          border-radius: 12px;
+          border-radius: 10px;
           overflow: hidden;
           cursor: pointer;
           transition: all 0.3s ease;
@@ -347,7 +348,7 @@ export default function CoverSelectionPage() {
           top: 12px;
           right: 12px;
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           padding: 6px 12px;
           border-radius: 20px;
           font-size: 12px;
@@ -373,7 +374,7 @@ export default function CoverSelectionPage() {
         
         .create-btn {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 16px 32px;
           border-radius: 8px;
