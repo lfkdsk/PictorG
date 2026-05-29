@@ -87,7 +87,7 @@ export default function TokenForm() {
         href="https://github.com/settings/tokens"
         target="_blank"
         rel="noreferrer"
-        className="help"
+        style={{ color: 'var(--primary)' }}
       >
         如何生成?
       </Link>
@@ -106,13 +106,13 @@ export default function TokenForm() {
         .content { display: grid; gap: 18px; }
         .row { display: grid; grid-auto-flow: column; gap: 12px; align-items: center; }
         .input { height: 44px; width: 380px; border-radius: 10px; border: 1px solid var(--border); background: var(--input); padding: 0 12px; }
-        .btn { height: 44px; padding: 0 16px; border-radius: 10px; border: none; background: var(--primary); color: #fff; font-weight: 600; cursor: pointer; }
-        .btn-secondary { height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--text); font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+        .btn { height: 44px; padding: 0 16px; border-radius: 8px; border: none; background: var(--primary); color: var(--accent-fg); font-weight: 600; cursor: pointer; }
+        .btn-secondary { height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text); font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
         .btn-secondary:hover:not(:disabled) { background: var(--hover); }
         .btn-secondary:disabled { opacity: 0.6; cursor: not-allowed; }
         .help { color: var(--primary); }
-        .saved { text-align: center; color: #10b981; }
-        .error { text-align: center; color: #dc2626; }
+        .saved { text-align: center; color: var(--success); }
+        .error { text-align: center; color: var(--danger); }
         @media (max-width: 520px) { .row { grid-auto-flow: row; } .input { width: 100%; } }
       `}</style>
     </div>

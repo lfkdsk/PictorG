@@ -504,7 +504,6 @@ export default function AlbumPage() {
         <div className="album-header">
           <Link 
             href={`/gallery/${owner}/${repo}`} 
-            className="back-btn"
             style={{
               color: 'var(--primary)',
               textDecoration: 'none',
@@ -825,10 +824,10 @@ export default function AlbumPage() {
                 padding: '12px', 
                 marginBottom: '16px' 
               }}>
-                <p style={{ margin: 0, fontSize: '14px', color: '#dc2626' }}>
+                <p style={{ margin: 0, fontSize: '14px', color: 'var(--danger)' }}>
                   ⚠️ <strong>此操作不可撤销！</strong>
                 </p>
-                <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '14px', color: '#dc2626' }}>
+                <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '14px', color: 'var(--danger)' }}>
                   <li><strong>删除GitHub仓库中的相册文件夹</strong> ({albumUrl}/)</li>
                   <li><strong>删除文件夹内的所有图片和文件</strong></li>
                   <li><strong>从README.yml中移除相册配置</strong></li>
@@ -873,7 +872,7 @@ export default function AlbumPage() {
       {/* Markdown编辑窗口 */}
       {showMarkdownEditor && (
         <div className="modal-overlay" onClick={() => setShowMarkdownEditor(false)}>
-          <div className="modal-content markdown-editor-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content markdown-editor-modal" style={{ width: 'min(95vw, 1200px)', maxWidth: 'min(95vw, 1200px)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>📝 编辑相册说明</h2>
               <button 
@@ -1005,7 +1004,7 @@ export default function AlbumPage() {
         
         .edit-album-btn {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 6px 12px;
           border-radius: 6px;
@@ -1056,8 +1055,9 @@ export default function AlbumPage() {
         }
         
         .album-title {
+          font-family: var(--serif);
           font-size: 24px;
-          font-weight: 700;
+          font-weight: 600;
           color: var(--text);
           margin: 0;
           line-height: 1.3;
@@ -1160,7 +1160,7 @@ export default function AlbumPage() {
         }
         
         .error {
-          color: #ef4444;
+          color: var(--danger);
         }
         
         .album-controls {
@@ -1176,7 +1176,7 @@ export default function AlbumPage() {
         .upload-btn {
           width: 100%;
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 12px 16px;
           border-radius: 8px;
@@ -1202,7 +1202,7 @@ export default function AlbumPage() {
 
         .markdown-edit-btn {
           width: 100%;
-          background: linear-gradient(135deg, #10b981, #059669);
+          background: var(--success);
           color: white;
           border: none;
           padding: 12px 16px;
@@ -1215,25 +1215,25 @@ export default function AlbumPage() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          box-shadow: 0 2px 8px color-mix(in srgb, #10b981, transparent 70%);
+          box-shadow: 0 2px 8px color-mix(in srgb, var(--success), transparent 70%);
         }
 
         .markdown-edit-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #059669, #047857);
+          background: var(--success);
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px color-mix(in srgb, #10b981, transparent 60%);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--success), transparent 60%);
         }
 
         .markdown-edit-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;
-          box-shadow: 0 2px 6px color-mix(in srgb, #10b981, transparent 80%);
+          box-shadow: 0 2px 6px color-mix(in srgb, var(--success), transparent 80%);
         }
         
         .delete-mode-btn {
           width: 100%;
-          background: #ef4444;
+          background: var(--danger);
           color: white;
           border: none;
           padding: 12px 16px;
@@ -1246,7 +1246,7 @@ export default function AlbumPage() {
         }
         
         .delete-mode-btn:hover:not(:disabled) {
-          background: #dc2626;
+          background: var(--danger);
           transform: translateY(-1px);
         }
         
@@ -1257,7 +1257,7 @@ export default function AlbumPage() {
 
         .delete-album-btn {
           width: 100%;
-          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          background: var(--danger);
           color: white;
           border: none;
           padding: 12px 16px;
@@ -1271,20 +1271,20 @@ export default function AlbumPage() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          box-shadow: 0 4px 12px color-mix(in srgb, #dc2626, transparent 70%);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--danger), transparent 70%);
         }
 
         .delete-album-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #b91c1c, #991b1b);
+          background: var(--danger);
           transform: translateY(-2px);
-          box-shadow: 0 6px 16px color-mix(in srgb, #dc2626, transparent 60%);
+          box-shadow: 0 6px 16px color-mix(in srgb, var(--danger), transparent 60%);
         }
 
         .delete-album-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;
-          box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
+          box-shadow: 0 2px 6px color-mix(in srgb, var(--danger), transparent 80%);
         }
         
         .delete-actions {
@@ -1302,7 +1302,7 @@ export default function AlbumPage() {
         
         .delete-confirm-btn {
           width: 100%;
-          background: linear-gradient(135deg, #ef4444, #dc2626);
+          background: var(--danger);
           color: white;
           border: none;
           padding: 12px 16px;
@@ -1311,15 +1311,15 @@ export default function AlbumPage() {
           font-weight: 500;
           cursor: pointer;
           transition: all 0.3s ease;
-          box-shadow: 0 4px 12px color-mix(in srgb, #ef4444, transparent 70%);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--danger), transparent 70%);
         }
         
         .delete-confirm-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          background: var(--danger);
           transform: translateY(-2px);
-          box-shadow: 0 6px 16px color-mix(in srgb, #ef4444, transparent 60%);
+          box-shadow: 0 6px 16px color-mix(in srgb, var(--danger), transparent 60%);
         }
-        
+
         .delete-confirm-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
@@ -1330,14 +1330,14 @@ export default function AlbumPage() {
         }
         
         .image-card.delete-mode:hover:not(.selected) {
-          border-color: color-mix(in srgb, #ef4444, transparent 50%);
-          box-shadow: 0 6px 20px color-mix(in srgb, #ef4444, transparent 80%);
+          border-color: color-mix(in srgb, var(--danger), transparent 50%);
+          box-shadow: 0 6px 20px color-mix(in srgb, var(--danger), transparent 80%);
           transform: translateY(-2px);
         }
         
         .image-card.selected {
-          border-color: #ef4444;
-          box-shadow: 0 8px 32px color-mix(in srgb, #ef4444, transparent 75%);
+          border-color: var(--danger);
+          box-shadow: 0 8px 32px color-mix(in srgb, var(--danger), transparent 75%);
           transform: translateY(-4px) scale(1.02);
         }
         
@@ -1348,7 +1348,7 @@ export default function AlbumPage() {
           left: 0;
           right: 0;
           bottom: 0;
-          background: linear-gradient(135deg, color-mix(in srgb, #ef4444, transparent 90%) 0%, transparent 70%);
+          background: color-mix(in srgb, var(--danger), transparent 90%);
           pointer-events: none;
           border-radius: 12px;
         }
@@ -1366,15 +1366,15 @@ export default function AlbumPage() {
           align-items: center;
           justify-content: center;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-          border: 2px solid color-mix(in srgb, #ef4444, transparent 60%);
+          border: 2px solid color-mix(in srgb, var(--danger), transparent 60%);
           transition: all 0.3s ease;
           cursor: pointer;
         }
         
         .select-overlay.selected {
-          background: #ef4444;
-          border-color: #ef4444;
-          box-shadow: 0 4px 12px color-mix(in srgb, #ef4444, transparent 70%);
+          background: var(--danger);
+          border-color: var(--danger);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--danger), transparent 70%);
         }
         
         .select-overlay:hover {
@@ -1407,13 +1407,13 @@ export default function AlbumPage() {
         
         .modal-content {
           background: var(--surface);
-          border-radius: 12px;
+          border-radius: 10px;
           padding: 0;
           width: 90%;
           max-width: 500px;
           max-height: 80vh;
           overflow-y: auto;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+          box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.55);
           border: 1px solid var(--border);
         }
         
@@ -1427,8 +1427,10 @@ export default function AlbumPage() {
         
         .modal-header h2 {
           margin: 0;
-          font-size: 18px;
+          font-family: var(--serif);
+          font-size: 20px;
           font-weight: 600;
+          letter-spacing: -0.2px;
           color: var(--text);
         }
         
@@ -1477,20 +1479,25 @@ export default function AlbumPage() {
         .form-group input,
         .form-group select {
           width: 100%;
-          padding: 10px 12px;
+          height: 42px;
+          padding: 0 12px;
           border: 1px solid var(--border);
-          border-radius: 6px;
+          border-radius: 8px;
           background: var(--input);
           color: var(--text);
           font-size: 14px;
-          transition: border-color 0.2s ease;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
-        
+
+        .form-group select {
+          cursor: pointer;
+        }
+
         .form-group input:focus,
         .form-group select:focus {
           outline: none;
           border-color: var(--primary);
-          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary), transparent 90%);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary), transparent 85%);
         }
         
         .form-actions {
@@ -1513,7 +1520,7 @@ export default function AlbumPage() {
           color: var(--text-secondary);
           border: 1px solid var(--border);
           padding: 10px 20px;
-          border-radius: 6px;
+          border-radius: 8px;
           font-size: 14px;
           font-weight: 500;
           cursor: pointer;
@@ -1527,10 +1534,10 @@ export default function AlbumPage() {
         
         .save-btn {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 10px 20px;
-          border-radius: 6px;
+          border-radius: 8px;
           font-size: 14px;
           font-weight: 500;
           cursor: pointer;
@@ -1548,7 +1555,7 @@ export default function AlbumPage() {
         }
 
         .delete-confirm-btn-dialog {
-          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          background: var(--danger);
           color: white;
           border: none;
           padding: 10px 20px;
@@ -1557,20 +1564,20 @@ export default function AlbumPage() {
           font-weight: 500;
           cursor: pointer;
           transition: all 0.3s ease;
-          box-shadow: 0 4px 12px color-mix(in srgb, #dc2626, transparent 70%);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--danger), transparent 70%);
         }
 
         .delete-confirm-btn-dialog:hover:not(:disabled) {
-          background: linear-gradient(135deg, #b91c1c, #991b1b);
+          background: var(--danger);
           transform: translateY(-1px);
-          box-shadow: 0 6px 16px color-mix(in srgb, #dc2626, transparent 60%);
+          box-shadow: 0 6px 16px color-mix(in srgb, var(--danger), transparent 60%);
         }
 
         .delete-confirm-btn-dialog:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;
-          box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
+          box-shadow: 0 2px 6px color-mix(in srgb, var(--danger), transparent 80%);
         }
 
         .danger-zone {
@@ -1581,7 +1588,7 @@ export default function AlbumPage() {
 
         .danger-zone .delete-album-btn {
           width: 100%;
-          background: linear-gradient(135deg, #dc2626, #b91c1c);
+          background: var(--danger);
           color: white;
           border: none;
           padding: 14px 16px;
@@ -1594,7 +1601,7 @@ export default function AlbumPage() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          box-shadow: 0 4px 12px color-mix(in srgb, #dc2626, transparent 70%);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--danger), transparent 70%);
           position: relative;
           overflow: hidden;
         }
@@ -1615,22 +1622,22 @@ export default function AlbumPage() {
         }
 
         .danger-zone .delete-album-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #b91c1c, #991b1b);
+          background: var(--danger);
           transform: translateY(-2px);
-          box-shadow: 0 6px 20px color-mix(in srgb, #dc2626, transparent 60%);
+          box-shadow: 0 6px 20px color-mix(in srgb, var(--danger), transparent 60%);
         }
 
         .danger-zone .delete-album-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;
-          box-shadow: 0 2px 6px color-mix(in srgb, #dc2626, transparent 80%);
+          box-shadow: 0 2px 6px color-mix(in srgb, var(--danger), transparent 80%);
         }
 
         .markdown-editor-modal {
-          max-width: 1200px;
-          width: 95vw;
-          max-height: 90vh;
+          width: min(95vw, 1200px) !important;
+          max-width: min(95vw, 1200px) !important;
+          max-height: 90vh !important;
           display: flex;
           flex-direction: column;
         }
@@ -1658,8 +1665,10 @@ export default function AlbumPage() {
         }
 
         .editor-label {
-          font-size: 16px;
+          font-family: var(--serif);
+          font-size: 18px;
           font-weight: 600;
+          letter-spacing: -0.2px;
           color: var(--text);
         }
 
@@ -1671,7 +1680,8 @@ export default function AlbumPage() {
         .editor-mode-tabs {
           display: flex;
           gap: 4px;
-          background: var(--border);
+          background: var(--hover);
+          border: 1px solid var(--border);
           padding: 4px;
           border-radius: 8px;
         }
@@ -1696,8 +1706,7 @@ export default function AlbumPage() {
 
         .mode-tab.active {
           background: var(--primary);
-          color: white;
-          box-shadow: 0 2px 4px color-mix(in srgb, var(--primary), transparent 70%);
+          color: var(--accent-fg);
         }
 
         .mode-tab:disabled {
@@ -1740,15 +1749,15 @@ export default function AlbumPage() {
           height: 100%;
           min-height: 500px;
           padding: 16px;
-          border: 2px solid var(--border);
+          border: 1px solid var(--border);
           border-radius: 8px;
-          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-          font-size: 14px;
-          line-height: 1.6;
-          background: var(--surface);
+          font-family: var(--mono);
+          font-size: 13.5px;
+          line-height: 1.65;
+          background: var(--input);
           color: var(--text);
           resize: none;
-          transition: border-color 0.2s ease;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
         .markdown-textarea:focus {
@@ -1775,7 +1784,7 @@ export default function AlbumPage() {
           height: 100%;
           min-height: 500px;
           padding: 16px;
-          border: 2px solid var(--border);
+          border: 1px solid var(--border);
           border-radius: 8px;
           background: var(--surface);
           color: var(--text);

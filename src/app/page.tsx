@@ -1,86 +1,74 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { validateCurrentToken, clearGitHubToken } from '@/lib/github';
 import { consumeOAuthFragment, storeAuthData } from '@/lib/auth';
+import Landing from '@/components/Landing';
 
 export default function HomePage() {
   const router = useRouter();
+  // Only flips to true when this load is an OAuth callback (/#oauth_token=…).
+  // Normal visits render the marketing landing page immediately.
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    const init = async () => {
-      // Step 1: check whether this is an OAuth callback (/#oauth_token=…).
-      // This must happen before any token validation so the new token is
-      // written to localStorage before we check it.
-      const oauthResult = consumeOAuthFragment();
+    // The lfkdsk-auth worker redirects back here with the token in the URL
+    // fragment. Consume it before anything else so the new token is persisted
+    // and we don't re-process it on refresh.
+    const oauthResult = consumeOAuthFragment();
+    if (!oauthResult) return; // normal page load — keep showing <Landing />
 
-      if (oauthResult) {
-        if ('error' in oauthResult) {
-          // OAuth failed — surface the error on the login page.
-          router.push(`/login?error=${encodeURIComponent(oauthResult.error)}`);
-          return;
-        }
+    setRedirecting(true);
 
-        // Token received — fetch the user profile and persist everything.
-        try {
-          const resp = await fetch('https://api.github.com/user', {
-            headers: { Authorization: `token ${oauthResult.token}` },
-          });
-          if (!resp.ok) throw new Error('Failed to fetch GitHub user');
-          const user = await resp.json();
-          storeAuthData(oauthResult.token, user);
-          // Hard navigation so the persistent Navbar re-mounts and picks up
-          // the freshly-stored gh_user — soft routing keeps the old (no-user)
-          // instance alive and the avatar/Settings menu stays hidden.
-          window.location.replace('/main');
-        } catch {
-          router.push('/login?error=Failed+to+fetch+GitHub+user+profile');
-        }
-        return;
-      }
+    if ('error' in oauthResult) {
+      router.push(`/login?error=${encodeURIComponent(oauthResult.error)}`);
+      return;
+    }
 
-      // Step 2: normal page load — validate any existing token.
+    (async () => {
       try {
-        const isValid = await validateCurrentToken();
-        if (isValid) {
-          router.push('/main');
-        } else {
-          clearGitHubToken();
-          router.push('/login');
-        }
+        const resp = await fetch('https://api.github.com/user', {
+          headers: { Authorization: `token ${oauthResult.token}` },
+        });
+        if (!resp.ok) throw new Error('Failed to fetch GitHub user');
+        const user = await resp.json();
+        storeAuthData(oauthResult.token, user);
+        // Hard navigation so the persistent Navbar re-mounts and picks up the
+        // freshly-stored gh_user.
+        window.location.replace('/main');
       } catch {
-        clearGitHubToken();
-        router.push('/login');
+        router.push('/login?error=Failed+to+fetch+GitHub+user+profile');
       }
-    };
-
-    init();
+    })();
   }, [router]);
 
-  return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      height: '100vh',
-      flexDirection: 'column',
-      gap: '16px'
-    }}>
-      <div>检查登录状态...</div>
+  if (redirecting) {
+    return (
       <div style={{
-        width: '32px',
-        height: '32px',
-        border: '3px solid #f3f3f3',
-        borderTop: '3px solid #3498db',
-        borderRadius: '50%',
-        animation: 'spin 1s linear infinite'
-      }}></div>
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-    </div>
-  );
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '70vh',
+        flexDirection: 'column',
+        gap: '16px'
+      }}>
+        <div>正在登录...</div>
+        <div style={{
+          width: '32px',
+          height: '32px',
+          border: '3px solid var(--border)',
+          borderTop: '3px solid var(--primary)',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }} />
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  return <Landing />;
 }

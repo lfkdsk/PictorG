@@ -227,6 +227,7 @@ export default function NewAlbumPage() {
         
         .nav-title h1 {
           font-size: 20px;
+          font-family: var(--serif);
           font-weight: 600;
           margin: 0;
           color: var(--text);
@@ -248,7 +249,7 @@ export default function NewAlbumPage() {
         
         .form-section {
           background: var(--surface);
-          border-radius: 12px;
+          border-radius: 10px;
           padding: 32px 40px;
           border: 1px solid var(--border);
           margin-bottom: 24px;
@@ -305,13 +306,13 @@ export default function NewAlbumPage() {
         
         .error-text {
           font-size: 12px;
-          color: #ef4444;
+          color: var(--danger);
           margin-top: 4px;
         }
         
         .success-text {
           font-size: 12px;
-          color: #10b981;
+          color: var(--success);
           margin-top: 4px;
         }
         
@@ -328,7 +329,7 @@ export default function NewAlbumPage() {
         
         .next-btn {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 12px 24px;
           border-radius: 8px;

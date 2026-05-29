@@ -4,8 +4,9 @@ import Navbar from '@/components/Navbar';
 import StyledJsxProvider from '@/components/StyledJsxProvider';
 
 export const metadata: Metadata = {
-  title: 'Pictor',
-  description: 'A simple GitHub-based gallery app'
+  title: 'PictorG — 基于 GitHub 的现代化相册管理平台',
+  description:
+    '把任意 GitHub 仓库变成精美的在线相册：OAuth 登录、批量上传与压缩、多种布局、明暗主题。提供 Web 版与 macOS 桌面端下载。'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
