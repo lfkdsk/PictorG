@@ -16,14 +16,22 @@ import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
 import { makePreviewUrl } from '@/components/desktop/makePreview';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
+import {
+  CompressCompareModal,
+  type ComparePhoto,
+  sizeDelta,
+} from '@/components/desktop/CompressCompare';
 
 type PhotoStatus = 'pending' | 'compressing' | 'ready' | 'error';
 
 type Photo = {
   id: string;
   original: File;
-  preview: string;
+  preview: string;       // 480px downsampled thumbnail — grid only
+  originalUrl: string;   // full-res object URL of the original — compare modal
   compressed?: File;
+  compressedUrl?: string;
+  useOriginal?: boolean;
   status: PhotoStatus;
   error?: string;
 };
@@ -65,6 +73,7 @@ export default function AddPhotosPage() {
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [compareIdx, setCompareIdx] = useState<number | null>(null);
 
   const inFlightRef = useRef<Set<string>>(new Set());
   const { compress } = useCompressIpc();
@@ -100,9 +109,22 @@ export default function AddPhotosPage() {
 
     compress(next.original)
       .then((compressed) => {
+        // Re-encoding a lossy source losslessly (or even lossy WebP on an
+        // already-small file) can come out LARGER than the original. Default
+        // the per-photo choice to whichever file is smaller so doing nothing
+        // never inflates a photo; the user can override in the compare modal.
+        const compressedUrl = URL.createObjectURL(compressed);
         setPhotos((prev) =>
           prev.map((p) =>
-            p.id === next.id ? { ...p, compressed, status: 'ready' } : p
+            p.id === next.id
+              ? {
+                  ...p,
+                  compressed,
+                  compressedUrl,
+                  useOriginal: compressed.size >= p.original.size,
+                  status: 'ready',
+                }
+              : p
           )
         );
       })
@@ -122,7 +144,11 @@ export default function AddPhotosPage() {
 
   useEffect(() => {
     return () => {
-      photos.forEach((p) => URL.revokeObjectURL(p.preview));
+      photos.forEach((p) => {
+        URL.revokeObjectURL(p.preview);
+        if (p.originalUrl) URL.revokeObjectURL(p.originalUrl);
+        if (p.compressedUrl) URL.revokeObjectURL(p.compressedUrl);
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,6 +164,10 @@ export default function AddPhotosPage() {
       id: crypto.randomUUID(),
       original: file,
       preview: '',
+      // Full-res URL straight off the original File — no decode/copy here,
+      // the browser only decodes it when the compare modal shows this photo.
+      // The grid keeps using the cheap 480px `preview` thumbnail.
+      originalUrl: URL.createObjectURL(file),
       status: 'pending',
     }));
     setPhotos((prev) => [...prev, ...items]);
@@ -153,9 +183,20 @@ export default function AddPhotosPage() {
   function removePhoto(id: string) {
     setPhotos((prev) => {
       const photo = prev.find((p) => p.id === id);
-      if (photo) URL.revokeObjectURL(photo.preview);
+      if (photo) {
+        URL.revokeObjectURL(photo.preview);
+        if (photo.originalUrl) URL.revokeObjectURL(photo.originalUrl);
+        if (photo.compressedUrl) URL.revokeObjectURL(photo.compressedUrl);
+      }
       return prev.filter((p) => p.id !== id);
     });
+  }
+
+  // Flip the per-photo upload choice (compressed vs original).
+  function toggleUseOriginal(id: string) {
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, useOriginal: !p.useOriginal } : p))
+    );
   }
 
   function onDrop(e: React.DragEvent) {
@@ -183,6 +224,25 @@ export default function AddPhotosPage() {
       ? 1 - totalCompressed / totalOriginal
       : 0;
 
+  // Items the compare modal can step through: only photos whose compress
+  // has landed, in grid order. The modal indexes into this list, so the
+  // thumbnail click resolves its position by id below.
+  const comparePhotos = useMemo<ComparePhoto[]>(
+    () =>
+      photos
+        .filter((p) => p.status === 'ready' && p.compressed)
+        .map((p) => ({
+          id: p.id,
+          name: p.original.name,
+          beforeUrl: p.originalUrl || p.preview,
+          afterUrl: p.compressedUrl ?? '',
+          originalSize: p.original.size,
+          compressedSize: p.compressed!.size,
+          useOriginal: !!p.useOriginal,
+        })),
+    [photos]
+  );
+
   async function handleSubmit() {
     if (!adapter || !gallery || !albumUrl) return;
     if (!ready) {
@@ -205,14 +265,19 @@ export default function AddPhotosPage() {
 
       const fileEntries: BatchFile[] = [];
       for (const p of photos) {
-        if (!p.compressed) continue;
-        if (existingNames.has(p.compressed.name)) {
-          duplicates.push(p.compressed.name);
+        // Upload the variant the user chose. Default (set at compress time)
+        // is whichever is smaller, so the original wins when the WebP encode
+        // came out larger. Using the original keeps its source extension.
+        const chosen = p.useOriginal ? p.original : p.compressed;
+        if (!chosen) continue;
+        const chosenName = p.useOriginal ? p.original.name : p.compressed!.name;
+        if (existingNames.has(chosenName)) {
+          duplicates.push(chosenName);
           continue;
         }
-        const bytes = new Uint8Array(await p.compressed.arrayBuffer());
+        const bytes = new Uint8Array(await chosen.arrayBuffer());
         fileEntries.push({
-          path: `${albumUrl}/${p.compressed.name}`,
+          path: `${albumUrl}/${chosenName}`,
           content: bytes,
         });
       }
@@ -324,30 +389,58 @@ export default function AddPhotosPage() {
 
           {photos.length > 0 && (
             <ul className="photos">
-              {photos.map((p) => (
-                <li key={p.id}>
-                  <div className="picg-thumb">
-                    <img src={p.preview} alt="" className="photo-preview" />
-                    {p.status === 'pending' && <span className="state pending">queued</span>}
-                    {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
-                    {p.status === 'error' && <span className="state errored">{p.error ?? 'error'}</span>}
-                    {p.status === 'ready' && p.compressed && (
-                      <span className="state ready">
-                        {formatBytes(p.original.size)} → {formatBytes(p.compressed.size)}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className="remove"
-                    onClick={() => removePhoto(p.id)}
-                    disabled={submitting}
-                    aria-label="Remove photo"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
+              {photos.map((p) => {
+                const ready = p.status === 'ready' && p.compressed;
+                const delta = ready
+                  ? sizeDelta(p.original.size, p.compressed!.size)
+                  : null;
+                const openCompare = () => {
+                  const i = comparePhotos.findIndex((c) => c.id === p.id);
+                  if (i >= 0) setCompareIdx(i);
+                };
+                return (
+                  <li key={p.id}>
+                    <div
+                      className={`picg-thumb ${ready ? 'is-clickable' : ''}`}
+                      onClick={ready ? openCompare : undefined}
+                      role={ready ? 'button' : undefined}
+                      tabIndex={ready ? 0 : undefined}
+                      onKeyDown={
+                        ready
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openCompare();
+                              }
+                            }
+                          : undefined
+                      }
+                      aria-label={ready ? `Compare ${p.original.name}` : undefined}
+                    >
+                      <img src={p.preview} alt="" className="photo-preview" />
+                      {p.status === 'pending' && <span className="state pending">queued</span>}
+                      {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
+                      {p.status === 'error' && <span className="state errored">{p.error ?? 'error'}</span>}
+                      {ready && delta && (
+                        <span className={`state ready ${delta.bigger ? 'is-bigger' : ''}`}>
+                          {formatBytes(p.original.size)} → {formatBytes(p.compressed!.size)}
+                          {' · '}
+                          {delta.label}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="remove"
+                      onClick={() => removePhoto(p.id)}
+                      disabled={submitting}
+                      aria-label="Remove photo"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -373,6 +466,16 @@ export default function AddPhotosPage() {
           )}
         </div>
       </main>
+
+      {compareIdx != null && (
+        <CompressCompareModal
+          photos={comparePhotos}
+          index={compareIdx}
+          onIndex={setCompareIdx}
+          onClose={() => setCompareIdx(null)}
+          onToggle={toggleUseOriginal}
+        />
+      )}
 
       <DesktopTheme />
       <style jsx>{`
@@ -452,6 +555,9 @@ export default function AddPhotosPage() {
         }
         .state.compressing { color: var(--accent); }
         .state.errored { color: #f0857b; }
+        .state.ready.is-bigger { color: #f0857b; }
+
+        .picg-thumb.is-clickable { cursor: zoom-in; }
 
         .photo-preview {
           object-fit: contain;
