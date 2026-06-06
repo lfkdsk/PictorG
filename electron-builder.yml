@@ -115,17 +115,13 @@ asarUnpack:
 extraResources:
   - from: .next/standalone
     to: standalone
-    filter:
-      - "**/*"
-      # Standalone bundles its own copy of @img — the platform-specific
-      # libvips bindings sharp depends on. We already ship those via
-      # asarUnpack from the top-level node_modules, so dropping them
-      # here saves ~16MB without breaking anything (the runtime fork
-      # uses the standalone copy when sharp is required from the
-      # server bundle, but sharp isn't actually called from the server
-      # — it's only called from the main process).
-      - "!node_modules/@img/**"
-      - "!node_modules/sharp/**"
+    # This stages ONLY server.js, .next/, public/, package.json.
+    # electron-builder's extraResources copy ALWAYS omits node_modules
+    # (with or without a filter — `node_modules/**/*` has no effect; it
+    # treats node_modules as asar-managed). The standalone's node_modules
+    # is therefore copied separately by scripts/after-pack.js. Without
+    # that, the forked Next server hits require('next') → MODULE_NOT_FOUND
+    # and the app shows no window.
   # Bundled portable git (dugite-native — the same build GitHub Desktop
   # ships). Lets clone/push/pull work on a clean Mac that doesn't have
   # Xcode Command Line Tools installed. `${arch}` expands per-DMG so
