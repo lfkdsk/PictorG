@@ -139,7 +139,16 @@ function fetchAndExtract(arch, asset, outArchDir) {
   // half-extracted tree never lives at the path isolatedGit.ts will look at.
   fs.mkdirSync(tmpRoot, { recursive: true });
   console.log(`[fetch-dugite-native] ${arch}: extracting`);
-  execFileSync('tar', ['-xzf', tarPath, '-C', tmpRoot], { stdio: 'inherit' });
+  // Pass tar paths relative to OUT_DIR (via cwd), never absolute. GNU tar
+  // — the `tar` on the PATH inside Git Bash / MSYS, which CI's bash steps
+  // use — reads an absolute Windows path like `D:\...` as a remote
+  // `host:path` spec and dies with "Cannot connect to D: resolve failed".
+  // Colon-free relative names work under GNU tar, Windows' bundled bsdtar,
+  // and macOS/BSD tar alike.
+  execFileSync('tar', ['-xzf', path.basename(tarPath), '-C', path.basename(tmpRoot)], {
+    stdio: 'inherit',
+    cwd: OUT_DIR,
+  });
 
   fs.rmSync(outArchDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(outArchDir), { recursive: true });
