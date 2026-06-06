@@ -149,7 +149,7 @@ function supplementExif(
 async function compressImage(
   request: CompressImageRequest
 ): Promise<CompressImageResult> {
-  let input = Buffer.from(request.bytes);
+  let input: Buffer = Buffer.from(request.bytes);
 
   // HEIC route — sharp's prebuilt libheif can't decode Apple's HEVC-
   // encoded HEIC, so we transcode to JPEG via macOS's `sips` first
