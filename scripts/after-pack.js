@@ -28,11 +28,11 @@ exports.default = async function afterPack(context) {
 
   if (platform === 'darwin') {
     stripDarwinLocales(context.appOutDir, productFilename);
-  } else if (platform === 'linux') {
+  } else if (platform === 'linux' || platform === 'win32') {
+    // Windows lays Chromium locales out exactly like Linux:
+    // `<appOutDir>/locales/<code>.pak` — so the same stripper works.
     stripLinuxLocales(context.appOutDir);
   }
-  // Windows uses the same `locales/` layout as Linux, but we don't ship
-  // Windows yet — add a stripWindowsLocales when that lands.
 };
 
 function stripDarwinLocales(appOutDir, productFilename) {

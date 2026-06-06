@@ -15,12 +15,16 @@
 
 ![PicG Desktop](design/desktop.jpg)
 
-基于 Electron 的 macOS 桌面端，与 Web 共用同一套页面，仅数据层不同：相册仓库 clone 到本地，编辑、压缩、改 YAML 全部走本地工作区，每次写入生成本地 commit，推送是独立动作。
+基于 Electron 的桌面端（macOS / Windows），与 Web 共用同一套页面，仅数据层不同：相册仓库 clone 到本地，编辑、压缩、改 YAML 全部走本地工作区，每次写入生成本地 commit，推送是独立动作。
 
 ```bash
-npm run electron:dev   # 开发
-npm run dist:mac       # 打包 DMG（arm64 / x64）
+npm run electron:dev      # 开发（Windows on ARM 虚拟机里也可原生跑）
+npm run dist:mac          # macOS DMG（arm64 / x64，在 macOS 上运行）
+npm run dist:win          # Windows x64 安装包（在 Windows 上运行；arm64 主机会交叉编译并自动补 x64 sharp）
+npm run dist:win:arm64    # Windows arm64 安装包（Windows on ARM 原生）
 ```
+
+> 打包须在目标系统上进行（git 与 sharp 原生模块按平台/架构抓取，不能从 macOS 交叉打 Windows）。无 Windows 机器时用 GitHub Actions 的 `Release desktop build` 工作流自动出 x64 包。
 
 详见 [`docs/desktop-development.md`](docs/desktop-development.md)，发布版本在 [Releases](https://github.com/lfkdsk/PicG/releases)。
 

@@ -44,9 +44,11 @@
     "electron:build": "tsc -p electron",
     "electron:start": "electron electron/dist/electron/main.js",
     "electron:dev": "node scripts/electron-dev.js",
-    "next:build:packaging": "PICG_PACKAGING=1 next build && node scripts/stage-standalone.js",
+    "next:build:packaging": "node scripts/next-build-packaging.js && node scripts/stage-standalone.js",
     "pack:dir": "npm run build:icon && npm run fetch:git:all && npm run electron:build && npm run next:build:packaging && electron-builder --dir",
-    "dist:mac": "npm run build:icon && npm run fetch:git:all && npm run electron:build && npm run next:build:packaging && electron-builder --mac"
+    "dist:mac": "npm run build:icon && npm run fetch:git:all && npm run electron:build && npm run next:build:packaging && electron-builder --mac",
+    "dist:win": "npm run build:icon && npm run fetch:git:all && node scripts/ensure-sharp-prebuild.js x64 && npm run electron:build && npm run next:build:packaging && electron-builder --win --x64",
+    "dist:win:arm64": "npm run build:icon && npm run fetch:git:all && node scripts/ensure-sharp-prebuild.js arm64 && npm run electron:build && npm run next:build:packaging && electron-builder --win --arm64"
   },
   "dependencies": {
     "@lfkdsk/exif-library": "^2.0.3",

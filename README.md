@@ -37,7 +37,7 @@ PicG 是一个基于GitHub的现代化相册管理系统，让你可以轻松地
 
 ![PicG Desktop](design/desktop.jpg)
 
-PicG 还提供基于 Electron 的 macOS 桌面端，与 Web 端共享同一套 UI 和业务逻辑，差异只在数据层：
+PicG 还提供基于 Electron 的桌面端（macOS / Windows），与 Web 端共享同一套 UI 和业务逻辑，差异只在数据层：
 
 - 📦 **本地优先** - 相册仓库 clone 到应用数据目录，编辑直接落到本地工作区
 - 💾 **离线可用** - 写文件、压缩、改 YAML 全程不依赖网络，下次联网再同步
@@ -47,9 +47,9 @@ PicG 还提供基于 Electron 的 macOS 桌面端，与 Web 端共享同一套 U
 
 ### 下载与安装
 
-发布产物（macOS DMG，含 arm64 / x64）见 [Releases](https://github.com/lfkdsk/PicG/releases)。
+发布产物见 [Releases](https://github.com/lfkdsk/PicG/releases)：macOS DMG（arm64 / x64）与 Windows 安装包（NSIS，x64）。
 
-> 当前签名/公证仍在筹备中，首次启动若被 Gatekeeper 拦截，DMG 内附带了一份 `Fix Gatekeeper` 助手，按提示放行即可。
+> macOS 当前签名/公证仍在筹备中，首次启动若被 Gatekeeper 拦截，DMG 内附带了一份 `Fix Gatekeeper` 助手，按提示放行即可。Windows 安装包尚未签名，首次运行 SmartScreen 会拦截，点「更多信息 → 仍要运行」即可。
 
 ### 本地构建
 
@@ -57,9 +57,17 @@ PicG 还提供基于 Electron 的 macOS 桌面端，与 Web 端共享同一套 U
 # 开发模式（启动 Next.js dev server + Electron）
 npm run electron:dev
 
-# 打包 macOS DMG
+# 打包 macOS DMG（在 macOS 上运行）
 npm run dist:mac
+
+# 打包 Windows 安装包（需在 Windows 上运行）
+npm run dist:win          # x64（主分发目标）
+npm run dist:win:arm64    # arm64（Windows on ARM 原生）
 ```
+
+> 桌面端打包必须在目标系统上进行：捆绑的 git（dugite-native）与 sharp 原生模块按平台/架构抓取，无法从 macOS 交叉打 Windows 包。没有 Windows 机器时，用 GitHub Actions 的 `Release desktop build` 工作流（推 `v*` tag 或手动触发），一次产出 macOS + Windows(x64) 并发布到 Release。
+>
+> 在 Apple Silicon 上用 Parallels 等虚拟机时，Windows 是 ARM64：`npm run electron:dev` 原生调试最顺；`dist:win`（x64）会交叉编译（脚本自动补 x64 的 sharp 预编译，产物在 ARM 上模拟运行），`dist:win:arm64` 则原生打包。注意 Windows 自动更新只认单一 `latest.yml`，x64 与 arm64 不要在同一个 Release 各发一次（会互相覆盖）——分发以 CI 的 x64 为准。
 
 更详细的桌面端架构、约定与已知坑见 [`docs/desktop-development.md`](docs/desktop-development.md)。
 

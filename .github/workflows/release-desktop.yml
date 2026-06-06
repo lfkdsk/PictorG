@@ -1,5 +1,6 @@
-# Builds the macOS PicG.app and publishes the .dmg + auto-update
-# manifest (latest-mac.yml) to a GitHub Release.
+# Builds the macOS PicG.app (.dmg) and the Windows installer (NSIS .exe)
+# and publishes them + their auto-update manifests (latest-mac.yml and
+# latest.yml) to a GitHub Release.
 #
 # Two ways to cut a release:
 #
@@ -143,4 +144,77 @@ jobs:
           path: |
             dist-electron/*.dmg
             dist-electron/latest-mac.yml
+          retention-days: 14
+
+  build-win:
+    needs: [tag]
+    # Same guard as build-mac: runs for tag pushes and every manual
+    # dispatch; always() lets it proceed when `tag` was skipped, and a
+    # failed/cancelled `tag` aborts it. Runs concurrently with build-mac
+    # and publishes to the same Release (electron-builder reuses the
+    # existing release rather than recreating it).
+    if: |
+      always() &&
+      needs.tag.result != 'failure' &&
+      needs.tag.result != 'cancelled'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    # fetch-dugite-native.js (curl + tar) and the publish step's
+    # `if [ ... ]` are POSIX shell; force bash so they don't run under
+    # PowerShell. windows-latest ships Git Bash plus curl.exe + tar.exe.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Build the bumped commit when the tag job cut one; otherwise
+          # whatever triggered us.
+          ref: ${{ needs.tag.outputs.tag || github.ref }}
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Fetch git + build Electron main + Next standalone
+        run: |
+          npm run fetch:git:all
+          npm run electron:build
+          npm run next:build:packaging
+
+      - name: Generate icon
+        run: node scripts/build-icon.js
+
+      - name: Package + publish NSIS installer
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ -n "${{ needs.tag.outputs.tag }}" ]; then
+            # Real release (tag push, or a dispatch that bumped): publish
+            # to GitHub. electron-builder reads GH_TOKEN to upload the
+            # installer + latest.yml to the matching Release.
+            npx electron-builder --win --x64 --publish always
+          else
+            # Plain dispatch (bump=none): just produce the installer.
+            npx electron-builder --win --x64 --publish never
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned for now — users get a Windows SmartScreen warning on
+          # first run. Once you have a code-signing cert (an OV/EV .pfx or
+          # an Azure Trusted Signing account), set:
+          #   CSC_LINK: ${{ secrets.WIN_CERT_PFX_BASE64 }}
+          #   CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+
+      - name: Upload artifact (unpublished manual runs only)
+        if: github.event_name == 'workflow_dispatch' && needs.tag.result == 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PicG-win
+          path: |
+            dist-electron/*.exe
+            dist-electron/latest.yml
           retention-days: 14

@@ -27,6 +27,7 @@ const buildDir = path.join(root, 'build');
 const svgPath = path.join(buildDir, 'icon.svg');
 const iconset = path.join(buildDir, 'icon.iconset');
 const icnsOut = path.join(buildDir, 'icon.icns');
+const icoOut = path.join(buildDir, 'icon.ico');
 const pngOut = path.join(buildDir, 'icon.png');
 
 if (!fs.existsSync(svgPath)) {
@@ -41,11 +42,58 @@ async function renderPng(size, file) {
     .toFile(file);
 }
 
+// Assemble PNG buffers into a single .ico container. ICO = a 6-byte
+// ICONDIR header, then one 16-byte ICONDIRENTRY per image, then the
+// image payloads. We store each image as PNG (allowed since Vista) so
+// we don't have to emit BMP/DIB. A width/height byte of 0 means 256.
+function buildIco(images) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // image type: 1 = icon
+  header.writeUInt16LE(images.length, 4);
+
+  const dir = Buffer.alloc(16 * images.length);
+  let offset = 6 + 16 * images.length;
+  const payloads = [];
+  images.forEach((img, i) => {
+    const e = i * 16;
+    dir.writeUInt8(img.size >= 256 ? 0 : img.size, e + 0); // width (0 = 256)
+    dir.writeUInt8(img.size >= 256 ? 0 : img.size, e + 1); // height (0 = 256)
+    dir.writeUInt8(0, e + 2); // palette size (0 = no palette)
+    dir.writeUInt8(0, e + 3); // reserved
+    dir.writeUInt16LE(1, e + 4); // color planes
+    dir.writeUInt16LE(32, e + 6); // bits per pixel
+    dir.writeUInt32LE(img.png.length, e + 8); // payload size
+    dir.writeUInt32LE(offset, e + 12); // payload offset
+    offset += img.png.length;
+    payloads.push(img.png);
+  });
+
+  return Buffer.concat([header, dir, ...payloads]);
+}
+
 async function main() {
   // Single 1024 PNG — Linux uses this directly; electron-builder also
   // accepts it for macOS as an alternative to .icns.
   await renderPng(1024, pngOut);
   console.log(`[build-icon] wrote ${path.relative(root, pngOut)}`);
+
+  // Windows .ico — electron-builder's `win.icon`. Pack several sizes so
+  // Explorer, the taskbar, and Alt-Tab each pick a crisp variant. sharp
+  // can't write .ico directly, so render PNGs and assemble the container
+  // by hand. Produced on every host OS so a Windows build packaged from
+  // any runner still gets its icon.
+  const icoSizes = [16, 24, 32, 48, 64, 128, 256];
+  const icoImages = [];
+  for (const size of icoSizes) {
+    const png = await sharp(svgPath, { density: 384 })
+      .resize(size, size, { fit: 'contain' })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    icoImages.push({ size, png });
+  }
+  fs.writeFileSync(icoOut, buildIco(icoImages));
+  console.log(`[build-icon] wrote ${path.relative(root, icoOut)}`);
 
   // .iconset folder for macOS iconutil. Wipe any prior run first.
   fs.rmSync(iconset, { recursive: true, force: true });
