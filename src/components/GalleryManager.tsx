@@ -271,14 +271,14 @@ export default function GalleryManager() {
           <button className="btn outline" onClick={() => { setShowImport(true); loadRepos(); }}>
             导入
           </button>
-          <Link href="/create-gallery" className="link"
+          <Link href="/create-gallery"
             style={{
               height: '36px',
               padding: '0 12px',
               borderRadius: '8px',
               border: 'none',
               background: 'var(--primary)',
-              color: '#fff',
+              color: 'var(--accent-fg)',
               fontWeight: '500',
               textDecoration: 'none',
               display: 'inline-flex',
@@ -344,14 +344,13 @@ export default function GalleryManager() {
                 <div className="actions">
                   <Link
                     href={`/gallery/${owner}/${repo}`}
-                    className="link"
                     style={{
                       height: '32px',
                       padding: '0 12px',
                       borderRadius: '8px',
                       border: 'none',
                       background: 'var(--primary)',
-                      color: '#fff',
+                      color: 'var(--accent-fg)',
                       fontWeight: '500',
                       textDecoration: 'none',
                       display: 'inline-flex',
@@ -461,7 +460,7 @@ export default function GalleryManager() {
           border-radius: 10px; 
           border: none; 
           background: var(--primary); 
-          color: #fff; 
+          color: var(--accent-fg);
           font-weight: 600; 
           cursor: pointer; 
           transition: all 0.2s ease;
@@ -477,7 +476,7 @@ export default function GalleryManager() {
           border-radius: 10px; 
           border: none; 
           background: var(--primary); 
-          color: #fff; 
+          color: var(--accent-fg);
           font-weight: 600; 
           cursor: pointer; 
           transition: all 0.2s ease;
@@ -493,12 +492,12 @@ export default function GalleryManager() {
           text-decoration: none;
         }
         .toolbar .btn:hover { transform: translateY(-1px); }
-        .toolbar .btn.outline { background: transparent; color: inherit; border: 2px solid var(--border); }
+        .toolbar .btn.outline { background: transparent; color: inherit; border: 1px solid var(--border); }
         .toolbar .btn.outline:hover { background: color-mix(in srgb, var(--border), transparent 90%); }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .card { 
-          background: var(--surface); 
-          border-radius: 16px; 
+        .card {
+          background: var(--surface);
+          border-radius: 10px;
           padding: 20px; 
           display: flex; 
           align-items: center;
@@ -522,7 +521,7 @@ export default function GalleryManager() {
           left: 0;
           right: 0;
           bottom: 0;
-          background: linear-gradient(135deg, color-mix(in srgb, var(--primary), transparent 95%) 0%, transparent 50%);
+          background: color-mix(in srgb, var(--primary), transparent 94%);
           opacity: 0;
           transition: opacity 0.3s ease;
           pointer-events: none;
@@ -568,9 +567,9 @@ export default function GalleryManager() {
           transform: translateY(-1px) !important;
           background: color-mix(in srgb, var(--primary), black 10%) !important;
         }
-        .danger { 
-          background: #ef4444; 
-          color: #fff; 
+        .danger {
+          background: var(--danger);
+          color: var(--accent-fg);
           border: none; 
           border-radius: 8px; 
           height: 32px; 
@@ -581,11 +580,11 @@ export default function GalleryManager() {
           transition: all 0.2s ease;
         }
         .danger:hover {
-          background: #dc2626;
+          background: var(--danger);
           transform: translateY(-1px);
         }
         .dim { opacity: .85; }
-        .error { color: #dc2626; text-align: center; }
+        .error { color: var(--danger); text-align: center; }
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; }
         .dialog { width: min(520px, 92vw); background: var(--surface); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
         .dlg-title { margin: 4px 0 8px; font-size: 18px; font-weight: 700; color: var(--text); }

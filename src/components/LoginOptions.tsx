@@ -49,29 +49,32 @@ export default function LoginOptions() {
       ) : null}
 
       <style jsx>{`
-        .wrap { display: grid; gap: 16px; padding: 12px 0; }
-        .brand { font-size: 40px; line-height: 1; margin: 8px 0; }
-        .actions { display: grid; gap: 12px; width: 260px; }
-        .error { color: #dc2626; font-size: 14px; max-width: 280px; text-align: center; }
+        .wrap { display: grid; gap: 16px; padding: 12px 0; justify-items: center; }
+        .brand { font-family: var(--serif); font-weight: 600; font-size: 44px; line-height: 1; margin: 8px 0; letter-spacing: -0.5px; }
+        .actions { display: grid; gap: 10px; width: 260px; }
+        .error { color: #c8553d; font-size: 14px; max-width: 280px; text-align: center; }
         .btn {
-          height: 44px;
+          height: 46px;
           min-width: 220px;
-          border-radius: 10px;
-          border: none;
+          border-radius: 8px;
+          border: 1px solid transparent;
           background: var(--primary);
-          color: #fff;
+          color: var(--accent-fg);
           font-weight: 600;
           text-align: center;
           display: inline-grid;
           place-items: center;
           padding: 0 16px;
           cursor: pointer;
+          transition: filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
         }
+        .btn:hover { filter: brightness(1.06); }
         .btn.outline {
           background: transparent;
           color: inherit;
-          border: 2px solid var(--border);
+          border: 1px solid var(--border);
         }
+        .btn.outline:hover { filter: none; border-color: var(--text-secondary); background: var(--hover); }
       `}</style>
     </section>
   );

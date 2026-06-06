@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import {
   getCompressionSettings,
@@ -11,6 +11,7 @@ import {
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 
 export default function DesktopSettingsPage() {
+  const router = useRouter();
   const [settings, setSettings] = useState<CompressionSettings>(() =>
     getCompressionSettings()
   );
@@ -18,6 +19,17 @@ export default function DesktopSettingsPage() {
   useEffect(() => {
     setSettings(getCompressionSettings());
   }, []);
+
+  // Settings is reachable from the account menu on every desktop screen, so
+  // "back" should return wherever the user came from — not a fixed page.
+  // Fall back to the galleries list if there's no in-app history to pop.
+  function handleBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/desktop/galleries');
+    }
+  }
 
   function update(patch: Partial<CompressionSettings>) {
     const next = { ...settings, ...patch };
@@ -30,9 +42,9 @@ export default function DesktopSettingsPage() {
       <Topbar />
 
       <main>
-        <Link href="/desktop/galleries" className="picg-back-link">
-          ← All galleries
-        </Link>
+        <button type="button" onClick={handleBack} className="picg-back-link back-btn">
+          ← Back
+        </button>
 
         <section className="hero">
           <h1>Settings</h1>
@@ -102,8 +114,10 @@ export default function DesktopSettingsPage() {
                   <div className="row-title">Lossless mode</div>
                   <div className="row-desc">
                     Pixel-perfect WebP output — no quality loss, no resize cap.
-                    Files are 5–10× larger than the default lossy mode but
-                    typically still smaller than the source. JPEG output is
+                    Files are 5–10× larger than the default lossy mode and are
+                    often larger than an already-compressed JPEG/HEIC source.
+                    When adding photos you can compare each result and keep the
+                    original if the lossless encode is bigger. JPEG output is
                     disabled while this is on.
                   </div>
                 </div>
@@ -189,6 +203,9 @@ export default function DesktopSettingsPage() {
       <DesktopTheme />
       <style jsx>{`
         main { padding: 24px 40px 64px; max-width: 760px; margin: 0 auto; }
+
+        /* Reset native button chrome so it reads as the shared back link. */
+        .back-btn { background: none; border: 0; padding: 0; cursor: pointer; }
 
         .hero { margin-bottom: 32px; }
         .hero h1 {

@@ -54,20 +54,26 @@ export default function Navbar() {
   };
 
   // Desktop routes own their full chrome and shouldn't render the web nav
-  // (which links to web-only flows like /main, /create-gallery). Placed
-  // after all hook calls so the rules of hooks are respected.
-  if (pathname?.startsWith('/desktop')) return null;
+  // (which links to web-only flows like /main, /create-gallery). The
+  // marketing home page ('/') renders its own dedicated header inside
+  // <Landing/>. Placed after all hook calls so the rules of hooks are
+  // respected.
+  if (pathname === '/' || pathname?.startsWith('/desktop')) return null;
 
   return (
     <header className="nav">
       <div className="inner">
         <div className="left-section">
-          <Link href="/" className="brand" aria-label="home">
-            <span className="brand-text">Pictor</span>
+          <Link href="/" legacyBehavior>
+            <a className="brand" aria-label="home">
+              <span className="brand-text">Pictor</span>
+            </a>
           </Link>
-          <div className="nav-tabs">
-            <span className="nav-tab active">我的画廊</span>
-          </div>
+          {user ? (
+            <div className="nav-tabs">
+              <a href="/main" className={`nav-tab ${pathname?.startsWith('/main') ? 'active' : ''}`}>我的画廊</a>
+            </div>
+          ) : null}
         </div>
         <div className="spacer" />
         <div className="actions" ref={menuRef}>
@@ -96,29 +102,28 @@ export default function Navbar() {
         .brand { display: flex; align-items: center; text-decoration: none; padding: 8px 16px; border-radius: 12px; transition: all 0.2s ease; }
         .brand:hover { background: color-mix(in srgb, var(--primary), transparent 95%); transform: translateY(-1px); }
         .nav-tabs { display: flex; align-items: center; }
-        .nav-tab { 
-          display: flex; 
-          align-items: center; 
-          padding: 8px 16px; 
-          color: var(--text-secondary); 
-          font-weight: 500; 
-          border-radius: 8px; 
+        .nav-tab {
+          display: flex;
+          align-items: center;
+          padding: 8px 16px;
+          color: var(--text-secondary);
+          font-weight: 500;
+          border-radius: 8px;
           transition: all 0.2s ease;
           position: relative;
+          text-decoration: none;
         }
-        .nav-tab.active { 
-          color: var(--primary); 
+        .nav-tab:hover { color: var(--text); background: color-mix(in srgb, var(--primary), transparent 94%); }
+        .nav-tab.active {
+          color: var(--primary);
           font-weight: 600;
         }
-        .brand-text { 
-          font-weight: 800; 
+        .brand-text {
+          font-family: var(--serif);
+          font-weight: 600;
           font-size: 20px;
-          letter-spacing: -0.5px; 
-          background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary), #30a0ff 50%)); 
-          -webkit-background-clip: text; 
-          background-clip: text; 
-          color: transparent;
-          text-shadow: 0 0 20px color-mix(in srgb, var(--primary), transparent 80%);
+          letter-spacing: -0.2px;
+          color: var(--text);
         }
         .spacer { flex: 1; }
         .actions { position: relative; display: flex; align-items: center; gap: 12px; }

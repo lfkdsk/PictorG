@@ -183,7 +183,6 @@ export default function AlbumUploadPage() {
       <div className="top-nav">
         <Link 
           href={`/gallery/${owner}/${repo}/${encodeGitHubPath(albumUrl)}`} 
-          className="back-btn"
           style={{
             color: 'var(--primary)',
             textDecoration: 'none',
@@ -391,6 +390,7 @@ export default function AlbumUploadPage() {
         
         .nav-title h1 {
           font-size: 20px;
+          font-family: var(--serif);
           font-weight: 600;
           margin: 0;
           color: var(--text);
@@ -466,7 +466,7 @@ export default function AlbumUploadPage() {
         .file-select-area {
           background: var(--bg);
           border: 2px dashed var(--border);
-          border-radius: 12px;
+          border-radius: 10px;
           padding: 32px 24px;
           text-align: center;
           margin-bottom: 24px;
@@ -486,7 +486,7 @@ export default function AlbumUploadPage() {
         
         .action-btn {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 10px 14px;
           border-radius: 8px;
@@ -513,11 +513,11 @@ export default function AlbumUploadPage() {
         }
         
         .clear-btn {
-          background: #ef4444;
+          background: var(--danger);
         }
         
         .clear-btn:hover:not(:disabled) {
-          background: color-mix(in srgb, #ef4444, black 10%);
+          background: color-mix(in srgb, var(--danger), black 10%);
         }
         
         .full-width {
@@ -530,7 +530,7 @@ export default function AlbumUploadPage() {
         
         .file-select-btn {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 12px 16px;
           border-radius: 8px;
@@ -610,7 +610,7 @@ export default function AlbumUploadPage() {
         .file-card {
           background: var(--surface);
           border: 1px solid var(--border);
-          border-radius: 12px;
+          border-radius: 10px;
           padding: 0;
           transition: all 0.3s ease;
           overflow: hidden;
@@ -624,9 +624,7 @@ export default function AlbumUploadPage() {
         }
         
         .file-card.compressed {
-          background: linear-gradient(135deg, 
-            color-mix(in srgb, var(--primary), transparent 95%) 0%, 
-            color-mix(in srgb, var(--primary), transparent 98%) 100%);
+          background: color-mix(in srgb, var(--primary), transparent 95%);
           border: 2px solid var(--primary);
           box-shadow: 0 4px 15px color-mix(in srgb, var(--primary), transparent 80%);
         }
@@ -638,7 +636,7 @@ export default function AlbumUploadPage() {
           left: 0;
           right: 0;
           height: 4px;
-          background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary), #fbbf24 50%));
+          background: var(--primary);
         }
         
         .file-preview {
@@ -680,7 +678,7 @@ export default function AlbumUploadPage() {
           top: 8px;
           left: 8px;
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           padding: 4px 8px;
           border-radius: 12px;
           font-size: 12px;
@@ -688,14 +686,14 @@ export default function AlbumUploadPage() {
         }
         
         .upload-badge.error {
-          background: #ef4444;
+          background: var(--danger);
         }
         
         .uploaded-badge {
           position: absolute;
           top: 8px;
           left: 8px;
-          background: #10b981;
+          background: var(--success);
           color: white;
           padding: 4px 8px;
           border-radius: 12px;
@@ -708,7 +706,7 @@ export default function AlbumUploadPage() {
           bottom: 8px;
           right: 8px;
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 6px 8px;
           border-radius: 6px;
@@ -733,10 +731,8 @@ export default function AlbumUploadPage() {
         }
         
         .file-card.compressed .file-info {
-          background: linear-gradient(135deg, 
-            var(--primary) 0%, 
-            color-mix(in srgb, var(--primary), black 20%) 100%);
-          color: white;
+          background: var(--primary);
+          color: var(--accent-fg);
         }
         
         .file-name {
@@ -766,12 +762,12 @@ export default function AlbumUploadPage() {
         }
         
         .file-size.compressed {
-          color: #4ade80;
+          color: var(--success);
           font-weight: 600;
         }
         
         .arrow {
-          color: #fbbf24;
+          color: var(--primary);
           font-weight: bold;
         }
         

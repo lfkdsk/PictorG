@@ -489,7 +489,7 @@ export default function GalleryPage() {
             className="album-card"
             style={{
               border: '1px solid color-mix(in srgb, var(--text), transparent 80%)',
-              borderRadius: '16px',
+              borderRadius: '10px',
               display: 'block',
               textDecoration: 'none',
               color: 'inherit'
@@ -568,8 +568,8 @@ export default function GalleryPage() {
           font-size: 18px; 
           color: var(--text-secondary); 
         }
-        .error { color: #ef4444; }
-        .back-link { 
+        .error { color: var(--danger); }
+        .back-link {
           color: var(--primary); 
           text-decoration: none; 
           font-weight: 500;
@@ -597,7 +597,7 @@ export default function GalleryPage() {
         }
         .edit-button {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 8px 16px;
           border-radius: 8px;
@@ -617,10 +617,11 @@ export default function GalleryPage() {
         }
 
 
-        .title { 
-          font-size: 28px; 
-          font-weight: 700; 
-          margin: 12px 0 8px; 
+        .title {
+          font-size: 28px;
+          font-family: var(--serif);
+          font-weight: 600;
+          margin: 12px 0 8px;
           color: var(--text);
         }
         .subtitle { 
@@ -632,32 +633,32 @@ export default function GalleryPage() {
           grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
           gap: 20px; 
         }
-        .album-card { 
-          background: var(--surface); 
+        :global(.album-card) {
+          background: var(--surface);
           overflow: hidden; 
           box-shadow: 0 2px 8px color-mix(in srgb, var(--text), transparent 92%);
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           cursor: pointer;
           position: relative;
         }
-        .album-card::before {
+        :global(.album-card::before) {
           content: '';
           position: absolute;
           top: 0;
           left: 0;
           right: 0;
           bottom: 0;
-          background: linear-gradient(135deg, color-mix(in srgb, var(--primary), transparent 95%) 0%, transparent 50%);
+          background: color-mix(in srgb, var(--primary), transparent 94%);
           opacity: 0;
           transition: opacity 0.3s ease;
           pointer-events: none;
         }
-        .album-card:hover { 
-          transform: translateY(-4px); 
+        :global(.album-card:hover) {
+          transform: translateY(-4px);
           box-shadow: 0 8px 25px color-mix(in srgb, var(--text), transparent 85%);
           border-color: color-mix(in srgb, var(--primary), transparent 60%);
         }
-        .album-card:hover::before {
+        :global(.album-card:hover::before) {
           opacity: 1;
         }
         .album-cover { 
@@ -665,9 +666,9 @@ export default function GalleryPage() {
           overflow: hidden; 
           background: var(--border);
           position: relative;
-          border-radius: 15px 15px 0 0;
+          border-radius: 10px 10px 0 0;
         }
-        .album-cover img { 
+        .album-cover img {
           width: 100%; 
           height: 100%; 
           object-fit: cover; 
@@ -686,8 +687,8 @@ export default function GalleryPage() {
           border-radius: 8px;
           border: 1px solid var(--border);
         }
-        .album-card:hover .album-cover img { 
-          transform: scale(1.05); 
+        :global(.album-card:hover .album-cover img) {
+          transform: scale(1.05);
         }
         .album-info { 
           padding: 16px;
@@ -759,7 +760,7 @@ export default function GalleryPage() {
         }
         .submit-button {
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           border: none;
           padding: 10px 20px;
           border-radius: 8px;
@@ -799,7 +800,7 @@ export default function GalleryPage() {
           margin-bottom: 24px;
           padding: 18px 20px;
           border: 1px solid color-mix(in srgb, var(--primary), transparent 75%);
-          border-radius: 14px;
+          border-radius: 10px;
           background: color-mix(in srgb, var(--primary), transparent 94%);
         }
         .summary-header { margin-bottom: 14px; }
@@ -831,7 +832,7 @@ export default function GalleryPage() {
           padding: 2px 8px;
           border-radius: 999px;
           background: var(--primary);
-          color: white;
+          color: var(--accent-fg);
           letter-spacing: 0.3px;
         }
         .summary-desc {
@@ -845,7 +846,7 @@ export default function GalleryPage() {
           color: var(--text-secondary);
           padding: 6px 0 0;
         }
-        .summary-error { color: #ef4444; }
+        .summary-error { color: var(--danger); }
         .summary-actions {
           display: flex;
           flex-wrap: wrap;
@@ -856,7 +857,7 @@ export default function GalleryPage() {
           align-items: center;
           gap: 8px;
           padding: 8px 14px;
-          border-radius: 10px;
+          border-radius: 8px;
           font-size: 14px;
           line-height: 1;
           transition: all 0.18s ease;
@@ -866,21 +867,21 @@ export default function GalleryPage() {
         }
         :global(.summary-action.pending) {
           background: var(--primary);
-          color: #fff;
+          color: var(--accent-fg);
           border-color: var(--primary);
           box-shadow: 0 2px 6px color-mix(in srgb, var(--primary), transparent 75%);
         }
         :global(.summary-action.pending:hover) {
           background: color-mix(in srgb, var(--primary), black 10%);
-          color: #fff;
+          color: var(--accent-fg);
           transform: translateY(-1px);
           box-shadow: 0 4px 12px color-mix(in srgb, var(--primary), transparent 60%);
         }
         :global(.summary-action.pending .action-state) {
-          color: rgba(255, 255, 255, 0.85);
+          color: color-mix(in srgb, var(--accent-fg), transparent 15%);
         }
         :global(.summary-action.pending .action-arrow) {
-          color: rgba(255, 255, 255, 0.9);
+          color: color-mix(in srgb, var(--accent-fg), transparent 10%);
         }
         :global(.summary-action.filled) {
           background: var(--surface);
