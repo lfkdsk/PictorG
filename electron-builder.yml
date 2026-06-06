@@ -108,6 +108,14 @@ files:
 asarUnpack:
   - "**/node_modules/sharp/**/*"
   - "**/node_modules/@img/**/*"
+  # sharp's pure-JS runtime deps. sharp's lib/ lives in app.asar.unpacked
+  # (next to its .node), so its require('detect-libc')/require('semver')
+  # resolve in the UNPACKED tree — if these stay packed inside app.asar,
+  # sharp throws "Cannot find module 'detect-libc'" the first time it runs
+  # (e.g. generating a thumbnail). Keep in sync with `sharp`'s deps
+  # (currently: detect-libc, semver).
+  - "**/node_modules/detect-libc/**/*"
+  - "**/node_modules/semver/**/*"
 
 # Anything copied into Contents/Resources/ outside the asar. The Next
 # standalone bundle goes here so the forked server process can require
