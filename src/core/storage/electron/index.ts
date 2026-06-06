@@ -23,6 +23,4 @@ export type {
   CloneProgress,
   CloneStage,
   InFlightClone,
-  MigrateDirection,
-  MigrateProgress,
 } from './galleryTypes';

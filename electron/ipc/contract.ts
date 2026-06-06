@@ -16,8 +16,6 @@ import type {
   CloneProgress,
   InFlightClone,
   LocalGallery,
-  MigrateDirection,
-  MigrateProgress,
 } from '../../src/core/storage/electron/galleryTypes';
 
 export const CHANNELS = {
@@ -72,10 +70,6 @@ export const CHANNELS = {
     refreshStatus: 'gallery:refresh-status',
     cloneProgress: 'gallery:clone-progress',
     undoLastCommit: 'gallery:undo-last-commit',
-    migrate: 'gallery:migrate',
-    discover: 'gallery:discover',
-    migrateProgress: 'gallery:migrate-progress',
-    iCloudRoot: 'gallery:icloud-root',
     // Main → renderer broadcast: a gallery's git state changed in a
     // way that probably affects ahead/behind/dirty. Fired after every
     // mutation handler in storage.ts (write/delete) and after pull /
@@ -114,8 +108,6 @@ export type GalleryCloneArgs = [
     defaultBranch?: string;
   },
 ];
-
-export type GalleryMigrateArgs = [id: string, direction: MigrateDirection];
 
 // Wire format for FileContent. The renderer-side adapter rehydrates this into
 // a FileContent (with `text()` / `base64()` helpers) — those methods can't
@@ -210,11 +202,7 @@ export type GalleryChangedEvent = {
     | 'delete-dir'
     | 'pull'
     | 'push'
-    | 'undo'
-    // Background iCloud discovery added new galleries to the manifest
-    // after the window already loaded. Carries no galleryId/repoPath —
-    // it's a bulk manifest change, so list views refetch wholesale.
-    | 'discover';
+    | 'undo';
 };
 
 // Returned by gallery.undoLastCommit. `reverted` is the subject line of
@@ -361,10 +349,6 @@ export interface PicgBridge {
     refreshStatus(id: string): Promise<GalleryStatus>;
     undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
-    migrate(...args: GalleryMigrateArgs): Promise<LocalGallery>;
-    discover(): Promise<LocalGallery[]>;
-    iCloudRoot(): Promise<string>;
-    onMigrateProgress(handler: (event: MigrateProgress) => void): () => void;
     // Subscribe to git-state-change broadcasts. See CHANNELS.gallery.changed.
     onChanged(handler: (event: GalleryChangedEvent) => void): () => void;
   };
