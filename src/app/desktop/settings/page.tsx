@@ -102,8 +102,10 @@ export default function DesktopSettingsPage() {
                   <div className="row-title">Lossless mode</div>
                   <div className="row-desc">
                     Pixel-perfect WebP output — no quality loss, no resize cap.
-                    Files are 5–10× larger than the default lossy mode but
-                    typically still smaller than the source. JPEG output is
+                    Files are 5–10× larger than the default lossy mode and are
+                    often larger than an already-compressed JPEG/HEIC source.
+                    When adding photos you can compare each result and keep the
+                    original if the lossless encode is bigger. JPEG output is
                     disabled while this is on.
                   </div>
                 </div>

@@ -4,9 +4,13 @@ export interface CompressionSettings {
   outputFormat: 'webp' | 'jpeg';
   // When true, encode WebP in lossless mode (every pixel preserved,
   // no resize cap applied). Output is ~3–10× larger than lossy WebP
-  // but still smaller than the original HEIC/JPEG and pixel-perfect
-  // for archival use. Only meaningful when enableWebP=true and
-  // outputFormat='webp' — JPEG has no lossless mode.
+  // and is frequently LARGER than an already-compressed JPEG/HEIC
+  // source — re-encoding a lossy original to preserve every pixel
+  // (artefacts and all) is inherently expensive, so "lossless" does
+  // not mean "smaller". Pixel-perfect, for archival use. The add-photos
+  // step shows the per-photo size delta and lets you keep the original
+  // when the lossless encode comes out bigger. Only meaningful when
+  // enableWebP=true and outputFormat='webp' — JPEG has no lossless mode.
   lossless: boolean;
   // Encoder quality (0–100). Applied to both WebP-lossy and JPEG.
   // Ignored when lossless=true. Sharp + squoosh both default to ~75
