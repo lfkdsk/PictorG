@@ -1,9 +1,22 @@
 # Builds the macOS PicG.app and publishes the .dmg + auto-update
 # manifest (latest-mac.yml) to a GitHub Release.
 #
-# Trigger: pushing a tag like `v0.2.0`. We deliberately key off tags
-# rather than every push to main so dev branches don't burn macOS
-# runner minutes (those are 10x billed compared to ubuntu).
+# Two ways to cut a release:
+#
+#   1. Push a tag like `v0.2.0` by hand → builds + publishes that tag.
+#   2. Run this workflow manually with `bump` = patch/minor/major. The
+#      `tag` job auto-increments package.json (npm version) from the
+#      CURRENT version, commits "chore(release): vX", pushes the new
+#      tag, and the `build-mac` job then builds + publishes it — all in
+#      one run. (A tag pushed by GITHUB_TOKEN can't re-trigger another
+#      workflow, so we deliberately keep both steps in this one run
+#      rather than relying on the tag-push trigger above.)
+#
+# Running manually with `bump` = none just produces a .dmg artifact
+# without publishing or tagging — handy for verifying CI changes.
+#
+# We key off tags rather than every push to main so dev branches don't
+# burn macOS runner minutes (those are 10x billed compared to ubuntu).
 #
 # Requires no secrets for the unsigned build (current default). Once
 # you have an Apple Developer ID Application cert:
@@ -20,19 +33,70 @@ on:
   push:
     tags:
       - "v*"
-  # Manual run for testing without cutting a tag. Produces an artifact
-  # but doesn't publish — handy for verifying CI changes.
+  # Manual run. Pick a `bump` to cut a new auto-incremented tag and
+  # publish; leave it `none` to just build an artifact for testing.
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (cuts a tag + publishes). 'none' = build artifact only."
+        type: choice
+        default: none
+        options:
+          - none
+          - patch
+          - minor
+          - major
 
 permissions:
-  contents: write  # needed to upload to the Release
+  contents: write # needed to push the release commit/tag and upload to the Release
 
 jobs:
+  # Auto-increment the version and cut a tag. Only runs on a manual
+  # dispatch that asked for a bump; skipped for tag pushes and for
+  # plain (bump=none) dispatches.
+  tag:
+    if: github.event_name == 'workflow_dispatch' && inputs.bump != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version + cut tag
+        id: bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # npm version bumps package.json + package-lock.json from the
+          # current version, commits, and creates an annotated v<x> tag.
+          # It prints the new "vX.Y.Z" to stdout.
+          new_tag=$(npm version "${{ inputs.bump }}" -m "chore(release): %s")
+          echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
+          echo "Cut $new_tag"
+          # --follow-tags pushes the bump commit AND the new tag together.
+          git push origin "HEAD:${{ github.ref_name }}" --follow-tags
+
   build-mac:
+    needs: [tag]
+    # Runs for tag pushes and every manual dispatch. always() lets it
+    # proceed even when `tag` was skipped (tag push / bump=none). A
+    # failed or cancelled `tag` job aborts the build instead.
+    if: |
+      always() &&
+      needs.tag.result != 'failure' &&
+      needs.tag.result != 'cancelled'
     runs-on: macos-14
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          # When the tag job cut a new tag, build THAT commit (it carries
+          # the bumped package.json). Otherwise build whatever triggered
+          # us — an empty string falls through to github.ref.
+          ref: ${{ needs.tag.outputs.tag || github.ref }}
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
@@ -53,12 +117,13 @@ jobs:
 
       - name: Package + publish DMG
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Tagged release: publish to GitHub. electron-builder reads
-            # GH_TOKEN to upload artifacts to the matching Release.
+          if [ "${{ github.event_name }}" = "push" ] || [ -n "${{ needs.tag.outputs.tag }}" ]; then
+            # Real release (tag push, or a dispatch that bumped): publish
+            # to GitHub. electron-builder reads GH_TOKEN to upload
+            # artifacts to the matching Release.
             npx electron-builder --mac --publish always
           else
-            # Manual dispatch: just produce the .dmg, don't publish.
+            # Plain dispatch (bump=none): just produce the .dmg.
             npx electron-builder --mac --publish never
           fi
         env:
@@ -70,8 +135,8 @@ jobs:
           # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Upload artifact (manual runs only)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload artifact (unpublished manual runs only)
+        if: github.event_name == 'workflow_dispatch' && needs.tag.result == 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: PicG-mac
