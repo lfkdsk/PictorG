@@ -709,11 +709,24 @@ export function DesktopTheme() {
       }
       .picg-album-meta-dot { color: var(--text-faint); }
 
-      /* Thumbnail grid (album page) */
+      /* Thumbnail grid (cover picker) */
       .picg-thumbs {
         list-style: none; margin: 0; padding: 0;
         display: grid; gap: 8px;
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      }
+      /* Justified album grid (Apple Photos style): rows of native-ratio photos */
+      .picg-thumbs-justified {
+        list-style: none; margin: 0; padding: 0;
+        display: flex; flex-direction: column; gap: 8px;
+      }
+      .picg-thumb-row {
+        display: flex; flex-direction: row; gap: 8px;
+        justify-content: flex-start;
+      }
+      .picg-thumbs-justified .picg-thumb {
+        aspect-ratio: auto;
+        flex: 0 0 auto;
       }
       .picg-thumb {
         position: relative;

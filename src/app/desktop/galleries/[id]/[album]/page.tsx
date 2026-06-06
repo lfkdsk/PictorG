@@ -17,8 +17,13 @@ import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
 import { PushButton } from '@/components/desktop/PushButton';
+import { computeJustifiedRows, useElementWidth, DEFAULT_RATIO } from '@/lib/justifiedLayout';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp'];
+
+// Justified ("Apple Photos") grid tuning for the desktop album page.
+const THUMB_ROW_HEIGHT = 200;
+const THUMB_GAP = 8;
 
 type AlbumMeta = {
   name: string;
@@ -130,6 +135,10 @@ export default function AlbumPage() {
   const [images, setImages] = useState<DirectoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lightboxPath, setLightboxPath] = useState<string | null>(null);
+  // Aspect ratio (natural w/h) per image, measured from each thumb's <img onLoad>;
+  // feeds the justified ("Apple Photos") grid. Unmeasured images use DEFAULT_RATIO.
+  const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
+  const { ref: galleryRef, width: galleryWidth } = useElementWidth<HTMLDivElement>();
 
   const [editOpen, setEditOpen] = useState(false);
   const [editPhase, setEditPhase] = useState<'form' | 'pickCover'>('form');
@@ -149,6 +158,21 @@ export default function AlbumPage() {
   const [pushing, setPushing] = useState(false);
   const [ahead, setAhead] = useState(0);
   const [opError, setOpError] = useState<string | null>(null);
+
+  const recordRatio = (name: string, ratio: number) => {
+    setImageRatios((prev) => (prev[name] === ratio ? prev : { ...prev, [name]: ratio }));
+  };
+
+  // Partition the album's images into justified rows that fill the grid width.
+  const thumbRows = useMemo(
+    () =>
+      computeJustifiedRows(
+        (images ?? []).map((img) => ({ item: img, ratio: imageRatios[img.name] ?? DEFAULT_RATIO })),
+        galleryWidth,
+        { targetRowHeight: THUMB_ROW_HEIGHT, gap: THUMB_GAP }
+      ),
+    [images, imageRatios, galleryWidth]
+  );
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -672,23 +696,30 @@ export default function AlbumPage() {
                 </button>
               </div>
             )}
-            <ul className="picg-thumbs">
-              {images.map((img) => (
-                <Thumb
-                  key={img.path}
-                  adapter={adapter}
-                  albumUrl={albumUrl}
-                  name={img.name}
-                  galleryId={gallery.id}
-                  selectMode={selectMode}
-                  selected={selected.has(img.name)}
-                  onOpen={() => {
-                    if (selectMode) toggleSelected(img.name);
-                    else setLightboxPath(`${albumUrl}/${img.name}`);
-                  }}
-                />
+            <div className="picg-thumbs-justified" ref={galleryRef}>
+              {thumbRows.map((row, rowIndex) => (
+                <div className="picg-thumb-row" key={rowIndex} style={{ height: row.height }}>
+                  {row.tiles.map(({ item: img, width, height }) => (
+                    <Thumb
+                      key={img.path}
+                      adapter={adapter}
+                      albumUrl={albumUrl}
+                      name={img.name}
+                      galleryId={gallery.id}
+                      width={width}
+                      height={height}
+                      selectMode={selectMode}
+                      selected={selected.has(img.name)}
+                      onRatio={recordRatio}
+                      onOpen={() => {
+                        if (selectMode) toggleSelected(img.name);
+                        else setLightboxPath(`${albumUrl}/${img.name}`);
+                      }}
+                    />
+                  ))}
+                </div>
               ))}
-            </ul>
+            </div>
           </>
         )}
       </main>
@@ -975,16 +1006,22 @@ function Thumb({
   albumUrl,
   name,
   galleryId,
+  width,
+  height,
   selectMode,
   selected,
+  onRatio,
   onOpen,
 }: {
   adapter: StorageAdapter | null;
   albumUrl: string;
   name: string;
   galleryId: string;
+  width: number;
+  height: number;
   selectMode: boolean;
   selected: boolean;
+  onRatio: (name: string, ratio: number) => void;
   onOpen: () => void;
 }) {
   const { src } = useAdapterImage(adapter, `${albumUrl}/${name}`, {
@@ -992,17 +1029,28 @@ function Thumb({
     thumbWidth: 480,
   });
   return (
-    <li>
-      <button
-        className={`picg-thumb ${selectMode && selected ? 'is-selected' : ''}`}
-        onClick={onOpen}
-        aria-label={name}
-        aria-pressed={selectMode ? selected : undefined}
-      >
-        {src ? <img src={src} alt={name} loading="lazy" /> : <div className="picg-thumb-placeholder" />}
-        {selectMode && selected && <span className="picg-thumb-check">✓</span>}
-      </button>
-    </li>
+    <button
+      className={`picg-thumb ${selectMode && selected ? 'is-selected' : ''}`}
+      style={{ width, height }}
+      onClick={onOpen}
+      aria-label={name}
+      aria-pressed={selectMode ? selected : undefined}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={name}
+          loading="lazy"
+          onLoad={(e) => {
+            const { naturalWidth, naturalHeight } = e.currentTarget;
+            if (naturalWidth && naturalHeight) onRatio(name, naturalWidth / naturalHeight);
+          }}
+        />
+      ) : (
+        <div className="picg-thumb-placeholder" />
+      )}
+      {selectMode && selected && <span className="picg-thumb-check">✓</span>}
+    </button>
   );
 }
 

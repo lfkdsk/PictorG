@@ -1,9 +1,14 @@
 'use client';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import yaml from 'js-yaml';
 import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath, deleteDirectory, deleteFiles } from '@/lib/github';
+import { computeJustifiedRows, useElementWidth, DEFAULT_RATIO } from '@/lib/justifiedLayout';
+
+// Justified ("Apple Photos") grid tuning for the album page.
+const ROW_TARGET_HEIGHT = 240;
+const ROW_GAP = 12;
 
 type Config = {
   thumbnail_url: string;
@@ -40,6 +45,10 @@ export default function AlbumPage() {
   const [config, setConfig] = useState<Config | null>(null);
   const [albumInfo, setAlbumInfo] = useState<AlbumInfo | null>(null);
   const [images, setImages] = useState<ImageFile[]>([]);
+  // Aspect ratio (natural w/h) per image, measured from <img onLoad>. Drives the
+  // justified layout; unmeasured images fall back to DEFAULT_RATIO.
+  const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
+  const { ref: galleryRef, width: galleryWidth } = useElementWidth<HTMLDivElement>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
@@ -481,6 +490,24 @@ export default function AlbumPage() {
       .replace(/<p>(<pre>.*<\/pre>)<\/p>/gim, '$1');
   };
 
+  const recordRatio = (name: string, img: HTMLImageElement) => {
+    const { naturalWidth, naturalHeight } = img;
+    if (!naturalWidth || !naturalHeight) return;
+    const ratio = naturalWidth / naturalHeight;
+    setImageRatios((prev) => (prev[name] === ratio ? prev : { ...prev, [name]: ratio }));
+  };
+
+  // Partition images into justified rows that fill the gallery width.
+  const galleryRows = useMemo(
+    () =>
+      computeJustifiedRows(
+        images.map((image) => ({ item: image, ratio: imageRatios[image.name] ?? DEFAULT_RATIO })),
+        galleryWidth,
+        { targetRowHeight: ROW_TARGET_HEIGHT, gap: ROW_GAP }
+      ),
+    [images, imageRatios, galleryWidth]
+  );
+
   if (loading) {
     return (
       <div className="container">
@@ -632,63 +659,73 @@ export default function AlbumPage() {
         </div>
       </aside>
 
-      {/* 右侧图片网格 */}
+      {/* 右侧图片网格 —— justified（按原始宽高比的等高行）布局 */}
       <main className="album-content">
-        <div className="images-grid">
-          {images.map((image) => (
-            <div 
-              key={image.name} 
-              className={`image-card ${isDeleteMode ? 'delete-mode' : ''} ${selectedImages.has(image.name) ? 'selected' : ''}`}
-            >
-              {isDeleteMode && (
-                <div 
-                  className={`select-overlay ${selectedImages.has(image.name) ? 'selected' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleImageSelection(image.name);
-                  }}
-                >
-                  {selectedImages.has(image.name) && (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path 
-                        d="M20 6L9 17L4 12" 
-                        stroke="white" 
-                        strokeWidth="3" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
+        <div className="justified-gallery" ref={galleryRef}>
+          {galleryRows.map((row, rowIndex) => (
+            <div className="jg-row" key={rowIndex} style={{ height: row.height }}>
+              {row.tiles.map(({ item: image, width, height }) => {
+                const isSelected = selectedImages.has(image.name);
+                return (
+                  <div
+                    key={image.name}
+                    className={`image-card ${isDeleteMode ? 'delete-mode' : ''} ${isSelected ? 'selected' : ''}`}
+                    style={{ width, height }}
+                  >
+                    {isDeleteMode && (
+                      <div
+                        className={`select-overlay ${isSelected ? 'selected' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleImageSelection(image.name);
+                        }}
+                      >
+                        {isSelected && (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M20 6L9 17L4 12"
+                              stroke="white"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </div>
+                    )}
+                    <div
+                      className="image-wrapper"
+                      onClick={() => {
+                        if (isDeleteMode) {
+                          toggleImageSelection(image.name);
+                        } else {
+                          // 点击图片查看大图
+                          window.open(getImageUrl(image.name, false), '_blank');
+                        }
+                      }}
+                    >
+                      <img
+                        src={getImageUrl(image.name, true)}
+                        alt={image.name}
+                        crossOrigin="anonymous"
+                        loading="lazy"
+                        onLoad={(e) => recordRatio(image.name, e.currentTarget)}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          // 如果缩略图失败，尝试原图
+                          if (target.src.includes('thumbnail')) {
+                            target.src = getImageUrl(image.name, false);
+                          }
+                        }}
                       />
-                    </svg>
-                  )}
-                </div>
-              )}
-              <div 
-                className="image-wrapper"
-                onClick={() => {
-                  if (isDeleteMode) {
-                    toggleImageSelection(image.name);
-                  } else {
-                    // 点击图片查看大图
-                    window.open(getImageUrl(image.name, false), '_blank');
-                  }
-                }}
-              >
-                <img
-                  src={getImageUrl(image.name, true)}
-                  alt={image.name}
-                  crossOrigin="anonymous"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    // 如果缩略图失败，尝试原图
-                    if (target.src.includes('thumbnail')) {
-                      target.src = getImageUrl(image.name, false);
-                    }
-                  }}
-                />
-              </div>
-              <div className="image-info">
-                <div className="image-name">{image.name}</div>
-                <div className="image-size">{(image.size / 1024).toFixed(1)} KB</div>
-              </div>
+                    </div>
+                    <div className="image-info">
+                      <div className="image-name">{image.name}</div>
+                      <div className="image-size">{(image.size / 1024).toFixed(1)} KB</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -1095,59 +1132,89 @@ export default function AlbumPage() {
           overflow-y: auto;
         }
         
-        .images-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-          gap: 16px;
+        .justified-gallery {
+          display: flex;
+          flex-direction: column;
+          gap: ${ROW_GAP}px;
         }
-        
+
+        .jg-row {
+          display: flex;
+          flex-direction: row;
+          gap: ${ROW_GAP}px;
+          justify-content: flex-start;
+        }
+
         .image-card {
-          background: var(--surface);
-          border-radius: 12px;
+          position: relative;
+          flex: 0 0 auto;
+          border-radius: 10px;
           overflow: hidden;
           border: 1px solid var(--border);
-          transition: all 0.3s ease;
-          position: relative;
+          background: var(--border);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
-        
+
         .image-card:hover {
           transform: translateY(-2px);
-          box-shadow: 0 8px 25px color-mix(in srgb, var(--text), transparent 85%);
+          box-shadow: 0 8px 25px color-mix(in srgb, var(--text), transparent 80%);
+          z-index: 1;
         }
-        
+
         .image-wrapper {
-          aspect-ratio: 1;
+          width: 100%;
+          height: 100%;
           overflow: hidden;
-          background: var(--border);
           cursor: pointer;
         }
-        
+
         .image-wrapper img {
           width: 100%;
           height: 100%;
           object-fit: cover;
+          display: block;
           transition: transform 0.3s ease;
         }
-        
-        .image-wrapper:hover img {
-          transform: scale(1.05);
+
+        .image-card:hover .image-wrapper img {
+          transform: scale(1.04);
         }
-        
+
+        /* Caption as a bottom hover overlay so it never breaks the row height. */
         .image-info {
-          padding: 12px;
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          padding: 18px 10px 8px;
+          background: linear-gradient(to top, rgba(0, 0, 0, 0.62), transparent);
+          opacity: 0;
+          transition: opacity 0.2s ease;
+          pointer-events: none;
         }
-        
+
+        .image-card:hover .image-info {
+          opacity: 1;
+        }
+
         .image-name {
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 500;
-          color: var(--text);
-          margin-bottom: 4px;
+          color: #fff;
+          margin-bottom: 2px;
           word-break: break-all;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
         }
-        
+
         .image-size {
-          font-size: 11px;
-          color: var(--text-secondary);
+          font-size: 10px;
+          color: rgba(255, 255, 255, 0.85);
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
         }
         
         .loading, .error {
@@ -1350,7 +1417,7 @@ export default function AlbumPage() {
           bottom: 0;
           background: color-mix(in srgb, var(--danger), transparent 90%);
           pointer-events: none;
-          border-radius: 12px;
+          border-radius: 10px;
         }
         
         .select-overlay {
