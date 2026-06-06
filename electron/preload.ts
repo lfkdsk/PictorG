@@ -11,10 +11,7 @@ import type {
   OAuthCallbackPayload,
   PicgBridge,
 } from './ipc/contract';
-import type {
-  CloneProgress,
-  MigrateProgress,
-} from '../src/core/storage/electron/galleryTypes';
+import type { CloneProgress } from '../src/core/storage/electron/galleryTypes';
 
 const bridge: PicgBridge = {
   pickGalleryDir: () => ipcRenderer.invoke(CHANNELS.pickGalleryDir),
@@ -76,14 +73,6 @@ const bridge: PicgBridge = {
       const listener = (_e: unknown, evt: CloneProgress) => handler(evt);
       ipcRenderer.on(CHANNELS.gallery.cloneProgress, listener);
       return () => ipcRenderer.off(CHANNELS.gallery.cloneProgress, listener);
-    },
-    migrate: (...args) => ipcRenderer.invoke(CHANNELS.gallery.migrate, ...args),
-    discover: () => ipcRenderer.invoke(CHANNELS.gallery.discover),
-    iCloudRoot: () => ipcRenderer.invoke(CHANNELS.gallery.iCloudRoot),
-    onMigrateProgress: (handler: (event: MigrateProgress) => void) => {
-      const listener = (_e: unknown, evt: MigrateProgress) => handler(evt);
-      ipcRenderer.on(CHANNELS.gallery.migrateProgress, listener);
-      return () => ipcRenderer.off(CHANNELS.gallery.migrateProgress, listener);
     },
     onChanged: (handler: (event: GalleryChangedEvent) => void) => {
       const listener = (_e: unknown, evt: GalleryChangedEvent) => handler(evt);

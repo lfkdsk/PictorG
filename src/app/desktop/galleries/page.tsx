@@ -12,11 +12,7 @@ import {
   type PicgBridge,
   type Repo,
 } from '@/core/storage';
-import type {
-  InFlightClone,
-  MigrateDirection,
-  MigrateProgress,
-} from '@/core/storage';
+import type { InFlightClone } from '@/core/storage';
 import { getGitHubToken } from '@/lib/github';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 
@@ -76,13 +72,6 @@ export default function GalleriesPage() {
       { fullName: string; htmlUrl?: string; progress?: CloneProgress; error?: string }
     >
   >({});
-  // In-flight migrations keyed by galleryId. We render the card's
-  // action row as a progress bar + phase label while present, and
-  // restore the normal Sync / Move / Remove row once the entry is
-  // cleared (on success or after the user dismisses an error).
-  const [migrating, setMigrating] = useState<
-    Record<string, { direction: MigrateDirection; progress?: MigrateProgress; error?: string }>
-  >({});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [repos, setRepos] = useState<Repo[] | null>(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -133,19 +122,6 @@ export default function GalleriesPage() {
       });
   }, [bridge]);
 
-  // Background iCloud discovery in main can add galleries to the manifest
-  // after this page already ran its initial list(). It broadcasts
-  // gallery.changed with cause 'discover'; refetch so those galleries
-  // appear without a manual reload.
-  useEffect(() => {
-    if (!bridge) return;
-    const unsub = bridge.gallery.onChanged((evt) => {
-      if (evt.cause !== 'discover') return;
-      bridge.gallery.list().then(setGalleries).catch(() => {});
-    });
-    return unsub;
-  }, [bridge]);
-
   useEffect(() => {
     if (!bridge) return;
     const unsub = bridge.gallery.onCloneProgress((evt) => {
@@ -172,34 +148,6 @@ export default function GalleriesPage() {
             progress: evt,
           },
         };
-      });
-    });
-    return unsub;
-  }, [bridge]);
-
-  useEffect(() => {
-    if (!bridge) return;
-    const unsub = bridge.gallery.onMigrateProgress((evt) => {
-      // Migration is now triggered from the gallery detail page, but we
-      // still listen here so a user navigating back mid-flight can see
-      // progress on the card. On terminal phases, refetch the manifest
-      // so the storage badge / size flip to the post-migration state,
-      // and clear the in-flight entry so the card stops showing "100%
-      // moving to iCloud" indefinitely.
-      if (evt.phase === 'done' || evt.phase === 'error') {
-        bridge.gallery
-          .list()
-          .then((fresh) => setGalleries(fresh))
-          .catch(() => {});
-        setMigrating((prev) => {
-          const { [evt.galleryId]: _removed, ...rest } = prev;
-          return rest;
-        });
-        return;
-      }
-      setMigrating((prev) => {
-        const entry = prev[evt.galleryId] ?? { direction: evt.direction };
-        return { ...prev, [evt.galleryId]: { ...entry, progress: evt } };
       });
     });
     return unsub;
@@ -305,47 +253,6 @@ export default function GalleriesPage() {
     } catch (err) {
       setError(`Remove failed: ${err instanceof Error ? err.message : err}`);
     }
-  }
-
-  async function handleMigrate(id: string, direction: MigrateDirection) {
-    if (!bridge) return;
-    const isToICloud = direction === 'to-icloud';
-    const confirmText = isToICloud
-      ? 'Move this gallery into your iCloud Drive? It will sync to your other Macs automatically.'
-      : 'Move this gallery out of iCloud back to local-only storage on this Mac?';
-    if (!confirm(confirmText)) return;
-
-    setMigrating((prev) => ({ ...prev, [id]: { direction } }));
-    try {
-      const updated = await bridge.gallery.migrate(id, direction);
-      setGalleries((prev) => prev.map((g) => (g.id === id ? updated : g)));
-      // Clear the migrating entry on success — the renderer will
-      // immediately render the post-migration state (new badge,
-      // restored Sync / Move / Remove row).
-      setMigrating((prev) => {
-        const { [id]: _removed, ...rest } = prev;
-        return rest;
-      });
-    } catch (err) {
-      // Leave the entry in place with an error; the user dismisses
-      // it explicitly so they have time to read what failed (network,
-      // disk space, destination already exists, …).
-      setMigrating((prev) => ({
-        ...prev,
-        [id]: {
-          ...prev[id],
-          direction,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      }));
-    }
-  }
-
-  function dismissMigrate(id: string) {
-    setMigrating((prev) => {
-      const { [id]: _removed, ...rest } = prev;
-      return rest;
-    });
   }
 
   function dismissError(id: string) {
@@ -475,86 +382,32 @@ export default function GalleriesPage() {
             );
           })}
 
-          {galleries.map((g) => {
-            const m = migrating[g.id];
-            const phase = m?.progress?.phase;
-            const phaseLabel = phase
-              ? phase === 'counting'
-                ? 'preparing'
-                : phase === 'copying'
-                ? 'copying files'
-                : phase === 'verifying'
-                ? 'verifying'
-                : phase === 'cleanup'
-                ? 'cleaning up'
-                : phase
-              : 'starting…';
-            const processed = m?.progress?.processed ?? 0;
-            const totalFiles = m?.progress?.total ?? 0;
-            const pct = totalFiles > 0 ? Math.min(100, (processed / totalFiles) * 100) : 0;
-            return (
-              <li key={g.id} className="card">
-                <Link href={`/desktop/galleries/${g.id}`} className="picg-card-link">
-                  <div className="card-title">{g.fullName}</div>
-                </Link>
-                <div className="card-meta">
-                  <span>{formatBytes(g.sizeBytes)}</span>
-                  <span className="dot">•</span>
-                  <span className={`storage-tag ${g.storage ?? 'internal'}`}>
-                    {g.storage === 'icloud' ? 'iCloud' : 'Internal'}
-                  </span>
-                  {g.defaultBranch && (
-                    <>
-                      <span className="dot">•</span>
-                      <span>{g.defaultBranch}</span>
-                    </>
-                  )}
-                  {g.lastSyncAt && (
-                    <>
-                      <span className="dot">•</span>
-                      <span>synced {formatRelativeTime(g.lastSyncAt)}</span>
-                    </>
-                  )}
-                </div>
-                {m ? (
-                  m.error ? (
-                    <>
-                      <div className="error-text">{m.error}</div>
-                      <div className="card-actions">
-                        <button onClick={() => dismissMigrate(g.id)} className="btn ghost small">
-                          dismiss
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="bar"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
-                      <div className="card-meta">
-                        <span>
-                          {m.direction === 'to-icloud' ? 'moving to iCloud' : 'moving to internal'}
-                        </span>
-                        <span className="dot">•</span>
-                        <span>{phaseLabel}</span>
-                        {totalFiles > 0 && (
-                          <>
-                            <span className="dot">•</span>
-                            <span>
-                              {processed.toLocaleString()}/{totalFiles.toLocaleString()} files
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  )
-                ) : (
-                  <div className="card-actions">
-                    <button onClick={() => handleSync(g.id)} className="btn ghost small">Sync</button>
-                    <button onClick={() => handleRemove(g.id)} className="btn ghost small">Remove</button>
-                  </div>
+          {galleries.map((g) => (
+            <li key={g.id} className="card">
+              <Link href={`/desktop/galleries/${g.id}`} className="picg-card-link">
+                <div className="card-title">{g.fullName}</div>
+              </Link>
+              <div className="card-meta">
+                <span>{formatBytes(g.sizeBytes)}</span>
+                {g.defaultBranch && (
+                  <>
+                    <span className="dot">•</span>
+                    <span>{g.defaultBranch}</span>
+                  </>
                 )}
-              </li>
-            );
-          })}
+                {g.lastSyncAt && (
+                  <>
+                    <span className="dot">•</span>
+                    <span>synced {formatRelativeTime(g.lastSyncAt)}</span>
+                  </>
+                )}
+              </div>
+              <div className="card-actions">
+                <button onClick={() => handleSync(g.id)} className="btn ghost small">Sync</button>
+                <button onClick={() => handleRemove(g.id)} className="btn ghost small">Remove</button>
+              </div>
+            </li>
+          ))}
 
           {!cloningEntries.length && !galleries.length && (
             <li className="empty-state">
@@ -691,9 +544,6 @@ export default function GalleriesPage() {
           text-transform: uppercase;
           color: var(--text-muted);
           display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-        }
-        .storage-tag.icloud {
-          color: var(--accent);
         }
 
         .card-actions { display: flex; gap: 8px; margin-top: 4px; }
