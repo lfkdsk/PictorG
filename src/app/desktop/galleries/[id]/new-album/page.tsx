@@ -17,6 +17,11 @@ import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
 import { makePreviewUrl } from '@/components/desktop/makePreview';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
+import {
+  CompressCompareModal,
+  type ComparePhoto,
+  sizeDelta,
+} from '@/components/desktop/CompressCompare';
 
 const README_PATH = 'README.yml';
 
@@ -41,8 +46,11 @@ type PhotoStatus = 'pending' | 'compressing' | 'ready' | 'error';
 type Photo = {
   id: string;
   original: File;
-  preview: string;       // object URL for the original (lightweight, for grid)
+  preview: string;       // 480px downsampled thumbnail — grid only
+  originalUrl: string;   // full-res object URL of the original — compare modal
   compressed?: File;     // squoosh output
+  compressedUrl?: string; // object URL for the compressed encode (compare modal)
+  useOriginal?: boolean;  // true = upload the original (compressed came out larger)
   status: PhotoStatus;
   error?: string;
 };
@@ -88,6 +96,7 @@ export default function NewAlbumPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [phase, setPhase] = useState<'form' | 'committing' | 'done'>('form');
+  const [compareIdx, setCompareIdx] = useState<number | null>(null);
 
   // Compression queue: serial, one file at a time, won't restart in-flight items.
   const inFlightRef = useRef<Set<string>>(new Set());
@@ -123,9 +132,22 @@ export default function NewAlbumPage() {
 
     compress(next.original)
       .then((compressed) => {
+        // Re-encoding a lossy source losslessly (or even lossy WebP on an
+        // already-small file) can come out LARGER than the original. Default
+        // the per-photo choice to whichever file is smaller so doing nothing
+        // never inflates a photo; the user can override in the compare modal.
+        const compressedUrl = URL.createObjectURL(compressed);
         setPhotos((prev) =>
           prev.map((p) =>
-            p.id === next.id ? { ...p, compressed, status: 'ready' } : p
+            p.id === next.id
+              ? {
+                  ...p,
+                  compressed,
+                  compressedUrl,
+                  useOriginal: compressed.size >= p.original.size,
+                  status: 'ready',
+                }
+              : p
           )
         );
       })
@@ -146,7 +168,11 @@ export default function NewAlbumPage() {
   // Free object URLs on unmount.
   useEffect(() => {
     return () => {
-      photos.forEach((p) => URL.revokeObjectURL(p.preview));
+      photos.forEach((p) => {
+        URL.revokeObjectURL(p.preview);
+        if (p.originalUrl) URL.revokeObjectURL(p.originalUrl);
+        if (p.compressedUrl) URL.revokeObjectURL(p.compressedUrl);
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -163,6 +189,10 @@ export default function NewAlbumPage() {
       id: crypto.randomUUID(),
       original: file,
       preview: '',
+      // Full-res URL straight off the original File — no decode/copy here,
+      // the browser only decodes it when the compare modal shows this photo.
+      // The grid keeps using the cheap 480px `preview` thumbnail.
+      originalUrl: URL.createObjectURL(file),
       status: 'pending',
     }));
     setPhotos((prev) => [...prev, ...items]);
@@ -179,10 +209,21 @@ export default function NewAlbumPage() {
   function removePhoto(id: string) {
     setPhotos((prev) => {
       const photo = prev.find((p) => p.id === id);
-      if (photo) URL.revokeObjectURL(photo.preview);
+      if (photo) {
+        URL.revokeObjectURL(photo.preview);
+        if (photo.originalUrl) URL.revokeObjectURL(photo.originalUrl);
+        if (photo.compressedUrl) URL.revokeObjectURL(photo.compressedUrl);
+      }
       return prev.filter((p) => p.id !== id);
     });
     setCoverId((cur) => (cur === id ? null : cur));
+  }
+
+  // Flip the per-photo upload choice (compressed vs original).
+  function toggleUseOriginal(id: string) {
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, useOriginal: !p.useOriginal } : p))
+    );
   }
 
   function onDrop(e: React.DragEvent) {
@@ -207,6 +248,25 @@ export default function NewAlbumPage() {
     totalOriginal > 0 && totalCompressed > 0
       ? 1 - totalCompressed / totalOriginal
       : 0;
+
+  // Items the compare modal can step through: only photos whose compress
+  // has landed, in grid order. The modal indexes into this list, so the
+  // compare affordance resolves its position by id below.
+  const comparePhotos = useMemo<ComparePhoto[]>(
+    () =>
+      photos
+        .filter((p) => p.status === 'ready' && p.compressed)
+        .map((p) => ({
+          id: p.id,
+          name: p.original.name,
+          beforeUrl: p.originalUrl || p.preview,
+          afterUrl: p.compressedUrl ?? '',
+          originalSize: p.original.size,
+          compressedSize: p.compressed!.size,
+          useOriginal: !!p.useOriginal,
+        })),
+    [photos]
+  );
 
   function validateForm(): string | null {
     if (!form.name.trim()) return 'Album name is required.';
@@ -258,15 +318,25 @@ export default function NewAlbumPage() {
       if (!cover?.compressed) {
         throw new Error('Cover photo is missing compressed bytes.');
       }
-      const coverFilename = cover.compressed.name;
+      // The cover entry must point at the filename we actually write for the
+      // cover photo, which depends on its chosen variant (original keeps the
+      // source extension; compressed is the .webp).
+      const coverFilename = cover.useOriginal
+        ? cover.original.name
+        : cover.compressed.name;
 
-      // Build the BatchFile[] payload: every compressed photo + the new README.
+      // Build the BatchFile[] payload: every chosen photo + the new README.
       const fileEntries: BatchFile[] = [];
       for (const p of photos) {
-        if (!p.compressed) continue;
-        const bytes = new Uint8Array(await p.compressed.arrayBuffer());
+        // Upload the variant the user chose. Default (set at compress time)
+        // is whichever is smaller, so the original wins when the WebP encode
+        // came out larger. Using the original keeps its source extension.
+        const chosen = p.useOriginal ? p.original : p.compressed;
+        if (!chosen) continue;
+        const chosenName = p.useOriginal ? p.original.name : p.compressed!.name;
+        const bytes = new Uint8Array(await chosen.arrayBuffer());
         fileEntries.push({
-          path: `${form.url}/${p.compressed.name}`,
+          path: `${form.url}/${chosenName}`,
           content: bytes,
         });
       }
@@ -459,37 +529,60 @@ export default function NewAlbumPage() {
 
           {photos.length > 0 && (
             <ul className="photos">
-              {photos.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    className={`picg-thumb ${coverId === p.id ? 'is-cover' : ''}`}
-                    onClick={() => setCoverId(p.id)}
-                    aria-label={`Set ${p.original.name} as cover`}
-                    disabled={submitting}
-                  >
-                    <img src={p.preview} alt="" className="photo-preview" />
-                    {coverId === p.id && <span className="cover-badge">Cover</span>}
-                    {p.status === 'pending' && <span className="state pending">queued</span>}
-                    {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
-                    {p.status === 'error' && <span className="state errored">{p.error ?? 'error'}</span>}
-                    {p.status === 'ready' && p.compressed && (
-                      <span className="state ready">
-                        {formatBytes(p.original.size)} → {formatBytes(p.compressed.size)}
-                      </span>
+              {photos.map((p) => {
+                const ready = p.status === 'ready' && p.compressed;
+                const delta = ready
+                  ? sizeDelta(p.original.size, p.compressed!.size)
+                  : null;
+                const openCompare = () => {
+                  const i = comparePhotos.findIndex((c) => c.id === p.id);
+                  if (i >= 0) setCompareIdx(i);
+                };
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      className={`picg-thumb ${coverId === p.id ? 'is-cover' : ''}`}
+                      onClick={() => setCoverId(p.id)}
+                      aria-label={`Set ${p.original.name} as cover`}
+                      disabled={submitting}
+                    >
+                      <img src={p.preview} alt="" className="photo-preview" />
+                      {coverId === p.id && <span className="cover-badge">Cover</span>}
+                      {p.status === 'pending' && <span className="state pending">queued</span>}
+                      {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
+                      {p.status === 'error' && <span className="state errored">{p.error ?? 'error'}</span>}
+                      {ready && delta && (
+                        <span className={`state ready ${delta.bigger ? 'is-bigger' : ''}`}>
+                          {formatBytes(p.original.size)} → {formatBytes(p.compressed!.size)}
+                          {' · '}
+                          {delta.label}
+                        </span>
+                      )}
+                    </button>
+                    {ready && (
+                      <button
+                        type="button"
+                        className="compare"
+                        onClick={openCompare}
+                        disabled={submitting}
+                        aria-label={`Compare ${p.original.name}`}
+                      >
+                        ⤢
+                      </button>
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    className="remove"
-                    onClick={() => removePhoto(p.id)}
-                    disabled={submitting}
-                    aria-label="Remove photo"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
+                    <button
+                      type="button"
+                      className="remove"
+                      onClick={() => removePhoto(p.id)}
+                      disabled={submitting}
+                      aria-label="Remove photo"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -515,6 +608,16 @@ export default function NewAlbumPage() {
           )}
         </div>
       </main>
+
+      {compareIdx != null && (
+        <CompressCompareModal
+          photos={comparePhotos}
+          index={compareIdx}
+          onIndex={setCompareIdx}
+          onClose={() => setCompareIdx(null)}
+          onToggle={toggleUseOriginal}
+        />
+      )}
 
       <DesktopTheme />
       <style jsx>{`
@@ -604,6 +707,22 @@ export default function NewAlbumPage() {
         .photos li:hover .remove { opacity: 1; }
         .photos .remove:hover { background: rgba(216, 90, 70, 0.7); }
 
+        .photos .compare {
+          position: absolute; top: 6px; right: 36px;
+          width: 24px; height: 24px;
+          border-radius: 50%;
+          background: rgba(20, 18, 14, 0.85);
+          color: var(--text);
+          border: 0;
+          font-size: 12px;
+          line-height: 1;
+          cursor: zoom-in;
+          opacity: 0;
+          transition: opacity 0.15s ease;
+        }
+        .photos li:hover .compare { opacity: 1; }
+        .photos .compare:hover { background: var(--accent); color: var(--accent-text); }
+
         .state {
           position: absolute; left: 6px; bottom: 6px; right: 6px;
           padding: 4px 8px;
@@ -619,6 +738,7 @@ export default function NewAlbumPage() {
         }
         .state.compressing { color: var(--accent); }
         .state.errored { color: #f0857b; }
+        .state.ready.is-bigger { color: #f0857b; }
 
         .cover-badge {
           position: absolute; top: 6px; left: 6px;
