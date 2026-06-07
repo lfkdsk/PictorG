@@ -127,15 +127,22 @@ const CORE_CONFIG: readonly string[] = Object.freeze([
 // a missing-binary error message is worth printing only once.
 let cachedGitBinary: string | null = null;
 
+// dugite lays the git binary at bin/git on macOS/Linux but at
+// cmd/git.exe on Windows. Keep the platform-specific relative segments
+// in one place; spread into path.join() at each call site.
+const GIT_BIN_REL: readonly string[] =
+  process.platform === 'win32' ? ['cmd', 'git.exe'] : ['bin', 'git'];
+
 function resolveGitBinary(): string {
   if (cachedGitBinary) return cachedGitBinary;
 
   if (app.isPackaged) {
-    const candidate = path.join(process.resourcesPath, 'git', 'bin', 'git');
+    const candidate = path.join(process.resourcesPath, 'git', ...GIT_BIN_REL);
     if (!fs.existsSync(candidate)) {
       throw new Error(
         `Bundled git binary missing at ${candidate}. ` +
-          'This is a packaging bug — the dmg should ship git under Contents/Resources/git/.'
+          'This is a packaging bug — the installer should ship git under the app resources dir ' +
+          '(Contents/Resources/git on macOS, resources\\git on Windows).'
       );
     }
     cachedGitBinary = candidate;
@@ -143,8 +150,8 @@ function resolveGitBinary(): string {
   }
 
   const candidates = [
-    path.join(process.cwd(), 'build', 'git', process.arch, 'bin', 'git'),
-    path.join(app.getAppPath(), 'build', 'git', process.arch, 'bin', 'git'),
+    path.join(process.cwd(), 'build', 'git', process.arch, ...GIT_BIN_REL),
+    path.join(app.getAppPath(), 'build', 'git', process.arch, ...GIT_BIN_REL),
     path.join(
       app.getAppPath(),
       '..',
@@ -153,8 +160,7 @@ function resolveGitBinary(): string {
       'build',
       'git',
       process.arch,
-      'bin',
-      'git'
+      ...GIT_BIN_REL
     ),
   ];
   const candidate = candidates.find((p) => fs.existsSync(p));

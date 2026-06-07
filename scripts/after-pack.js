@@ -28,12 +28,78 @@ exports.default = async function afterPack(context) {
 
   if (platform === 'darwin') {
     stripDarwinLocales(context.appOutDir, productFilename);
-  } else if (platform === 'linux') {
+  } else if (platform === 'linux' || platform === 'win32') {
+    // Windows lays Chromium locales out exactly like Linux:
+    // `<appOutDir>/locales/<code>.pak` — so the same stripper works.
     stripLinuxLocales(context.appOutDir);
   }
-  // Windows uses the same `locales/` layout as Linux, but we don't ship
-  // Windows yet — add a stripWindowsLocales when that lands.
+
+  // electron-builder's extraResources copy ALWAYS omits node_modules
+  // (filtered or not — it treats node_modules as asar-managed), so the
+  // Next standalone server shipped without its dependency tree and the
+  // app failed to launch (require('next') → MODULE_NOT_FOUND, no window).
+  // Copy the standalone's node_modules into place ourselves.
+  copyStandaloneNodeModules(context.appOutDir, platform, productFilename);
 };
+
+// The Next standalone server.js does relative require()s into its own
+// bundled node_modules tree. electron-builder won't copy that tree via
+// extraResources, so we copy it from the freshly-built
+// .next/standalone/node_modules into the packaged standalone dir.
+function copyStandaloneNodeModules(appOutDir, platform, productFilename) {
+  const root = path.resolve(__dirname, '..');
+  const src = path.join(root, '.next', 'standalone', 'node_modules');
+  if (!fs.existsSync(src)) {
+    console.warn(
+      '[after-pack] .next/standalone/node_modules missing — did `next build` (PICG_PACKAGING=1) run? Skipping.'
+    );
+    return;
+  }
+
+  const resourcesDir =
+    platform === 'darwin'
+      ? path.join(appOutDir, `${productFilename}.app`, 'Contents', 'Resources')
+      : path.join(appOutDir, 'resources'); // win32 + linux
+
+  const destStandalone = path.join(resourcesDir, 'standalone');
+  if (!fs.existsSync(destStandalone)) {
+    console.warn(
+      `[after-pack] ${destStandalone} missing — extraResources didn't stage the standalone? Skipping.`
+    );
+    return;
+  }
+
+  const dest = path.join(destStandalone, 'node_modules');
+  fs.rmSync(dest, { recursive: true, force: true });
+  copyDir(src, dest);
+  console.log(
+    `[after-pack] copied Next standalone node_modules → ${path.relative(appOutDir, dest)}`
+  );
+}
+
+function copyDir(srcDir, destDir) {
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const s = path.join(srcDir, entry.name);
+    const d = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDir(s, d);
+    } else if (entry.isSymbolicLink()) {
+      // Preserve symlinks where possible; fall back to copying the target.
+      try {
+        fs.symlinkSync(fs.readlinkSync(s), d);
+      } catch {
+        try {
+          fs.copyFileSync(fs.realpathSync(s), d);
+        } catch {
+          /* dangling link — skip */
+        }
+      }
+    } else {
+      fs.copyFileSync(s, d);
+    }
+  }
+}
 
 function stripDarwinLocales(appOutDir, productFilename) {
   const resourcesDir = path.join(

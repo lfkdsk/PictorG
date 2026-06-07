@@ -207,10 +207,23 @@ async function createWindow(): Promise<void> {
     height: 800,
     title: 'PicG',
     show: false, // show after first paint to avoid a white flash
-    // macOS: keep the traffic lights, drop the system title bar so our
-    // Topbar can paint up to the top edge. On Windows/Linux this falls
-    // back to the platform default — cross-platform polish is a follow-up.
-    titleBarStyle: 'hiddenInset',
+    // Frameless chrome so our Topbar paints to the very top edge.
+    // macOS: 'hiddenInset' floats the traffic lights over the Topbar.
+    // Windows/Linux: 'hidden' removes the OS title bar; titleBarOverlay
+    // re-adds native min/max/close as an overlay (top-right) themed to
+    // match the app, and autoHideMenuBar drops the default File/Edit/
+    // View/Window bar — together matching the clean macOS look.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin'
+      ? {}
+      : {
+          autoHideMenuBar: true,
+          titleBarOverlay: {
+            color: '#0d0b08', // --bg
+            symbolColor: '#ebdfc6', // --text
+            height: 48,
+          },
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

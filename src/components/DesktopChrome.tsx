@@ -29,6 +29,14 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     releaseUrl: string;
   } | null>(null);
 
+  // Windows/Linux get titleBarOverlay (native controls float top-right);
+  // macOS floats the traffic lights top-left. Pad the Topbar to clear
+  // whichever applies. Resolved post-mount to avoid SSR hydration drift.
+  const [isWinChrome, setIsWinChrome] = useState(false);
+  useEffect(() => {
+    setIsWinChrome(!/mac/i.test(navigator.platform));
+  }, []);
+
   // Subscribe to updater "available" broadcasts AND replay any update
   // that was already detected before this Topbar mounted. The replay
   // matters because the broadcast fires once per check — if the user
@@ -199,7 +207,7 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
 
   return (
     <>
-    <header className="topbar">
+    <header className={isWinChrome ? 'topbar win' : 'topbar'}>
       <div className="brand">
         <span className="brand-mark">P</span>
         <span className="brand-name">Pictor</span>
@@ -274,6 +282,12 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
              they remain clickable. */
           -webkit-app-region: drag;
           user-select: none;
+        }
+        .topbar.win {
+          /* No traffic lights on Windows/Linux. titleBarOverlay puts the
+             native min/max/close at the top-right, so clear that side
+             instead of the left. */
+          padding: 10px 148px 10px 24px;
         }
         .topbar :global(button),
         .topbar :global(a),

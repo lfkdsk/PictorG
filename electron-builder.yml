@@ -94,10 +94,13 @@ files:
   # require, but only if you actually run code generated for older
   # JS targets — which our standalone bundle doesn't.
   - "!node_modules/@swc/**"
-  # Sharp ships a libvips binary per platform-arch combo. We only need
-  # the host's. The other prebuilds ride along under @img/sharp-*.
-  - "!node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**"
-  - "!node_modules/@img/sharp-{linux,linuxmusl,win32}-*/**"
+  # Sharp ships a prebuilt libvips per platform-arch combo, but npm only
+  # installs the one matching the build host — every @img/sharp-* package
+  # is os/cpu-gated in package-lock.json — so there's nothing to exclude
+  # here. Listing other platforms statically (as we used to) would wrongly
+  # strip the host's own binary on a non-macOS build: e.g. a `win32` entry
+  # deletes @img/sharp-win32-x64, the exact prebuild a Windows build needs.
+  # asarUnpack below extracts whichever single prebuild is present.
 
 # Native modules (.node binaries) that need to live on the real
 # filesystem, not inside the asar archive. dlopen() can't read .node
@@ -105,6 +108,14 @@ files:
 asarUnpack:
   - "**/node_modules/sharp/**/*"
   - "**/node_modules/@img/**/*"
+  # sharp's pure-JS runtime deps. sharp's lib/ lives in app.asar.unpacked
+  # (next to its .node), so its require('detect-libc')/require('semver')
+  # resolve in the UNPACKED tree — if these stay packed inside app.asar,
+  # sharp throws "Cannot find module 'detect-libc'" the first time it runs
+  # (e.g. generating a thumbnail). Keep in sync with `sharp`'s deps
+  # (currently: detect-libc, semver).
+  - "**/node_modules/detect-libc/**/*"
+  - "**/node_modules/semver/**/*"
 
 # Anything copied into Contents/Resources/ outside the asar. The Next
 # standalone bundle goes here so the forked server process can require
@@ -112,17 +123,13 @@ asarUnpack:
 extraResources:
   - from: .next/standalone
     to: standalone
-    filter:
-      - "**/*"
-      # Standalone bundles its own copy of @img — the platform-specific
-      # libvips bindings sharp depends on. We already ship those via
-      # asarUnpack from the top-level node_modules, so dropping them
-      # here saves ~16MB without breaking anything (the runtime fork
-      # uses the standalone copy when sharp is required from the
-      # server bundle, but sharp isn't actually called from the server
-      # — it's only called from the main process).
-      - "!node_modules/@img/**"
-      - "!node_modules/sharp/**"
+    # This stages ONLY server.js, .next/, public/, package.json.
+    # electron-builder's extraResources copy ALWAYS omits node_modules
+    # (with or without a filter — `node_modules/**/*` has no effect; it
+    # treats node_modules as asar-managed). The standalone's node_modules
+    # is therefore copied separately by scripts/after-pack.js. Without
+    # that, the forked Next server hits require('next') → MODULE_NOT_FOUND
+    # and the app shows no window.
   # Bundled portable git (dugite-native — the same build GitHub Desktop
   # ships). Lets clone/push/pull work on a clean Mac that doesn't have
   # Xcode Command Line Tools installed. `${arch}` expands per-DMG so
@@ -210,10 +217,46 @@ dmg:
       path: build/fix-gatekeeper.command
       name: Fix Gatekeeper.command
 
+# Windows-specific. NSIS installer; the arch (x64 / arm64) is selected
+# per build via the electron-builder CLI (--x64 / --arm64), not pinned
+# here — so one config serves the native x64 CI build, a native arm64
+# build on Windows-on-ARM, and a cross-built x64 installer. x64 is the
+# primary distribution target (covers virtually all Windows PCs and runs
+# emulated on ARM); arm64 is for native builds/testing on ARM hardware.
+# Multiple archs in one electron-builder run emit separate per-arch
+# installers (PicG-Setup-<ver>-x64.exe / -arm64.exe).
+#
+# NOTE: a Windows target must be BUILT ON a Windows host — electron-
+# builder can't produce an NSIS installer from macOS without wine, and the
+# bundled portable git + sharp's native module need real win32 binaries.
+# Cross-arch (e.g. x64 built on an arm64 host, like Parallels on Apple
+# Silicon) also needs the other arch's sharp prebuild, which
+# scripts/ensure-sharp-prebuild.js installs — wired into the dist:win*
+# npm scripts.
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+
+# NSIS installer behaviour. Not one-click: show the wizard so users can
+# choose an install dir. Per-user install (perMachine: false) avoids a
+# UAC elevation prompt — important while the build is unsigned, since
+# users already have to click past SmartScreen.
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: PicG
+  # Installer filename on the Release page, e.g. PicG-Setup-1.0.0-x64.exe.
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+
 # Auto-update publishing target. `electron-builder --publish always`
-# will upload the .dmg + latest-mac.yml manifest to the matching
-# GitHub Release; electron-updater in main reads the manifest off
-# api.github.com to check for new versions.
+# uploads each platform's installer + its update manifest (latest-mac.yml
+# on macOS, latest.yml on Windows) to the matching GitHub Release;
+# electron-updater in main reads the manifest off api.github.com to
+# check for new versions.
 publish:
   - provider: github
     owner: lfkdsk

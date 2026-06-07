@@ -14,11 +14,14 @@
 //                                       GIT_CONFIG_NOSYSTEM=1, but the
 //                                       file is still part of the dist)
 //   build/git/x64/...                 ← same layout, x64 binaries
+//   build/git/x64/cmd/git.exe         ← on Windows the binary is at
+//                                       cmd/git.exe (dugite's win
+//                                       layout), not bin/git
 //
 // Modes:
 //
 //   node scripts/fetch-dugite-native.js          host arch only (dev)
-//   node scripts/fetch-dugite-native.js --all    both macOS arches (packaging)
+//   node scripts/fetch-dugite-native.js --all    all arches for this OS (packaging)
 //   node scripts/fetch-dugite-native.js --force  re-download even if present
 //
 // Re-runs are idempotent: presence of `build/git/<arch>/.complete` is
@@ -44,9 +47,19 @@ const DUGITE_NATIVE_VERSION = 'v2.53.0-3';
 const ASSET_VERSION_TAG = 'v2.53.0-f49d009'; // appears in the asset filename
 const RELEASE_BASE = `https://github.com/desktop/dugite-native/releases/download/${DUGITE_NATIVE_VERSION}`;
 
-const ARCHES = {
-  arm64: `dugite-native-${ASSET_VERSION_TAG}-macOS-arm64.tar.gz`,
-  x64: `dugite-native-${ASSET_VERSION_TAG}-macOS-x64.tar.gz`,
+// Per-platform, per-arch asset filenames. dugite-native names macOS
+// assets `macOS-<arch>` and Windows assets `windows-<arch>` (NOT the
+// `win32` Node reports for process.platform). We ship macOS arm64 + x64
+// and Windows x64 + arm64.
+const ASSETS = {
+  darwin: {
+    arm64: `dugite-native-${ASSET_VERSION_TAG}-macOS-arm64.tar.gz`,
+    x64: `dugite-native-${ASSET_VERSION_TAG}-macOS-x64.tar.gz`,
+  },
+  win32: {
+    x64: `dugite-native-${ASSET_VERSION_TAG}-windows-x64.tar.gz`,
+    arm64: `dugite-native-${ASSET_VERSION_TAG}-windows-arm64.tar.gz`,
+  },
 };
 
 const ROOT = path.resolve(__dirname, '..');
@@ -56,27 +69,29 @@ const args = new Set(process.argv.slice(2));
 const wantAll = args.has('--all');
 const force = args.has('--force');
 
-// `--all` is for packaging — fetch both macOS arches because the CI
-// runner is one arch but we ship two DMGs. Default (dev) is host arch
-// only: avoids a 60 MB download a contributor doesn't need to run
-// electron:dev on their own Mac.
+const platformAssets = ASSETS[process.platform] || {};
+
+// `--all` is for packaging — fetch every arch we ship for the current
+// build OS (macOS: arm64 + x64, since one runner builds two DMGs;
+// Windows: x64 + arm64). Default (dev) is host arch only: avoids a
+// 60 MB download a contributor doesn't need to run electron:dev locally.
 const targets = wantAll
-  ? Object.keys(ARCHES)
-  : process.platform === 'darwin'
+  ? Object.keys(platformAssets)
+  : platformAssets[process.arch]
     ? [process.arch]
     : [];
 
 if (targets.length === 0) {
   console.warn(
-    `[fetch-dugite-native] platform=${process.platform} arch=${process.arch} — nothing to fetch (only macOS supported today)`
+    `[fetch-dugite-native] platform=${process.platform} arch=${process.arch} — nothing to fetch (supported: macOS arm64/x64, Windows x64/arm64)`
   );
   process.exit(0);
 }
 
 for (const arch of targets) {
-  const asset = ARCHES[arch];
+  const asset = platformAssets[arch];
   if (!asset) {
-    console.error(`[fetch-dugite-native] unknown arch: ${arch}`);
+    console.error(`[fetch-dugite-native] unknown ${process.platform} arch: ${arch}`);
     process.exit(1);
   }
   const outArchDir = path.join(OUT_DIR, arch);
@@ -124,7 +139,16 @@ function fetchAndExtract(arch, asset, outArchDir) {
   // half-extracted tree never lives at the path isolatedGit.ts will look at.
   fs.mkdirSync(tmpRoot, { recursive: true });
   console.log(`[fetch-dugite-native] ${arch}: extracting`);
-  execFileSync('tar', ['-xzf', tarPath, '-C', tmpRoot], { stdio: 'inherit' });
+  // Pass tar paths relative to OUT_DIR (via cwd), never absolute. GNU tar
+  // — the `tar` on the PATH inside Git Bash / MSYS, which CI's bash steps
+  // use — reads an absolute Windows path like `D:\...` as a remote
+  // `host:path` spec and dies with "Cannot connect to D: resolve failed".
+  // Colon-free relative names work under GNU tar, Windows' bundled bsdtar,
+  // and macOS/BSD tar alike.
+  execFileSync('tar', ['-xzf', path.basename(tarPath), '-C', path.basename(tmpRoot)], {
+    stdio: 'inherit',
+    cwd: OUT_DIR,
+  });
 
   fs.rmSync(outArchDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(outArchDir), { recursive: true });
@@ -132,9 +156,16 @@ function fetchAndExtract(arch, asset, outArchDir) {
   fs.writeFileSync(path.join(outArchDir, '.complete'), `${DUGITE_NATIVE_VERSION}\n`);
   fs.rmSync(tarPath, { force: true });
 
-  const gitPath = path.join(outArchDir, 'bin', 'git');
+  // macOS/Linux dugite trees expose the binary at bin/git; Windows
+  // trees expose it at cmd/git.exe (a shim; the real exe also lives
+  // under mingw64/bin). isolatedGit.ts resolves the matching path.
+  const gitRelPath =
+    process.platform === 'win32'
+      ? path.join('cmd', 'git.exe')
+      : path.join('bin', 'git');
+  const gitPath = path.join(outArchDir, gitRelPath);
   if (!fs.existsSync(gitPath)) {
-    console.error(`[fetch-dugite-native] ${arch}: bin/git missing after extract`);
+    console.error(`[fetch-dugite-native] ${arch}: ${gitRelPath} missing after extract`);
     process.exit(1);
   }
   console.log(`[fetch-dugite-native] ${arch}: ready at ${path.relative(ROOT, gitPath)}`);
