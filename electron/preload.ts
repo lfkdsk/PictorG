@@ -63,6 +63,7 @@ const bridge: PicgBridge = {
     clone: (...args) => ipcRenderer.invoke(CHANNELS.gallery.clone, ...args),
     cancelClone: (id) => ipcRenderer.invoke(CHANNELS.gallery.cancelClone, id),
     remove: (id) => ipcRenderer.invoke(CHANNELS.gallery.remove, id),
+    openFolder: (id) => ipcRenderer.invoke(CHANNELS.gallery.openFolder, id),
     sync: (id) => ipcRenderer.invoke(CHANNELS.gallery.sync, id),
     push: (id) => ipcRenderer.invoke(CHANNELS.gallery.push, id),
     unpushedCommits: (id) =>

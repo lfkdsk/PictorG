@@ -243,6 +243,10 @@ export type PreloadGalleryBridge = {
   // a cancellation from a real failure.
   cancelClone(id: string): Promise<void>;
   remove(id: string): Promise<void>;
+  // Reveal the gallery's on-disk folder in the OS file manager. Resolves
+  // to '' on success or the OS error string on failure (shell.openPath
+  // contract). Backed by gallery:open-folder in main.
+  openFolder(id: string): Promise<string>;
   sync(id: string): Promise<LocalGallery>;
   push(id: string): Promise<PushReceipt>;
   // Subjects of the commits sitting between origin/<branch> and

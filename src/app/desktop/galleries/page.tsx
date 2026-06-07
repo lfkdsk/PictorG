@@ -234,16 +234,6 @@ export default function GalleriesPage() {
     }
   }
 
-  async function handleSync(id: string) {
-    if (!bridge) return;
-    try {
-      const updated = await bridge.gallery.sync(id);
-      setGalleries((prev) => prev.map((g) => (g.id === id ? updated : g)));
-    } catch (err) {
-      setError(`Sync failed: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
   async function handleRemove(id: string) {
     if (!bridge) return;
     if (!confirm('Remove this gallery from the desktop app? Local files will be deleted.')) return;
@@ -252,6 +242,18 @@ export default function GalleriesPage() {
       setGalleries((prev) => prev.filter((g) => g.id !== id));
     } catch (err) {
       setError(`Remove failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  async function handleOpenFolder(id: string) {
+    if (!bridge) return;
+    try {
+      // shell.openPath resolves to '' on success, or an OS error string
+      // (e.g. the folder was deleted out from under us) on failure.
+      const err = await bridge.gallery.openFolder(id);
+      if (err) setError(`Could not open folder: ${err}`);
+    } catch (err) {
+      setError(`Could not open folder: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -403,7 +405,7 @@ export default function GalleriesPage() {
                 )}
               </div>
               <div className="card-actions">
-                <button onClick={() => handleSync(g.id)} className="btn ghost small">Sync</button>
+                <button onClick={() => handleOpenFolder(g.id)} className="btn ghost small">Open folder</button>
                 <button onClick={() => handleRemove(g.id)} className="btn ghost small">Remove</button>
               </div>
             </li>

@@ -65,6 +65,7 @@ export const CHANNELS = {
     clone: 'gallery:clone',
     cancelClone: 'gallery:cancel-clone',
     remove: 'gallery:remove',
+    openFolder: 'gallery:open-folder',
     sync: 'gallery:sync',
     push: 'gallery:push',
     unpushedCommits: 'gallery:unpushed-commits',
@@ -358,6 +359,10 @@ export interface PicgBridge {
     // matches on that string to dismiss the card without an error.
     cancelClone(id: string): Promise<void>;
     remove(id: string): Promise<void>;
+    // Reveal the gallery's on-disk folder in the OS file manager
+    // (Finder / Explorer). Resolves to '' on success or the OS error
+    // message on failure — the Electron shell.openPath contract.
+    openFolder(id: string): Promise<string>;
     sync(id: string): Promise<LocalGallery>;
     push(id: string): Promise<PushReceipt>;
     unpushedCommits(id: string): Promise<UnpushedCommit[]>;
