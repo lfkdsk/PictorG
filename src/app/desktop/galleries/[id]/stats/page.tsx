@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
@@ -12,12 +12,8 @@ import {
   type StorageAdapter,
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
-import { openDeployedGalleryDb } from '@/components/desktop/galleryDb';
-import {
-  parseGalleryConfig,
-  thumbnailUrlFor,
-  type GalleryUrlConfig,
-} from '@/lib/annualSummary';
+import { useAdapterImage } from '@/components/desktop/useAdapterImage';
+import { openLocalGalleryDb } from '@/lib/localGalleryDb';
 import {
   loadGalleryStats,
   type CountRow,
@@ -34,7 +30,6 @@ export default function GalleryStatsPage() {
   const [gallery, setGallery] = useState<LocalGallery | null>(null);
   const [adapter, setAdapter] = useState<StorageAdapter | null>(null);
   const [stats, setStats] = useState<GalleryStatsSnapshot | null>(null);
-  const [cfg, setCfg] = useState<GalleryUrlConfig | null>(null);
   const [animals, setAnimals] = useState<CountRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -55,16 +50,17 @@ export default function GalleryStatsPage() {
   }, [bridge, galleryId]);
 
   useEffect(() => {
-    if (!adapter) return;
+    if (!bridge || !galleryId) return;
     let cancelled = false;
     (async () => {
       try {
-        const file = await adapter.readFile('CONFIG.yml');
-        const parsed = parseGalleryConfig(file.text());
-        const db = await openDeployedGalleryDb(adapter);
-        if (cancelled) return;
-        setCfg(parsed);
-        setStats(loadGalleryStats(db));
+        const db = await openLocalGalleryDb(bridge, galleryId);
+        try {
+          if (cancelled) return;
+          setStats(loadGalleryStats(db));
+        } finally {
+          db.close(); // reclaim the wasm Database even if a query throws
+        }
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : String(err));
@@ -74,7 +70,7 @@ export default function GalleryStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [adapter]);
+  }, [bridge, galleryId]);
 
   // Animals load independently from the sqlite path — the JSON lives in
   // the local clone, so it works even when the gallery hasn't been
@@ -132,32 +128,19 @@ export default function GalleryStatsPage() {
         <section className="hero">
           <h1>Statistics</h1>
           <p className="meta">
-            Snapshot from the last deployed build of this gallery. Photos added
-            locally but not yet pushed will appear after the next CI run.
+            Computed from your local copy of this gallery — including photos
+            added but not yet pushed.
           </p>
         </section>
 
         {loadError && (
           <div className="picg-banner">
-            {/CONFIG\.yml|url 字段/.test(loadError) ? (
-              <>
-                <code>CONFIG.yml</code> doesn&apos;t have a <code>url</code> field
-                — statistics read <code>sqlite.db</code> from the deployed site,
-                so the gallery has to be deployed at least once first.
-              </>
-            ) : /sqlite\.db|Failed to fetch/.test(loadError) ? (
-              <>
-                Could not fetch <code>sqlite.db</code> from the deployed site —
-                check your network or that the gallery has been deployed.
-              </>
-            ) : (
-              loadError
-            )}
+            Could not build the local photo index: {loadError}
           </div>
         )}
 
         {!loadError && stats == null && (
-          <div className="hint">Loading sqlite.db from deployed site…</div>
+          <div className="hint">Building local index…</div>
         )}
 
         {stats && (
@@ -193,7 +176,7 @@ export default function GalleryStatsPage() {
               <StatList title="Countries" rows={stats.countries} />
             </div>
 
-            {stats.todayInHistory.length > 0 && cfg && (
+            {stats.todayInHistory.length > 0 && (
               <section className="today">
                 <h2>On this day in history</h2>
                 <p className="section-meta">
@@ -204,10 +187,11 @@ export default function GalleryStatsPage() {
                 <ul className="thumbs">
                   {stats.todayInHistory.map((p) => (
                     <li key={p.path}>
-                      <img
-                        src={thumbnailUrlFor(cfg, p.path)}
-                        alt={p.name}
-                        loading="lazy"
+                      <TodayImg
+                        adapter={adapter}
+                        galleryId={gallery.id}
+                        path={p.path}
+                        name={p.name}
                       />
                       <div className="caption">{p.date}</div>
                     </li>
@@ -337,6 +321,38 @@ export default function GalleryStatsPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+// "On this day" thumbnail, served from the local clone via the picg://
+// protocol. Inline styles (not the parent's styled-jsx) because styled-jsx
+// scopes to the component that declares it — a child's <img> wouldn't pick
+// up `.thumbs img` from the page.
+function TodayImg({
+  adapter,
+  galleryId,
+  path,
+  name,
+}: {
+  adapter: StorageAdapter | null;
+  galleryId: string;
+  path: string;
+  name: string;
+}) {
+  const { src } = useAdapterImage(adapter, path, {
+    picgGalleryId: galleryId,
+    thumbWidth: 320,
+  });
+  const style: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  };
+  return src ? (
+    <img src={src} alt={name} loading="lazy" style={style} />
+  ) : (
+    <div style={style} />
   );
 }
 

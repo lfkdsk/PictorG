@@ -11,7 +11,10 @@ import type {
   OAuthCallbackPayload,
   PicgBridge,
 } from './ipc/contract';
-import type { CloneProgress } from '../src/core/storage/electron/galleryTypes';
+import type {
+  CloneProgress,
+  PhotoIndexProgress,
+} from '../src/core/storage/electron/galleryTypes';
 
 const bridge: PicgBridge = {
   pickGalleryDir: () => ipcRenderer.invoke(CHANNELS.pickGalleryDir),
@@ -100,6 +103,26 @@ const bridge: PicgBridge = {
       ipcRenderer.invoke(CHANNELS.storage.deleteFiles, ...args),
     deleteDirectory: (...args) =>
       ipcRenderer.invoke(CHANNELS.storage.deleteDirectory, ...args),
+  },
+
+  photoIndex: {
+    build: (galleryId) =>
+      ipcRenderer.invoke(CHANNELS.photoIndex.build, galleryId),
+    saveDb: (galleryId, bytes, fingerprint) =>
+      ipcRenderer.invoke(
+        CHANNELS.photoIndex.saveDb,
+        galleryId,
+        bytes,
+        fingerprint
+      ),
+    invalidate: (galleryId) =>
+      ipcRenderer.invoke(CHANNELS.photoIndex.invalidate, galleryId),
+    onProgress: (handler: (progress: PhotoIndexProgress) => void) => {
+      const listener = (_e: unknown, progress: PhotoIndexProgress) =>
+        handler(progress);
+      ipcRenderer.on(CHANNELS.photoIndex.progress, listener);
+      return () => ipcRenderer.off(CHANNELS.photoIndex.progress, listener);
+    },
   },
 };
 

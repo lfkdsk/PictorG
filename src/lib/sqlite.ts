@@ -5,7 +5,10 @@ const SQL_WASM_URL = `https://cdn.jsdelivr.net/npm/sql.js@${SQL_JS_VERSION}/dist
 
 let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 
-async function getSqlJs(): Promise<SqlJsStatic> {
+// Exposed so the local-index builder (localGalleryDb.ts) can construct a
+// fresh in-memory Database from extracted rows using the same lazily-loaded,
+// CDN-wasm sql.js instance the deployed-DB path already uses.
+export async function getSqlJs(): Promise<SqlJsStatic> {
   if (!sqlJsPromise) {
     sqlJsPromise = (async () => {
       const initSqlJs = (await import('sql.js')).default;

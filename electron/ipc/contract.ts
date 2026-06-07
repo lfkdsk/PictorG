@@ -16,6 +16,8 @@ import type {
   CloneProgress,
   InFlightClone,
   LocalGallery,
+  PhotoIndexProgress,
+  PhotoIndexResult,
 } from '../../src/core/storage/electron/galleryTypes';
 
 export const CHANNELS = {
@@ -95,6 +97,20 @@ export const CHANNELS = {
     deleteFile: 'storage:delete-file',
     deleteFiles: 'storage:delete-files',
     deleteDirectory: 'storage:delete-directory',
+  },
+  photoIndex: {
+    // Renderer → main: (re)build the local EXIF index for a gallery and
+    // return the rows. Long-running on first build; emits `progress`
+    // events on the requesting webContents as it extracts.
+    build: 'photo-index:build',
+    // Renderer → main: persist the renderer-built sqlite.db bytes as the
+    // on-disk artifact. Returns the absolute path written.
+    saveDb: 'photo-index:save-db',
+    // Renderer → main: drop the cached db-meta so the next build rebuilds
+    // (used when the renderer can't open the cached db).
+    invalidate: 'photo-index:invalidate',
+    // Main → renderer: extraction progress for the in-flight build.
+    progress: 'photo-index:progress',
   },
 } as const;
 
@@ -364,5 +380,20 @@ export interface PicgBridge {
     deleteFile(...args: StorageDeleteFileArgs): Promise<void>;
     deleteFiles(...args: StorageDeleteFilesArgs): Promise<void>;
     deleteDirectory(...args: StorageDeleteDirectoryArgs): Promise<void>;
+  };
+  photoIndex: {
+    // Returns either the cached on-disk sqlite.db bytes (nothing changed) or
+    // the rows to rebuild from (+ the fingerprint to echo back in saveDb).
+    build(galleryId: string): Promise<PhotoIndexResult>;
+    saveDb(
+      galleryId: string,
+      bytes: Uint8Array,
+      fingerprint: string
+    ): Promise<string>;
+    invalidate(galleryId: string): Promise<void>;
+    // Subscribe to extraction progress. Returns an unsubscribe fn — call
+    // it from a useEffect cleanup. Events carry galleryId so a subscriber
+    // can ignore builds for other galleries.
+    onProgress(handler: (progress: PhotoIndexProgress) => void): () => void;
   };
 }

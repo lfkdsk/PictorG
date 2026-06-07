@@ -34,6 +34,7 @@ import { registerAuthIpcHandlers } from './ipc/auth';
 import { registerCompressIpcHandlers } from './ipc/compress';
 import { getRegistry, registerGalleryIpcHandlers } from './ipc/gallery';
 import { registerStorageIpcHandlers } from './ipc/storage';
+import { registerPhotoIndexIpcHandlers } from './ipc/photoIndex';
 
 // `picg://oauth/#oauth_token=...` is the redirect URL the lfkdsk-auth
 // Worker hands back after a desktop sign-in. macOS routes that to this
@@ -344,6 +345,14 @@ function mimeForPath(p: string): string {
       return 'image/svg+xml';
     case 'bmp':
       return 'image/bmp';
+    // Live Photo motion + any sidecar video. Serving the right MIME lets
+    // <video> in the renderer decode them (HEVC .mov plays via the OS
+    // decoder on macOS).
+    case 'mov':
+      return 'video/quicktime';
+    case 'mp4':
+    case 'm4v':
+      return 'video/mp4';
     default:
       return 'application/octet-stream';
   }
@@ -439,6 +448,7 @@ app.whenReady().then(async () => {
   registerStorageIpcHandlers();
   registerCompressIpcHandlers();
   registerAuthIpcHandlers();
+  registerPhotoIndexIpcHandlers();
   initAutoUpdater();
 
   // OAuth IPC is small enough to inline rather than its own module.

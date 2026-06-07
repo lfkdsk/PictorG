@@ -12,11 +12,9 @@ import {
   type StorageAdapter,
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
-import {
-  listSavedSummaryYears,
-  openDeployedGalleryDb,
-} from '@/components/desktop/galleryDb';
+import { listSavedSummaryYears } from '@/components/desktop/galleryDb';
 import { listYearsWithPhotos } from '@/lib/annualSummary';
+import { openLocalGalleryDb } from '@/lib/localGalleryDb';
 
 type YearEntry = {
   year: string;
@@ -50,16 +48,21 @@ export default function AnnualSummaryYearsPage() {
   }, [bridge, galleryId]);
 
   useEffect(() => {
-    if (!adapter) return;
+    if (!adapter || !bridge || !galleryId) return;
     let cancelled = false;
     (async () => {
       try {
         const [db, savedYears] = await Promise.all([
-          openDeployedGalleryDb(adapter),
+          openLocalGalleryDb(bridge, galleryId),
           listSavedSummaryYears(adapter),
         ]);
-        if (cancelled) return;
-        const photoYears = listYearsWithPhotos(db);
+        let photoYears: string[] = [];
+        try {
+          if (cancelled) return;
+          photoYears = listYearsWithPhotos(db);
+        } finally {
+          db.close(); // reclaim the wasm Database even if the query throws
+        }
         const savedSet = new Set(savedYears);
         const all = Array.from(new Set([...photoYears, ...savedYears])).sort(
           (a, b) => Number(b) - Number(a)
@@ -74,7 +77,7 @@ export default function AnnualSummaryYearsPage() {
     return () => {
       cancelled = true;
     };
-  }, [adapter]);
+  }, [adapter, bridge, galleryId]);
 
   if (!bridge) {
     return (
@@ -120,25 +123,12 @@ export default function AnnualSummaryYearsPage() {
 
         {loadError && (
           <div className="picg-banner">
-            {/CONFIG\.yml|url 字段/.test(loadError) ? (
-              <>
-                <code>CONFIG.yml</code> doesn&apos;t have a <code>url</code> field
-                — annual summary reads <code>sqlite.db</code> from the deployed
-                site, so the gallery has to be deployed at least once first.
-              </>
-            ) : /sqlite\.db|Failed to fetch/.test(loadError) ? (
-              <>
-                Could not fetch <code>sqlite.db</code> from the deployed site
-                — check your network or that the gallery has been deployed.
-              </>
-            ) : (
-              loadError
-            )}
+            Could not build the local photo index: {loadError}
           </div>
         )}
 
         {!loadError && entries == null && (
-          <div className="hint">Loading sqlite.db from deployed site…</div>
+          <div className="hint">Building local index…</div>
         )}
 
         {entries && entries.length === 0 && !loadError && (

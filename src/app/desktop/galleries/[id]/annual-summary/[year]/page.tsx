@@ -16,9 +16,9 @@ import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
 import {
   loadAnnualSummary,
-  openDeployedGalleryDb,
   saveAnnualSummary,
 } from '@/components/desktop/galleryDb';
+import { openLocalGalleryDb } from '@/lib/localGalleryDb';
 import {
   listMonthlyCandidates,
   type AnnualSummary,
@@ -84,7 +84,7 @@ export default function AnnualSummaryPicker() {
   }, [bridge, galleryId]);
 
   useEffect(() => {
-    if (!adapter || !year || !galleryId) return;
+    if (!adapter || !bridge || !year || !galleryId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -101,9 +101,14 @@ export default function AnnualSummaryPicker() {
           /* ignore */
         }
 
-        const db = await openDeployedGalleryDb(adapter);
-        if (cancelled) return;
-        const cands = listMonthlyCandidates(db, year);
+        const db = await openLocalGalleryDb(bridge, galleryId);
+        let cands: MonthlyCandidates = {};
+        try {
+          if (cancelled) return;
+          cands = listMonthlyCandidates(db, year);
+        } finally {
+          db.close(); // reclaim the wasm Database even if the query throws
+        }
         const presentMonths = ALL_MONTHS.filter(
           (m) => (cands[m]?.length ?? 0) > 0
         );
@@ -127,7 +132,7 @@ export default function AnnualSummaryPicker() {
     return () => {
       cancelled = true;
     };
-  }, [adapter, year, galleryId]);
+  }, [adapter, bridge, year, galleryId]);
 
   // Persist draft on every change so a refresh doesn't lose user picks.
   useEffect(() => {
@@ -229,7 +234,7 @@ export default function AnnualSummaryPicker() {
           <h1>{year} 年度精选</h1>
           <p className="meta">
             {candidates == null
-              ? 'Loading sqlite.db from deployed site…'
+              ? 'Building local index…'
               : months.length === 0
                 ? 'No photos with EXIF date in this year.'
                 : `${completedCount} / ${months.length} months filled`}

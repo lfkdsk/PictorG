@@ -8,6 +8,7 @@ export type {
   PreloadGalleryBridge,
   PreloadCompressBridge,
   PreloadAuthBridge,
+  PreloadPhotoIndexBridge,
   PreloadBridgeAdapterConfig,
   PicgBridge,
   GalleryStatus,
@@ -23,4 +24,10 @@ export type {
   CloneProgress,
   CloneStage,
   InFlightClone,
+  PhotoIndexData,
+  PhotoIndexAlbum,
+  PhotoIndexPhoto,
+  PhotoIndexExif,
+  PhotoIndexProgress,
+  PhotoIndexResult,
 } from './galleryTypes';

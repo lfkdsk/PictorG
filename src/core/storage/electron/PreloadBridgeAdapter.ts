@@ -13,6 +13,8 @@ import type {
   CloneProgress,
   InFlightClone,
   LocalGallery,
+  PhotoIndexProgress,
+  PhotoIndexResult,
 } from './galleryTypes';
 
 // Renderer-side adapter that forwards every StorageAdapter call to the
@@ -321,6 +323,28 @@ export type PreloadUpdaterBridge = {
   >;
 };
 
+// Bridge surface for the desktop-local photo index. Implemented in main
+// (electron/photoIndex/) and exposed through preload.ts. The shape MUST
+// stay in sync with electron/ipc/contract.ts.
+export type PreloadPhotoIndexBridge = {
+  // Returns the cached on-disk sqlite.db bytes when nothing changed, else the
+  // rows to rebuild from (+ the fingerprint to echo back via saveDb). First
+  // build of a large gallery is slow; subscribe via onProgress for a bar.
+  build(galleryId: string): Promise<PhotoIndexResult>;
+  // Persist the renderer-built sqlite.db bytes to disk under the given
+  // fingerprint; resolves to the absolute path written.
+  saveDb(
+    galleryId: string,
+    bytes: Uint8Array,
+    fingerprint: string
+  ): Promise<string>;
+  // Drop the cached db-meta so the next build rebuilds — called when the
+  // renderer can't open the cached db bytes.
+  invalidate(galleryId: string): Promise<void>;
+  // Subscribe to extraction progress. Returns an unsubscribe fn.
+  onProgress(handler: (progress: PhotoIndexProgress) => void): () => void;
+};
+
 export type PicgBridge = {
   pickGalleryDir(): Promise<string | null>;
   auth: PreloadAuthBridge;
@@ -328,6 +352,7 @@ export type PicgBridge = {
   updater?: PreloadUpdaterBridge;
   gallery: PreloadGalleryBridge;
   storage: PreloadStorageBridge;
+  photoIndex: PreloadPhotoIndexBridge;
 };
 
 // Detect whether the renderer is running inside Electron (has the preload
