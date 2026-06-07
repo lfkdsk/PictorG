@@ -38,6 +38,7 @@ export type {
   PreloadStorageBridge,
   PreloadGalleryBridge,
   PreloadBridgeAdapterConfig,
+  PreloadPhotoIndexBridge,
   PicgBridge,
   PreloadCompressBridge,
   PreloadAuthBridge,
@@ -51,4 +52,10 @@ export type {
   InFlightClone,
   GalleryChangedEvent,
   PushReceipt,
+  PhotoIndexData,
+  PhotoIndexAlbum,
+  PhotoIndexPhoto,
+  PhotoIndexExif,
+  PhotoIndexProgress,
+  PhotoIndexResult,
 } from './electron';

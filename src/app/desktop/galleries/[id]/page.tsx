@@ -425,6 +425,22 @@ export default function GalleryDetailPage() {
                         Edit gallery
                       </button>
                       <Link
+                        href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/timeline` as any}
+                        className="picg-menu-item"
+                        onClick={() => setMoreMenuOpen(false)}
+                        role="menuitem"
+                      >
+                        Timeline
+                      </Link>
+                      <Link
+                        href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/map` as any}
+                        className="picg-menu-item"
+                        onClick={() => setMoreMenuOpen(false)}
+                        role="menuitem"
+                      >
+                        Map
+                      </Link>
+                      <Link
                         href={`/desktop/galleries/${encodeURIComponent(gallery.id)}/annual-summary` as any}
                         className="picg-menu-item"
                         onClick={() => setMoreMenuOpen(false)}

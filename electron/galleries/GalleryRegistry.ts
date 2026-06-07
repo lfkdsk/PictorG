@@ -277,6 +277,15 @@ export class GalleryRegistry {
     if (!gallery) return;
 
     await fs.rm(gallery.localPath, { recursive: true, force: true }).catch(() => {});
+    // Drop the local photo-index cache (sqlite.db / db-meta / exif-cache) too,
+    // so it doesn't orphan under <userData>/photo-index after the gallery is
+    // gone. `id` is this gallery's own manifest id (owner__repo) — no traversal.
+    await fs
+      .rm(path.join(app.getPath('userData'), 'photo-index', id), {
+        recursive: true,
+        force: true,
+      })
+      .catch(() => {});
     await this.writeManifest(items.filter((g) => g.id !== id));
   }
 
