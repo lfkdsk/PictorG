@@ -4,7 +4,7 @@
 // long-running call; it pushes progress events back to the requesting
 // webContents on CHANNELS.gallery.cloneProgress.
 
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 
 import { GalleryRegistry } from '../galleries/GalleryRegistry';
 import { CHANNELS } from './contract';
@@ -51,6 +51,16 @@ export function registerGalleryIpcHandlers(): void {
 
   ipcMain.handle(CHANNELS.gallery.remove, async (_e, id: string) => {
     await getRegistry().remove(id);
+  });
+
+  // Open the gallery's on-disk folder in the OS file manager. Resolve the
+  // path through the registry (never trust a renderer-supplied path) so
+  // only a real managed gallery can be opened. shell.openPath returns ''
+  // on success or an error string on failure; we pass that through.
+  ipcMain.handle(CHANNELS.gallery.openFolder, async (_e, id: string) => {
+    const gallery = await getRegistry().resolve(id);
+    if (!gallery) throw new Error(`Gallery not found: ${id}`);
+    return shell.openPath(gallery.localPath);
   });
 
   ipcMain.handle(CHANNELS.gallery.sync, async (_e, id: string) => {
