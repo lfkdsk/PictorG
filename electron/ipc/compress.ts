@@ -224,7 +224,11 @@ async function encodeUltraHdrJpeg(
     const img = hdrify.readExr(
       new Uint8Array(exr.buffer, exr.byteOffset, exr.byteLength)
     );
-    const encoded = hdrify.encodeGainMap(img);
+    // Reinhard tone-mapping for the SDR base. hdrify's encodeGainMap defaults
+    // to ACES, whose heavy shadow toe crushes dark regions (e.g. a backlit
+    // tree trunk) compared to the source. Reinhard is gentler on shadows and
+    // matches hdrify-cli's own default, which renders faithfully.
+    const encoded = hdrify.encodeGainMap(img, { toneMapping: 'reinhard' });
     const quality = clampInt(request.quality, 0, 100, DEFAULT_QUALITY);
     // Preserve the HEIC's EXIF (camera/lens/date/GPS/exposure). hdrify embeds
     // it BEFORE computing the MPF byte offsets, so the gain map stays valid —
