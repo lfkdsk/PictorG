@@ -13,9 +13,9 @@
 // deliberately drop. We mirror that flow here so desktop and web
 // produce equivalent metadata.
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { execFile } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
@@ -25,7 +25,12 @@ import sharp from 'sharp';
 import { dump, insert, load, TagNumbers } from '@lfkdsk/exif-library';
 
 import { CHANNELS } from './contract';
-import type { CompressImageRequest, CompressImageResult } from './contract';
+import type {
+  CompressImageRequest,
+  CompressImageResult,
+  CompressPreviewRequest,
+  CompressPreviewResult,
+} from './contract';
 
 const execFileAsync = promisify(execFile);
 
@@ -76,6 +81,22 @@ function isHeicLike(buf: Buffer): boolean {
   return HEIC_BRANDS.has(buf.toString('ascii', 8, 12));
 }
 
+// HEIC decode depends on macOS `sips` (and, for HDR, Core Image) — neither
+// exists on Windows/Linux, and sharp's bundled libheif can't decode Apple's
+// HEVC-encoded HEIC. Throw a clear, actionable error rather than letting
+// execFile blow up later with a cryptic ENOENT. compressImage lets this
+// surface to the user (shown per-photo in the add/new-album/shrink UIs);
+// previewImage's caller catches it and falls back to a placeholder.
+function assertHeicSupported(): void {
+  if (process.platform !== 'darwin') {
+    throw new Error(
+      'HEIC images can only be processed on macOS — PicG decodes them with the ' +
+        'built-in `sips` tool, which is unavailable on Windows and Linux. ' +
+        'Convert these photos to JPEG or PNG first, then import them.'
+    );
+  }
+}
+
 // Run `sips` (macOS ImageIO CLI, ships with every Mac) to transcode the
 // HEIC into a JPEG buffer that sharp can decode. sips can't read stdin
 // or write stdout, so we route through a tmp file pair. Apple's
@@ -83,14 +104,143 @@ function isHeicLike(buf: Buffer): boolean {
 // we're piggybacking on — sharp's prebuilt libheif is AOM-only and
 // fails on Apple's HEVC-encoded HEIC with "Support for this
 // compression format has not been built in".
-async function decodeHeicViaSips(input: Buffer): Promise<Buffer> {
+async function decodeHeicViaSips(input: Buffer, maxEdge?: number): Promise<Buffer> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'picg-heic-'));
   const inPath = path.join(dir, 'in.heic');
   const outPath = path.join(dir, 'out.jpg');
   try {
     await fs.writeFile(inPath, input);
-    await execFileAsync('sips', ['-s', 'format', 'jpeg', inPath, '--out', outPath]);
+    const args = ['-s', 'format', 'jpeg'];
+    // -Z caps the longest edge (preserving aspect ratio) in the same
+    // decode pass. Used by the preview path so sips writes a small JPEG
+    // directly — cheaper than decoding full-res then resizing, and keeps
+    // the bytes we ship back over IPC small. Omitted by the compress
+    // path, which wants the full-resolution decode to feed sharp.
+    if (maxEdge && maxEdge > 0) args.push('-Z', String(Math.round(maxEdge)));
+    args.push(inPath, '--out', outPath);
+    await execFileAsync('sips', args);
     return await fs.readFile(outPath);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Resolve the bundled `picg-heic-exr` Core Image helper (HEIC → linear EXR,
+// the first half of the Ultra HDR JPEG pipeline). Packaged: Contents/Resources
+// (electron-builder extraResources). Dev: build/native/, compiled by
+// scripts/build-hdr-helper.js as part of `electron:build`. Cached (incl. the
+// not-found result) so we warn at most once.
+let cachedHelperPath: string | null | undefined;
+function resolveHeicExrHelper(): string | null {
+  if (cachedHelperPath !== undefined) return cachedHelperPath;
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'picg-heic-exr')]
+    : [
+        // Dev: build/native/, compiled by scripts/build-hdr-helper.js. Try
+        // app path first, then resolve relative to this compiled file
+        // (electron/dist/electron/ipc/) up to the repo root as a fallback.
+        path.join(app.getAppPath(), 'build', 'native', 'picg-heic-exr'),
+        path.join(__dirname, '..', '..', '..', '..', 'build', 'native', 'picg-heic-exr'),
+      ];
+  cachedHelperPath = candidates.find((p) => existsSync(p)) ?? null;
+  if (!cachedHelperPath) {
+    console.warn(
+      '[picg compress] picg-heic-exr helper not found; HEIC→Ultra HDR JPEG will fall back to sharp (SDR)'
+    );
+  }
+  return cachedHelperPath;
+}
+
+// Real dynamic import that survives tsc's CommonJS down-leveling. hdrify is
+// ESM-only; a plain `import('hdrify')` gets rewritten to require() under
+// `module: CommonJS` and throws ERR_REQUIRE_ESM. Routing through a Function
+// keeps it a genuine runtime dynamic import.
+const importESM = new Function('specifier', 'return import(specifier)') as (
+  specifier: string
+) => Promise<any>;
+
+// Pull the HEIC's EXIF as an APP1 payload ("Exif\0\0" + TIFF) ready for
+// hdrify's writeJpegGainMap `exif` option. exif-library can't parse the HEIC
+// container, so we transcode a tiny JPEG via sips first (sips preserves EXIF)
+// and read it off that. Orientation is dropped — the EXR helper already baked
+// it into the pixels (.applyOrientationProperty), so a surviving tag would
+// double-rotate. The thumbnail (1st IFD) is dropped too: it's redundant in a
+// gain-map JPEG and keeps the APP1 segment well under its 64 KB limit.
+// Best-effort: returns null (→ no EXIF embedded) on any failure.
+async function extractHeicExifApp1(input: Buffer): Promise<Uint8Array | null> {
+  try {
+    const jpeg = await decodeHeicViaSips(input, 512);
+    const exif: any = load(jpeg.toString('binary'));
+    if (!exif || typeof exif !== 'object') return null;
+    if (exif['0th'] && TagNumbers.ImageIFD.Orientation in exif['0th']) {
+      delete exif['0th'][TagNumbers.ImageIFD.Orientation];
+    }
+    delete exif['1st'];
+    delete exif['thumbnail'];
+    const hasAny =
+      Object.keys(exif['0th'] ?? {}).length > 0 ||
+      Object.keys(exif['Exif'] ?? {}).length > 0 ||
+      Object.keys(exif['GPS'] ?? {}).length > 0 ||
+      Object.keys(exif['Interop'] ?? {}).length > 0;
+    if (!hasAny) return null;
+    const bytes = dump(exif);
+    return Uint8Array.from(Buffer.from(bytes, 'binary'));
+  } catch {
+    return null;
+  }
+}
+
+// HEIC → Ultra HDR JPEG (SDR base + gain map, browser-renderable HDR). Two
+// stages: (1) the Core Image helper decodes the HEIC's HDR — Apple OR ISO
+// 21496-1 gain map, via .expandToHDR — to a linear EXR; (2) hdrify (JS)
+// encodes that to an Ultra HDR JPEG. This is the only combination that yields
+// HDR a browser actually renders AND degrades gracefully to a correct SDR
+// image (macOS can't write a browser-honored gain map; hdrify can't read
+// HEIC). Returns null when the helper is absent so the caller falls back to
+// the sharp SDR path.
+async function encodeUltraHdrJpeg(
+  request: CompressImageRequest,
+  input: Buffer
+): Promise<CompressImageResult | null> {
+  const helper = resolveHeicExrHelper();
+  if (!helper) return null;
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'picg-uhdr-'));
+  const heicPath = path.join(dir, 'in.heic');
+  const exrPath = path.join(dir, 'in.exr');
+  try {
+    await fs.writeFile(heicPath, input);
+    const args = [heicPath, exrPath];
+    // null = user's explicit "no cap"; undefined = use the main-side default.
+    const maxMp =
+      request.maxMegapixels === null
+        ? null
+        : request.maxMegapixels ?? DEFAULT_MAX_MP;
+    if (maxMp != null) args.push('--max-megapixels', String(maxMp));
+    await execFileAsync(helper, args);
+
+    const exr = await fs.readFile(exrPath);
+    const hdrify = await importESM('hdrify');
+    const img = hdrify.readExr(
+      new Uint8Array(exr.buffer, exr.byteOffset, exr.byteLength)
+    );
+    const encoded = hdrify.encodeGainMap(img);
+    const quality = clampInt(request.quality, 0, 100, DEFAULT_QUALITY);
+    // Preserve the HEIC's EXIF (camera/lens/date/GPS/exposure). hdrify embeds
+    // it BEFORE computing the MPF byte offsets, so the gain map stays valid —
+    // a post-hoc EXIF insert would shift those offsets and break HDR.
+    const exif = request.preserveExif ? await extractHeicExifApp1(input) : null;
+    const jpeg: Uint8Array = hdrify.writeJpegGainMap(encoded, {
+      quality,
+      format: 'ultrahdr',
+      ...(exif ? { exif } : {}),
+    });
+    console.log('[picg compress] HEIC→Ultra HDR JPEG, bytes:', jpeg.length);
+    return {
+      buffer: jpeg,
+      name: `${basenameWithoutExt(request.originalName)}.jpg`,
+      type: 'image/jpeg',
+    };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
@@ -151,12 +301,33 @@ async function compressImage(
 ): Promise<CompressImageResult> {
   let input: Buffer = Buffer.from(request.bytes);
 
+  // Ultra HDR JPEG route — HEIC + ultrahdr output on macOS goes through the
+  // Core Image (EXR) + hdrify pipeline, the only path that yields browser-
+  // rendered HDR with a graceful SDR fallback. Any failure (helper missing,
+  // decode/encode error) falls through to the sharp pipeline below, which
+  // still produces a valid — if SDR — JPEG.
+  if (
+    request.outputFormat === 'ultrahdr' &&
+    process.platform === 'darwin' &&
+    isHeicLike(input)
+  ) {
+    const uhdr = await encodeUltraHdrJpeg(request, input).catch((err) => {
+      console.warn(
+        '[picg compress] Ultra HDR JPEG pipeline failed, falling back to sharp:',
+        err?.message ?? err
+      );
+      return null;
+    });
+    if (uhdr) return uhdr;
+  }
+
   // HEIC route — sharp's prebuilt libheif can't decode Apple's HEVC-
   // encoded HEIC, so we transcode to JPEG via macOS's `sips` first
   // and feed sharp the JPEG. EXIF is preserved by sips, then re-
   // injected via dump/insert below using the HEIC's own EXIF (which
   // is the same data, just re-routed through JPEG along the way).
   if (isHeicLike(input)) {
+    assertHeicSupported();
     console.log('[picg compress] HEIC input detected, routing through sips');
     input = await decodeHeicViaSips(input);
   }
@@ -224,7 +395,10 @@ async function compressImage(
   let extension: string;
   let mimeType: string;
 
-  if (request.outputFormat === 'jpeg') {
+  if (request.outputFormat === 'jpeg' || request.outputFormat === 'ultrahdr') {
+    // 'ultrahdr' lands here only as a fallback — non-HEIC input, non-macOS,
+    // or the HDR pipeline failed (input is then the sips-decoded JPEG). It
+    // produces a plain SDR JPEG, the correct graceful degradation.
     outBuffer = await pipeline
       .jpeg({ mozjpeg: true, quality })
       .toBuffer();
@@ -274,11 +448,40 @@ async function compressImage(
   };
 }
 
+// Display-only transcode for the add-photos UI: turn a browser-undecodable
+// image (overwhelmingly HEIC) into a small JPEG the renderer can show. The
+// renderer only calls this after createImageBitmap has already failed, so
+// we don't format-sniff — sips decodes whatever it's handed, and -Z keeps
+// the output small. Distinct from compressImage: no EXIF re-injection, no
+// sharp, not the uploaded artifact.
+const DEFAULT_PREVIEW_MAX_EDGE = 1024;
+
+async function previewImage(
+  request: CompressPreviewRequest
+): Promise<CompressPreviewResult> {
+  const input = Buffer.from(request.bytes);
+  // Non-macOS: no sips → throw (caught by makePreviewViaMain, which then
+  // falls back to a placeholder) instead of spamming ENOENT.
+  assertHeicSupported();
+  const maxEdge = clampInt(request.maxEdge, 64, 4096, DEFAULT_PREVIEW_MAX_EDGE);
+  const jpeg = await decodeHeicViaSips(input, maxEdge);
+  return {
+    buffer: new Uint8Array(jpeg.buffer, jpeg.byteOffset, jpeg.byteLength),
+    type: 'image/jpeg',
+  };
+}
+
 export function registerCompressIpcHandlers(): void {
   ipcMain.handle(
     CHANNELS.compress.image,
     async (_e, request: CompressImageRequest) => {
       return compressImage(request);
+    }
+  );
+  ipcMain.handle(
+    CHANNELS.compress.preview,
+    async (_e, request: CompressPreviewRequest) => {
+      return previewImage(request);
     }
   );
 }

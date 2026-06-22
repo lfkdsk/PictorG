@@ -116,6 +116,14 @@ asarUnpack:
   # (currently: detect-libc, semver).
   - "**/node_modules/detect-libc/**/*"
   - "**/node_modules/semver/**/*"
+  # hdrify (ESM) is dynamically imported by electron/ipc/compress.ts for the
+  # Ultra HDR JPEG path. Unpack it + its pure-JS deps so the runtime dynamic
+  # import resolves from disk — importing ESM from inside the asar archive is
+  # unreliable. All small, pure-JS, no native bindings.
+  - "**/node_modules/hdrify/**/*"
+  - "**/node_modules/fflate/**/*"
+  - "**/node_modules/jpeg-js/**/*"
+  - "**/node_modules/buffer/**/*"
 
 # Anything copied into Contents/Resources/ outside the asar. The Next
 # standalone bundle goes here so the forked server process can require

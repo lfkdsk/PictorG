@@ -33,6 +33,7 @@ const bridge: PicgBridge = {
 
   compress: {
     image: (request) => ipcRenderer.invoke(CHANNELS.compress.image, request),
+    preview: (request) => ipcRenderer.invoke(CHANNELS.compress.preview, request),
   },
 
   updater: {
