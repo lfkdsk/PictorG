@@ -25,6 +25,7 @@ import sharp from 'sharp';
 import { dump, insert, load, TagNumbers } from '@lfkdsk/exif-library';
 
 import { CHANNELS } from './contract';
+import { encodeUltraHdrInWorker } from './hdrifyWorker';
 import type {
   CompressImageRequest,
   CompressImageResult,
@@ -159,6 +160,27 @@ const importESM = new Function('specifier', 'return import(specifier)') as (
   specifier: string
 ) => Promise<any>;
 
+// Fallback: run the hdrify encode on the main thread (blocks the event loop).
+// Used only when the worker thread is unavailable (encodeUltraHdrInWorker
+// rejects), so HDR output still works even if the worker can't start.
+async function encodeUltraHdrOnMain(
+  exrPath: string,
+  quality: number,
+  exif: Uint8Array | null
+): Promise<Uint8Array> {
+  const exr = await fs.readFile(exrPath);
+  const hdrify = await importESM('hdrify');
+  const img = hdrify.readExr(
+    new Uint8Array(exr.buffer, exr.byteOffset, exr.byteLength)
+  );
+  const encoded = hdrify.encodeGainMap(img, { toneMapping: 'reinhard' });
+  return hdrify.writeJpegGainMap(encoded, {
+    quality,
+    format: 'ultrahdr',
+    ...(exif ? { exif } : {}),
+  });
+}
+
 // Pull the HEIC's EXIF as an APP1 payload ("Exif\0\0" + TIFF) ready for
 // hdrify's writeJpegGainMap `exif` option. exif-library can't parse the HEIC
 // container, so we transcode a tiny JPEG via sips first (sips preserves EXIF)
@@ -219,26 +241,27 @@ async function encodeUltraHdrJpeg(
     if (maxMp != null) args.push('--max-megapixels', String(maxMp));
     await execFileAsync(helper, args);
 
-    const exr = await fs.readFile(exrPath);
-    const hdrify = await importESM('hdrify');
-    const img = hdrify.readExr(
-      new Uint8Array(exr.buffer, exr.byteOffset, exr.byteLength)
-    );
-    // Reinhard tone-mapping for the SDR base. hdrify's encodeGainMap defaults
-    // to ACES, whose heavy shadow toe crushes dark regions (e.g. a backlit
-    // tree trunk) compared to the source. Reinhard is gentler on shadows and
-    // matches hdrify-cli's own default, which renders faithfully.
-    const encoded = hdrify.encodeGainMap(img, { toneMapping: 'reinhard' });
     const quality = clampInt(request.quality, 0, 100, DEFAULT_QUALITY);
     // Preserve the HEIC's EXIF (camera/lens/date/GPS/exposure). hdrify embeds
     // it BEFORE computing the MPF byte offsets, so the gain map stays valid —
     // a post-hoc EXIF insert would shift those offsets and break HDR.
     const exif = request.preserveExif ? await extractHeicExifApp1(input) : null;
-    const jpeg: Uint8Array = hdrify.writeJpegGainMap(encoded, {
-      quality,
-      format: 'ultrahdr',
-      ...(exif ? { exif } : {}),
-    });
+
+    // Encode the gain-map JPEG off the main event loop in a worker thread, so
+    // a batch of HDR imports doesn't stall window controls (hdrify is sync and
+    // CPU-heavy, ~1-3s/image). Tone-mapping is Reinhard (set in the worker) —
+    // ACES, hdrify's default, crushes shadows. Falls back to a main-thread
+    // encode if the worker can't start; slower, but HDR output never breaks.
+    let jpeg: Uint8Array;
+    try {
+      jpeg = await encodeUltraHdrInWorker(exrPath, quality, exif);
+    } catch (err: any) {
+      console.warn(
+        '[picg compress] hdrify worker unavailable, encoding on main thread:',
+        err?.message ?? err
+      );
+      jpeg = await encodeUltraHdrOnMain(exrPath, quality, exif);
+    }
     console.log('[picg compress] HEIC→Ultra HDR JPEG, bytes:', jpeg.length);
     return {
       buffer: jpeg,
