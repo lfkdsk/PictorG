@@ -344,6 +344,8 @@ async function compressImage(
     hasExif: !!inMeta.exif,
     exifBytes: inMeta.exif?.length ?? 0,
     hasXmp: !!inMeta.xmp,
+    hasIcc: inMeta.hasProfile,
+    space: inMeta.space,
     orientation: inMeta.orientation,
   });
 
@@ -351,6 +353,21 @@ async function compressImage(
   // orientation to 1 in the output. Doing this here means the supplement
   // step can safely drop the Orientation tag without leaving a mismatch.
   pipeline = pipeline.rotate();
+
+  // Preserve the source's ICC colour profile. sharp strips all input
+  // metadata by default, which flattens wide-gamut (Display P3) photos to
+  // sRGB — viewers then render them as sRGB and saturated colours look
+  // dull (very visible on vivid landscapes). keepIccProfile() copies the
+  // input profile onto the output without touching pixels (we only
+  // rotate/resize here, never convert colourspace), so P3 pixels keep a
+  // P3 profile; it's a no-op when the input has no profile. The EXIF
+  // re-injection below leaves this intact — exif-library's insert() swaps
+  // only the EXIF segment/chunk and never the APP2/ICCP that carries the
+  // profile. (The Ultra HDR JPEG path is separate — it bypasses sharp via
+  // the Core Image EXR helper + hdrify and manages colour itself — so this
+  // only affects the sharp encode branches: jpeg, the ultrahdr SDR
+  // fallback, and webp.)
+  pipeline = pipeline.keepIccProfile();
 
   // Resolve effective knob values now so the cap branch and the encode
   // branch agree on the same numbers. `request.maxMegapixels === null`
@@ -435,6 +452,8 @@ async function compressImage(
       hasExif: !!outMeta.exif,
       exifBytes: outMeta.exif?.length ?? 0,
       hasXmp: !!outMeta.xmp,
+      hasIcc: outMeta.hasProfile,
+      space: outMeta.space,
       orientation: outMeta.orientation,
     });
   } catch {
