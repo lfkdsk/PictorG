@@ -103,6 +103,14 @@ export default function DesktopSettingsPage() {
                 onSelect={() => update({ outputFormat: 'jpeg' })}
                 disabled={!settings.enableWebP || settings.lossless}
               />
+              <FormatOption
+                label="HDR JPEG"
+                hint="HEIC HDR, macOS"
+                value="ultrahdr"
+                selected={settings.outputFormat === 'ultrahdr'}
+                onSelect={() => update({ outputFormat: 'ultrahdr' })}
+                disabled={!settings.enableWebP || settings.lossless}
+              />
             </div>
           </div>
 
@@ -482,7 +490,7 @@ function FormatOption({
 }: {
   label: string;
   hint: string;
-  value: 'webp' | 'jpeg';
+  value: 'webp' | 'jpeg' | 'ultrahdr';
   selected: boolean;
   onSelect: () => void;
   disabled?: boolean;

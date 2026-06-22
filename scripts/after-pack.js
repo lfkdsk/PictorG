@@ -40,7 +40,38 @@ exports.default = async function afterPack(context) {
   // app failed to launch (require('next') → MODULE_NOT_FOUND, no window).
   // Copy the standalone's node_modules into place ourselves.
   copyStandaloneNodeModules(context.appOutDir, platform, productFilename);
+
+  // macOS-only Core Image helper that decodes HEIC → HDR EXR (first half of
+  // the Ultra HDR JPEG pipeline). Copied in before signing so it picks up the
+  // app's signature; located at runtime via process.resourcesPath in
+  // electron/ipc/compress.ts.
+  copyHdrHelper(context.appOutDir, platform, productFilename);
 };
+
+// Place the compiled picg-heic-exr helper in Contents/Resources. macOS-only;
+// built by scripts/build-hdr-helper.js during `electron:build`. If it's
+// missing the app still works — compress.ts falls back to sharp (SDR JPEG).
+function copyHdrHelper(appOutDir, platform, productFilename) {
+  if (platform !== 'darwin') return;
+  const root = path.resolve(__dirname, '..');
+  const src = path.join(root, 'build', 'native', 'picg-heic-exr');
+  if (!fs.existsSync(src)) {
+    console.warn(
+      '[after-pack] build/native/picg-heic-exr missing — HEIC→Ultra HDR JPEG will fall back to sharp. Did `electron:build` run on macOS?'
+    );
+    return;
+  }
+  const dest = path.join(
+    appOutDir,
+    `${productFilename}.app`,
+    'Contents',
+    'Resources',
+    'picg-heic-exr'
+  );
+  fs.copyFileSync(src, dest);
+  fs.chmodSync(dest, 0o755);
+  console.log(`[after-pack] bundled HEIC→EXR helper → ${path.relative(appOutDir, dest)}`);
+}
 
 // The Next standalone server.js does relative require()s into its own
 // bundled node_modules tree. electron-builder won't copy that tree via

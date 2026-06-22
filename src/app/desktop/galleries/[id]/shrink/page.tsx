@@ -677,7 +677,7 @@ function PickerView({
   setPicks: (next: Set<string>) => void;
   thresholdMb: number;
   setThresholdMb: (mb: number) => void;
-  outputFormat: 'webp' | 'jpeg';
+  outputFormat: 'webp' | 'jpeg' | 'ultrahdr';
   coverRefs: Set<string>;
   onCompress: () => void;
 }) {
@@ -772,7 +772,7 @@ function PickerView({
                             className="badge warn"
                             title={`Will be renamed to ${predictedOutputPath(p.path, outputFormat).split('/').pop()}`}
                           >
-                            ⚠ {p.ext} → {outputFormat === 'jpeg' ? '.jpg' : '.webp'}
+                            ⚠ {p.ext} → {outputFormat === 'jpeg' || outputFormat === 'ultrahdr' ? '.jpg' : '.webp'}
                           </span>
                         )}
                         {isCover && (
@@ -994,7 +994,7 @@ function ReviewView({
   results: CompressedResult[];
   applyChoices: Map<string, boolean>;
   setApplyChoices: (next: Map<string, boolean>) => void;
-  outputFormat: 'webp' | 'jpeg';
+  outputFormat: 'webp' | 'jpeg' | 'ultrahdr';
   onApply: () => void;
   onBack: () => void;
 }) {
@@ -1288,7 +1288,7 @@ function CompareLightbox({
   setIndex: (n: number) => void;
   applyChoices: Map<string, boolean>;
   toggleApply: (path: string) => void;
-  outputFormat: 'webp' | 'jpeg';
+  outputFormat: 'webp' | 'jpeg' | 'ultrahdr';
   onClose: () => void;
 }) {
   const item = items[index];

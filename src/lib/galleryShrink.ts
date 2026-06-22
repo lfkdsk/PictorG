@@ -136,12 +136,13 @@ export async function scanOversizedPhotos(
 // format. The compress IPC always emits .webp or .jpg (per
 // electron/ipc/compress.ts:227-272), so any input whose extension
 // doesn't match the output format will be renamed.
-export function predictedOutputPath(path: string, outputFormat: 'webp' | 'jpeg'): string {
-  const targetExt = outputFormat === 'jpeg' ? '.jpg' : '.webp';
+export function predictedOutputPath(path: string, outputFormat: 'webp' | 'jpeg' | 'ultrahdr'): string {
+  const targetExt =
+    outputFormat === 'jpeg' || outputFormat === 'ultrahdr' ? '.jpg' : '.webp';
   return path.replace(/\.[^./]+$/, targetExt);
 }
 
-export function extensionWillChange(path: string, outputFormat: 'webp' | 'jpeg'): boolean {
+export function extensionWillChange(path: string, outputFormat: 'webp' | 'jpeg' | 'ultrahdr'): boolean {
   return predictedOutputPath(path, outputFormat).toLowerCase() !== path.toLowerCase();
 }
 

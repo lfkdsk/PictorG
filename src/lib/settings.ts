@@ -1,7 +1,11 @@
 export interface CompressionSettings {
   enableWebP: boolean;
   preserveEXIF: boolean;
-  outputFormat: 'webp' | 'jpeg';
+  // 'ultrahdr' is the HDR-capable option: on macOS a HEIC source is decoded
+  // to HDR via Core Image and encoded to an Ultra HDR JPEG (SDR base + gain
+  // map) by hdrify — browser-rendered HDR with a graceful SDR fallback.
+  // Non-HEIC / non-macOS falls back to a plain SDR JPEG.
+  outputFormat: 'webp' | 'jpeg' | 'ultrahdr';
   // When true, encode WebP in lossless mode (every pixel preserved,
   // no resize cap applied). Output is ~3–10× larger than lossy WebP
   // and is frequently LARGER than an already-compressed JPEG/HEIC

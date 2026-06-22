@@ -14,7 +14,7 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
-import { makePreviewUrl } from '@/components/desktop/makePreview';
+import { isHeic, makePreviewUrl } from '@/components/desktop/makePreview';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
 import {
   CompressCompareModal,
@@ -234,7 +234,13 @@ export default function AddPhotosPage() {
         .map((p) => ({
           id: p.id,
           name: p.original.name,
-          beforeUrl: p.originalUrl || p.preview,
+          // HEIC has no browser-displayable original — its `originalUrl`
+          // is raw HEIC bytes the renderer can't paint, so prefer the
+          // sips-decoded `preview`. Other formats keep the full-res
+          // `originalUrl` for a sharper before/after compare.
+          beforeUrl: isHeic(p.original)
+            ? p.preview || p.originalUrl
+            : p.originalUrl || p.preview,
           afterUrl: p.compressedUrl ?? '',
           originalSize: p.original.size,
           compressedSize: p.compressed!.size,

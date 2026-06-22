@@ -1,5 +1,7 @@
 'use client';
 
+import { getPicgBridge } from '@/core/storage';
+
 // Generate a small blob URL for an in-memory File, used by the photo
 // upload grids in new-album and [album]/add. Without this they were
 // rendering each picked image at its native resolution — a 50 MP
@@ -14,15 +16,31 @@
 // convertToBlob('image/webp', 0.7) for a tiny output (~30–80 KB
 // regardless of source size).
 //
-// HEIC bypass: createImageBitmap doesn't decode HEIC in Chromium.
-// On failure we fall back to URL.createObjectURL(file) so the user
-// at least sees something for those files (the browser will fail
-// rendering, but the placeholder cell is the same as before this
-// optimization). Long-term fix is to route HEIC through the main
-// process for sips→jpeg→thumbnail; left as follow-up.
+// HEIC handling: createImageBitmap can't decode HEIC in Chromium. When it
+// throws, and we're inside Electron, we route the file through the main
+// process — which uses macOS `sips` to transcode it to a downscaled JPEG
+// the renderer CAN show (see electron/ipc/compress.ts). That preview feeds
+// both the grid card and the "Original" pane of the before/after compare
+// modal. Outside Electron (web preview of the desktop pages) there's no
+// bridge, so we fall back to URL.createObjectURL(file): the browser still
+// won't render HEIC, but the upload pipeline keeps working.
 
 const PREVIEW_MAX_EDGE = 480;
 const PREVIEW_QUALITY = 0.7;
+// Longer edge for the main-process (sips) HEIC render. This preview also
+// serves as the compare modal's full-size "Original" image, where the
+// 480px grid thumbnail would look soft.
+const MAIN_PREVIEW_MAX_EDGE = 1024;
+
+const HEIC_EXT = /\.(heic|heif)$/i;
+const HEIC_TYPE = /^image\/(heic|heif)$/i;
+
+// True for files Chromium can't decode for display (HEIC/HEIF). Callers use
+// this to prefer the generated `preview` over a raw object URL of the
+// original when picking what to show in the compare modal.
+export function isHeic(file: File): boolean {
+  return HEIC_TYPE.test(file.type) || HEIC_EXT.test(file.name);
+}
 
 export async function makePreviewUrl(file: File): Promise<string> {
   try {
@@ -74,9 +92,35 @@ export async function makePreviewUrl(file: File): Promise<string> {
     bmp.close?.();
     return URL.createObjectURL(blob);
   } catch {
-    // HEIC, broken file, no createImageBitmap support — fall back to
-    // the original. The browser may still fail to render (HEIC), but
-    // the upload pipeline still works.
+    // createImageBitmap couldn't decode this — overwhelmingly HEIC in
+    // Chromium. In Electron, render a displayable JPEG in the main
+    // process via sips so the grid + compare modal show real pixels.
+    const viaMain = await makePreviewViaMain(file);
+    if (viaMain) return viaMain;
+    // No bridge (web) or sips failed: fall back to the raw original. The
+    // browser may still fail to render HEIC, but the upload pipeline
+    // still works and ImageOrPlaceholder degrades to a placeholder.
     return URL.createObjectURL(file);
+  }
+}
+
+// Ask the Electron main process to transcode a browser-undecodable image
+// (HEIC) into a small JPEG via sips. Returns an object URL, or null when
+// there's no bridge (running in a plain browser) or the transcode fails —
+// the caller then falls back to the raw file.
+async function makePreviewViaMain(file: File): Promise<string | null> {
+  try {
+    const bridge = getPicgBridge();
+    if (!bridge?.compress?.preview) return null;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = await bridge.compress.preview({
+      bytes,
+      originalName: file.name,
+      maxEdge: MAIN_PREVIEW_MAX_EDGE,
+    });
+    const blob = new Blob([result.buffer], { type: result.type });
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
   }
 }

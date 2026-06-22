@@ -21,6 +21,11 @@ build/icon.png
 # binaries, ~60 MB per arch. Re-fetched on demand; not source of truth.
 build/git/
 
+# Compiled by scripts/build-hdr-helper.js during `electron:build` — the macOS
+# Core Image HEIC→HDR-AVIF helper. Built from electron/native/*.swift; not
+# source of truth.
+build/native/
+
 # Claude Code project-local state (cache, scheduled-task lock, .DS_Store).
 # Per-developer machine state, not source.
 .claude/

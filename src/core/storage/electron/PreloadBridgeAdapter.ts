@@ -178,7 +178,7 @@ export type UnpushedCommit = {
 export type CompressImageRequest = {
   bytes: Uint8Array;
   originalName: string;
-  outputFormat: 'webp' | 'jpeg';
+  outputFormat: 'webp' | 'jpeg' | 'ultrahdr';
   preserveExif: boolean;
   lossless?: boolean;
   quality?: number;
@@ -192,8 +192,23 @@ export type CompressImageResult = {
   type: string;
 };
 
+// Display-only transcode (HEIC → small JPEG via sips in main). Mirrors
+// CompressPreviewRequest/Result in electron/ipc/contract.ts; kept here so
+// renderer code doesn't import from electron/.
+export type CompressPreviewRequest = {
+  bytes: Uint8Array;
+  originalName: string;
+  maxEdge?: number;
+};
+
+export type CompressPreviewResult = {
+  buffer: Uint8Array;
+  type: string;
+};
+
 export type PreloadCompressBridge = {
   image(request: CompressImageRequest): Promise<CompressImageResult>;
+  preview(request: CompressPreviewRequest): Promise<CompressPreviewResult>;
 };
 
 export type OAuthCallbackPayload =

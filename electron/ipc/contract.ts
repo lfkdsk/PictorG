@@ -31,6 +31,13 @@ export const CHANNELS = {
   },
   compress: {
     image: 'compress:image',
+    // Renderer → main: decode an image the browser can't render (chiefly
+    // HEIC, which Chromium won't decode) into a small displayable JPEG via
+    // macOS `sips`. Used by the add-photos grid + before/after compare
+    // modal so the "Original" pane shows real pixels instead of a
+    // "preview unavailable" placeholder. This is a throwaway thumbnail,
+    // NOT the uploaded artifact (that still goes through compress.image).
+    preview: 'compress:preview',
   },
   updater: {
     // Renderer → main: open the GitHub release page in the user's
@@ -290,7 +297,10 @@ export type OAuthCallbackPayload =
 export type CompressImageRequest = {
   bytes: Uint8Array;
   originalName: string;
-  outputFormat: 'webp' | 'jpeg';
+  // 'ultrahdr' routes HEIC through the macOS Core Image (EXR) + hdrify
+  // pipeline → a browser-renderable Ultra HDR JPEG with a graceful SDR base.
+  // Non-HEIC / non-macOS / failure falls back to a plain SDR JPEG.
+  outputFormat: 'webp' | 'jpeg' | 'ultrahdr';
   preserveExif: boolean;
   // When true: WebP lossless encode, no 50 MP resize cap. JPEG ignores
   // this flag (JPEG has no lossless mode). Set from the renderer's
@@ -314,6 +324,24 @@ export type CompressImageResult = {
   type: string;
 };
 
+// Request for CHANNELS.compress.preview. A display-only transcode: the
+// main process runs the bytes through macOS `sips`, which has a real
+// HEVC decoder via ImageIO and can downscale in the same pass. Output is
+// always a JPEG the renderer can show in an <img>.
+export type CompressPreviewRequest = {
+  bytes: Uint8Array;
+  originalName: string;
+  // Longest-edge cap in pixels. Omitted = main-side default. Larger than
+  // the 480px grid thumbnail because this preview doubles as the compare
+  // modal's full-size "Original" image.
+  maxEdge?: number;
+};
+
+export type CompressPreviewResult = {
+  buffer: Uint8Array;
+  type: string;
+};
+
 export interface PicgBridge {
   pickGalleryDir(): Promise<string | null>;
   auth: {
@@ -325,6 +353,7 @@ export interface PicgBridge {
   };
   compress: {
     image(request: CompressImageRequest): Promise<CompressImageResult>;
+    preview(request: CompressPreviewRequest): Promise<CompressPreviewResult>;
   };
   updater: {
     openReleasePage(): Promise<void>;
