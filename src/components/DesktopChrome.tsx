@@ -7,12 +7,12 @@
 // accidentally break their layout.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import Link from 'next/link';
 
 import { clearGitHubToken, getGitHubToken } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
 import { getPicgBridge } from '@/core/storage';
 import { InfoToastHost, fireInfoToast } from '@/components/desktop/InfoToast';
+import { SettingsPanel } from '@/components/desktop/SettingsPanel';
 
 // Topbar accepts an optional `actions` slot rendered between the brand
 // and the user pill. Per-page chrome (sync icons, etc.) goes here so
@@ -20,6 +20,9 @@ import { InfoToastHost, fireInfoToast } from '@/components/desktop/InfoToast';
 export function Topbar({ actions }: { actions?: ReactNode }) {
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Settings opens as a modal (not a route) so tweaking it mid-task doesn't
+  // unmount the page underneath and wipe an in-progress album draft.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Set when a newer version is on the GitHub release page. The pill
   // doesn't trigger a download — it opens the release page in the
   // user's browser, since unsigned macOS builds can't use Squirrel's
@@ -240,14 +243,17 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
             <>
               <div className="picg-menu-overlay" onClick={() => setMenuOpen(false)} />
               <div className="picg-menu" role="menu">
-                <Link
-                  href="/desktop/settings"
+                <button
+                  type="button"
                   className="picg-menu-item"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSettingsOpen(true);
+                  }}
                   role="menuitem"
                 >
                   Settings
-                </Link>
+                </button>
                 <button
                   type="button"
                   className="picg-menu-item"
@@ -267,6 +273,76 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
                 </button>
               </div>
             </>
+          )}
+
+          {settingsOpen && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="picg-settings-modal"
+              onClick={() => setSettingsOpen(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 1000,
+                background: 'rgba(0, 0, 0, 0.6)',
+                backdropFilter: 'blur(3px)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                padding: '40px 24px',
+                overflowY: 'auto',
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: 'min(760px, 100%)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 14,
+                  padding: '16px 22px 22px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 10,
+                  }}
+                >
+                  <h2
+                    style={{
+                      fontFamily: 'var(--serif)',
+                      fontSize: 26,
+                      fontWeight: 400,
+                      margin: 0,
+                      color: 'var(--text)',
+                    }}
+                  >
+                    Settings
+                  </h2>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={() => setSettingsOpen(false)}
+                    style={{
+                      border: 0,
+                      background: 'transparent',
+                      color: 'var(--text-muted)',
+                      fontSize: 24,
+                      lineHeight: 1,
+                      cursor: 'pointer',
+                      padding: '0 4px',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <SettingsPanel />
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -293,7 +369,8 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         .topbar :global(a),
         .topbar :global(input),
         .topbar :global(.picg-menu),
-        .topbar :global(.picg-menu-overlay) {
+        .topbar :global(.picg-menu-overlay),
+        .topbar :global(.picg-settings-modal) {
           -webkit-app-region: no-drag;
         }
         .brand {

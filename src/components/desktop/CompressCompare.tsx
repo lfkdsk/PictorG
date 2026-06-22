@@ -14,7 +14,10 @@
 // Generic over a minimal item shape so the same component can serve the
 // add-to-album page, the new-album page, and (later) the web upload pages.
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { getPicgBridge } from '@/core/storage';
+import { isHeic } from './makePreview';
 
 export type ComparePhoto = {
   id: string;
@@ -26,6 +29,14 @@ export type ComparePhoto = {
    * a generated preview (or an empty string, which renders a placeholder).
    */
   beforeUrl: string;
+  /**
+   * The original File. For HEIC the modal lazily renders a small HDR (Ultra
+   * HDR JPEG) preview of it on demand, so the "Original" pane glows like the
+   * HDR compressed result instead of looking flat (its `beforeUrl` is only an
+   * SDR sips preview). Optional — the SDR preview is used when this is absent,
+   * the source isn't HEIC, or the HDR render fails.
+   */
+  originalFile?: File;
   /** Object URL for the COMPRESSED encode (always a WebP/JPEG we can show). */
   afterUrl: string;
   /** Byte size of the original file. */
@@ -76,6 +87,61 @@ export function CompressCompareModal({
 }) {
   const total = photos.length;
   const photo = photos[index];
+
+  // Lazily render an HDR preview of the ORIGINAL for the HEIC photo currently
+  // being viewed, so the left pane glows like the compressed one (its
+  // beforeUrl is only an SDR sips preview). Reuses the compress IPC's
+  // ultrahdr path at a small size + high quality. Cached per photo id; only
+  // the photo you're looking at pays the (sub-second) cost; falls back to the
+  // SDR preview while rendering or on failure.
+  const hdrCacheRef = useRef<Map<string, string>>(new Map());
+  const [hdrBeforeUrl, setHdrBeforeUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHdrBeforeUrl(null);
+    const file = photo?.originalFile;
+    if (!photo || !file || !isHeic(file)) return;
+    const cached = hdrCacheRef.current.get(photo.id);
+    if (cached) {
+      setHdrBeforeUrl(cached);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const bridge = getPicgBridge();
+        if (!bridge?.compress?.image) return;
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const result = await bridge.compress.image({
+          bytes,
+          originalName: file.name,
+          outputFormat: 'ultrahdr',
+          preserveExif: false,
+          quality: 92,
+          maxMegapixels: 3,
+        });
+        if (cancelled) return;
+        const url = URL.createObjectURL(
+          new Blob([result.buffer], { type: result.type })
+        );
+        hdrCacheRef.current.set(photo.id, url);
+        setHdrBeforeUrl(url);
+      } catch {
+        /* leave the SDR preview in place */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on id so stepping prev/next regenerates per photo, but a parent
+    // re-render that rebuilds the photos array doesn't.
+  }, [photo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Revoke all generated HDR previews when the modal unmounts.
+  useEffect(() => {
+    const cache = hdrCacheRef.current;
+    return () => cache.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
 
   const go = useCallback(
     (delta: number) => {
@@ -140,7 +206,7 @@ export function CompressCompareModal({
           <div className="cc-panes">
             <figure className={`cc-pane ${photo.useOriginal ? 'is-chosen' : ''}`}>
               <div className="cc-img-wrap">
-                <ImageOrPlaceholder src={photo.beforeUrl} alt="original" />
+                <ImageOrPlaceholder src={hdrBeforeUrl ?? photo.beforeUrl} alt="original" />
                 {photo.useOriginal && <span className="cc-chosen-tag">Using this</span>}
               </div>
               <figcaption>

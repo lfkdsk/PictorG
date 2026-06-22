@@ -259,6 +259,7 @@ export default function NewAlbumPage() {
         .map((p) => ({
           id: p.id,
           name: p.original.name,
+          originalFile: p.original,
           // HEIC has no browser-displayable original — its `originalUrl`
           // is raw HEIC bytes the renderer can't paint, so prefer the
           // sips-decoded `preview`. Other formats keep the full-res
