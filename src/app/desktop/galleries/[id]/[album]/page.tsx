@@ -13,6 +13,7 @@ import {
   type PicgBridge,
   type StorageAdapter,
 } from '@/core/storage';
+import { logoutIfGitAuthError } from '@/lib/github';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
@@ -267,6 +268,9 @@ export default function AlbumPage() {
         window.location.assign(href);
       }
     } catch (err) {
+      // A revoked/expired token surfaces here as a git auth failure; sign
+      // out and bounce to the sign-in page rather than showing a raw error.
+      if (await logoutIfGitAuthError(err)) return;
       setOpError(err instanceof Error ? err.message : String(err));
       setPulling(false);
     }
@@ -281,6 +285,9 @@ export default function AlbumPage() {
       const s = await bridge.gallery.status(gallery.id);
       setAhead(s.ahead);
     } catch (err) {
+      // A revoked/expired token surfaces here as a git auth failure; sign
+      // out and bounce to the sign-in page rather than showing a raw error.
+      if (await logoutIfGitAuthError(err)) return;
       setOpError(err instanceof Error ? err.message : String(err));
     } finally {
       setPushing(false);

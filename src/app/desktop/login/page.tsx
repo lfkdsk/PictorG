@@ -28,6 +28,20 @@ export default function DesktopLoginPage() {
     setBridge(getPicgBridge());
   }, []);
 
+  // If a forced sign-out bounced us here (desktopLogout appends
+  // ?reason=auth-expired when a push/pull hit a revoked or expired token),
+  // explain why instead of dropping the user on a bare sign-in screen.
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('reason');
+    if (reason === 'auth-expired') {
+      setPhase({
+        kind: 'error',
+        message:
+          'Your GitHub session expired or the access token was revoked. Please sign in again.',
+      });
+    }
+  }, []);
+
   // Subscribe to picg://oauth callbacks dispatched by main. We mount the
   // listener even before the user clicks Sign in, in case main captured
   // a callback URL while the renderer was still booting.
