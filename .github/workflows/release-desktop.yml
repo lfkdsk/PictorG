@@ -13,8 +13,9 @@
 #      workflow, so we deliberately keep both steps in this one run
 #      rather than relying on the tag-push trigger above.)
 #
-# Running manually with `bump` = none just produces a .dmg artifact
-# without publishing or tagging — handy for verifying CI changes.
+# Running manually with `bump` = none just produces artifacts without
+# publishing or tagging — handy for verifying CI changes. Manual release
+# runs can also mark the GitHub Release as a pre-release.
 #
 # We key off tags rather than every push to main so dev branches don't
 # burn macOS runner minutes (those are 10x billed compared to ubuntu).
@@ -46,6 +47,10 @@ on:
           - patch
           - minor
           - major
+      prerelease:
+        description: "Mark the published GitHub Release as a pre-release."
+        type: boolean
+        default: false
 
 permissions:
   contents: write # needed to push the release commit/tag and upload to the Release
@@ -133,6 +138,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EP_PRE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease && inputs.bump != 'none' }}
 
       - name: Upload artifact (unpublished manual runs only)
         if: github.event_name == 'workflow_dispatch' && needs.tag.result == 'skipped'
@@ -201,6 +207,7 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_PRE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease && inputs.bump != 'none' }}
           # Unsigned for now — users get a Windows SmartScreen warning on
           # first run. Once you have a code-signing cert (an OV/EV .pfx or
           # an Azure Trusted Signing account), set:
