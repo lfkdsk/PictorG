@@ -343,15 +343,15 @@ two DMGs. Rather than fighting dugite's postinstall to download both,
 we use `dugite-native` directly and own the fetch script. Simpler,
 predictable.
 
-**Quarantine flag matters here.** Unsigned builds inherit
-`com.apple.quarantine` from the DMG, and macOS applies that check to
-the nested git binary too — not just the bundle's main executable.
-The `Fix Gatekeeper.command` shipped in the DMG runs `xattr -cr`
-(recursive) for exactly this reason; if you change it back to
-plain `xattr -c`, clone will fail post-install with a Gatekeeper
-denial on `Contents/Resources/git/bin/git`. Once we sign +
-notarize (see §8.2), the whole bundle including nested binaries
-gets trusted at install time and the script becomes vestigial.
+**Quarantine flag matters for unsigned local builds.** Unsigned or
+ad-hoc builds inherit `com.apple.quarantine` from the DMG, and macOS
+applies that check to the nested git binary too — not just the bundle's
+main executable. The `Fix Gatekeeper.command` helper runs `xattr -cr`
+(recursive) for exactly this reason; if you change it back to plain
+`xattr -c`, clone can fail post-install with a Gatekeeper denial on
+`Contents/Resources/git/bin/git`. CI release builds are signed and
+notarized (see §8.2), so users should not need this workaround for
+published macOS releases.
 
 ---
 
@@ -569,44 +569,34 @@ without tagging. Workflow only fires on tag push.
 
 ### 8.2 Signing / notarization
 
-Currently unsigned. Users see "PicG is damaged" on first open
-(quarantine flag → Gatekeeper reject for unsigned).
+Release builds are Developer ID signed and notarized in GitHub
+Actions. `electron-builder` reads the Developer ID Application `.p12`
+from `CSC_LINK` / `CSC_KEY_PASSWORD`, then notarizes with Apple's
+notarytool through `APPLE_*` credentials.
 
-Mitigation we ship today: the DMG includes
-`build/fix-gatekeeper.command`, dropped into the DMG window next to
-the app + Applications symlink as **"Fix Gatekeeper.command"**. After
-dragging PicG to Applications the user double-clicks it — macOS shows
-the standard "are you sure you want to open this?" prompt (the
-.command inherited the same quarantine flag), they click Open, the
-script runs `xattr -c /Applications/PicG.app`, and PicG launches
-normally from then on. Trade-off vs. doing nothing: one less-scary
-prompt instead of "is damaged → move to Trash."
+Required GitHub repository secrets:
 
-Manual fallback in the release notes for users who prefer Terminal:
+```bash
+MAC_CERT_P12_BASE64=<base64 encoded Developer ID Application .p12>
+MAC_CERT_PASSWORD=<password used when exporting the .p12>
+APPLE_ID=<Apple ID email>
+APPLE_APP_SPECIFIC_PASSWORD=<app-specific password for APPLE_ID>
+APPLE_TEAM_ID=<Apple Developer Team ID, e.g. FM39C6H8AH>
+```
+
+The `.cer` file alone is not enough for CI signing because it contains
+only the public certificate. Export a `.p12` from Keychain Access with
+the matching private key, then base64 it:
+
+```bash
+base64 -i DeveloperIDApplication.p12 -o DeveloperIDApplication.p12.b64
+```
+
+Local unsigned/ad-hoc builds may still need the quarantine workaround:
 
 ```bash
 xattr -cr /Applications/PicG.app
 ```
-
-`-r` is required because the bundled portable git under
-`Contents/Resources/git/bin/git` (see §4.6) carries its own quarantine
-xattr that Gatekeeper checks at spawn time. Plain `xattr -c` only
-clears the bundle's top-level attribute and leaves clone broken.
-
-To actually sign:
-
-1. Apple Developer Program ($99/yr) → "Developer ID Application"
-   cert.
-2. Export `.p12`, `base64 -i cert.p12 -o cert.b64`.
-3. Add GitHub secrets: `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`,
-   `APPLE_ID`, `APPLE_ID_PASSWORD` (app-specific password),
-   `APPLE_TEAM_ID`.
-4. Uncomment the `CSC_LINK / CSC_KEY_PASSWORD / APPLE_*` env block
-   in `.github/workflows/release-desktop.yml`.
-5. Set `mac.identity` in `electron-builder.yml`, flip
-   `hardenedRuntime: true`.
-
-Not yet done. Tracked in §10 backlog.
 
 ---
 
@@ -714,9 +704,6 @@ doesn't redo investigations.
   `src/components/desktop/galleryDb.ts`). Building the DB locally
   would mean owning the rendering layer (template + theme + build.py)
   — an explicit non-goal per §0.
-- **macOS code signing + notarization** — see §8.2. Cert costs $99/yr;
-  workflow secrets pre-wired (commented out). Without it users hit
-  "PicG is damaged" → must run `xattr -cr` or right-click open.
 - **HEIC on Linux / Windows** — `decodeHeicViaSips` is macOS-only.
   Replace with libde265 in libvips, or a wasm HEIC decoder, before
   we ship Linux/Windows builds.

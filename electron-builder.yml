@@ -189,12 +189,12 @@ mac:
       arch: arm64
     - target: dmg
       arch: x64
-  # No `identity` set in CI — produces an unsigned build. Users will
-  # see "unidentified developer" on first open and need to right-click
-  # → Open. Locally, electron-builder picks up the developer cert
-  # from the keychain automatically. Set DD_TEAM + cert in CI secrets
-  # once distribution starts and turn on notarization.
-  hardenedRuntime: false
+  # CI signs with the Developer ID Application certificate provided via
+  # CSC_LINK / CSC_KEY_PASSWORD, then notarizes with APPLE_* credentials.
+  # Locally, electron-builder picks up a matching Developer ID identity
+  # from the keychain automatically.
+  hardenedRuntime: true
+  notarize: true
   gatekeeperAssess: false
 
 dmg:

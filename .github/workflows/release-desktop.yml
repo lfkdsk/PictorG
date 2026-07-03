@@ -19,14 +19,13 @@
 # We key off tags rather than every push to main so dev branches don't
 # burn macOS runner minutes (those are 10x billed compared to ubuntu).
 #
-# Requires no secrets for the unsigned build (current default). Once
-# you have an Apple Developer ID Application cert:
-#   - Export it as a .p12, base64-encode → secret `MAC_CERT_P12_BASE64`
-#   - Cert password → `MAC_CERT_PASSWORD`
-#   - Apple ID + app-specific pwd + team ID for notarization →
-#     `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`
-# Then flip `mac.identity` in electron-builder.yml from null and turn
-# on `mac.notarize: true` (electron-builder reads APPLE_* env vars).
+# macOS releases are Developer ID signed and notarized when these
+# repository secrets are present:
+#   - `MAC_CERT_P12_BASE64`: base64-encoded Developer ID Application .p12
+#   - `MAC_CERT_PASSWORD`: password for that .p12
+#   - `APPLE_ID`: Apple ID email used for notarization
+#   - `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for APPLE_ID
+#   - `APPLE_TEAM_ID`: Apple Developer Team ID
 
 name: Release desktop build
 
@@ -129,12 +128,11 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Uncomment once you've added the cert/notarize secrets:
-          # CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload artifact (unpublished manual runs only)
         if: github.event_name == 'workflow_dispatch' && needs.tag.result == 'skipped'
