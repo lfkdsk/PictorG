@@ -189,12 +189,33 @@ mac:
       arch: arm64
     - target: dmg
       arch: x64
-  # No `identity` set in CI — produces an unsigned build. Users will
-  # see "unidentified developer" on first open and need to right-click
-  # → Open. Locally, electron-builder picks up the developer cert
-  # from the keychain automatically. Set DD_TEAM + cert in CI secrets
-  # once distribution starts and turn on notarization.
-  hardenedRuntime: false
+  # Signing is credential-driven, not config-driven — there's deliberately
+  # no `identity` or `notarize` key here.
+  #
+  #   Signing:  electron-builder auto-discovers a "Developer ID Application"
+  #             cert, either from the login keychain (local builds) or from
+  #             CSC_LINK + CSC_KEY_PASSWORD (CI, see release-desktop.yml).
+  #             No cert anywhere → it logs a warning and ships unsigned.
+  #
+  #   Notarize: runs automatically when the APPLE_API_KEY / APPLE_API_KEY_ID
+  #             / APPLE_API_ISSUER env vars are set, and is silently skipped
+  #             when they aren't. Do NOT add `notarize: true` — in
+  #             electron-builder 26 only `notarize: false` is read, and the
+  #             truthy form buys nothing while making a credential-less local
+  #             `npm run pack:dir` look misconfigured.
+  #
+  # So: contributors keep getting unsigned local builds with zero setup, and
+  # CI produces a signed + notarized DMG purely from repo secrets.
+  #
+  # hardenedRuntime is what Apple requires before it will notarize. It's the
+  # electron-builder default, spelled out here because flipping it off is
+  # what a "why did notarization start failing" bisect usually lands on.
+  # Entitlements come from build/entitlements.mac{,.inherit}.plist by
+  # convention.
+  hardenedRuntime: true
+  # Skip the local `spctl --assess` dry-run after signing. It checks the app
+  # against Gatekeeper *before* the notarization ticket is stapled, so it
+  # fails on a perfectly good build.
   gatekeeperAssess: false
 
 dmg:

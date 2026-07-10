@@ -569,8 +569,9 @@ without tagging. Workflow only fires on tag push.
 
 ### 8.2 Signing / notarization
 
-Currently unsigned. Users see "PicG is damaged" on first open
-(quarantine flag → Gatekeeper reject for unsigned).
+Unsigned until the five secrets below are added to the repo. An unsigned
+build shows "PicG is damaged" on first open (quarantine flag → Gatekeeper
+reject).
 
 Mitigation we ship today: the DMG includes
 `build/fix-gatekeeper.command`, dropped into the DMG window next to
@@ -593,20 +594,94 @@ xattr -cr /Applications/PicG.app
 xattr that Gatekeeper checks at spawn time. Plain `xattr -c` only
 clears the bundle's top-level attribute and leaves clone broken.
 
-To actually sign:
+The repo side is done: `hardenedRuntime: true`, entitlements in
+`build/entitlements.mac{,.inherit}.plist`, and the workflow reads the
+secrets below. What remains is producing the credentials — everything
+here needs a paid Apple Developer Program membership ($99/yr).
 
-1. Apple Developer Program ($99/yr) → "Developer ID Application"
-   cert.
-2. Export `.p12`, `base64 -i cert.p12 -o cert.b64`.
-3. Add GitHub secrets: `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`,
-   `APPLE_ID`, `APPLE_ID_PASSWORD` (app-specific password),
-   `APPLE_TEAM_ID`.
-4. Uncomment the `CSC_LINK / CSC_KEY_PASSWORD / APPLE_*` env block
-   in `.github/workflows/release-desktop.yml`.
-5. Set `mac.identity` in `electron-builder.yml`, flip
-   `hardenedRuntime: true`.
+**1. Developer ID Application certificate.** Easiest path is Xcode →
+Settings → Accounts → (your Apple ID) → Manage Certificates → **+** →
+*Developer ID Application*. It generates the keypair and installs it in
+the login keychain. (The web portal at developer.apple.com/account
+works too but makes you upload a CSR from Keychain Access first.) You
+must be the Account Holder; on an individual account that's you.
 
-Not yet done. Tracked in §10 backlog.
+Note the cert type: **Developer ID Application**, not "Apple
+Development" (which only signs builds for machines registered to your
+team) and not "Apple Distribution" (Mac App Store). Signing with the
+wrong one notarizes fine and then fails Gatekeeper on every other Mac.
+
+**2. Export it as `.p12`.** Keychain Access → *My Certificates* →
+right-click the cert → Export. Expand the disclosure triangle and
+export the **certificate**, which carries the private key with it —
+exporting the bare private key produces a `.p12` electron-builder
+can't sign with. Pick an export password.
+
+```bash
+base64 -i cert.p12 | pbcopy   # → secret MAC_CERT_P12_BASE64
+```
+
+**3. App Store Connect API key** for notarization. appstoreconnect.apple.com
+→ Users and Access → Integrations → App Store Connect API → **+**.
+Role *Developer* is enough. Download the `.p8` — Apple lets you do that
+exactly once. Copy the **Key ID** (10 chars) and the **Issuer ID**
+(a UUID, shown above the key table).
+
+```bash
+base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy   # → secret APPLE_API_KEY_P8_BASE64
+```
+
+**4. Add five repo secrets** (Settings → Secrets and variables →
+Actions):
+
+| Secret | Value |
+| --- | --- |
+| `MAC_CERT_P12_BASE64` | step 2 output |
+| `MAC_CERT_PASSWORD` | the `.p12` export password |
+| `APPLE_API_KEY_P8_BASE64` | step 3 output |
+| `APPLE_API_KEY_ID` | the Key ID |
+| `APPLE_API_ISSUER` | the Issuer ID |
+
+Then cut a release as usual. Signing and notarization both key off the
+presence of those env vars, so nothing else has to be toggled — and a
+fork or a credential-less local build still produces a working unsigned
+DMG rather than erroring.
+
+**Verifying.** On a Mac that has never run the app:
+
+```bash
+spctl -a -vvv -t install /Applications/PicG.app   # → "source=Notarized Developer ID"
+codesign -dv --verbose=4 /Applications/PicG.app   # check TeamIdentifier + runtime flag
+xcrun stapler validate /Applications/PicG.app     # ticket stapled?
+```
+
+The `stapler` check matters: notarization can succeed while stapling
+silently doesn't, and then the app needs network access on first launch
+to pass Gatekeeper.
+
+**Signing locally.** Once the cert is in your login keychain,
+`npm run dist:mac` signs automatically — electron-builder auto-discovers
+the Developer ID identity. It won't notarize unless you also export
+`APPLE_API_KEY` (a *path* to the `.p8`), `APPLE_API_KEY_ID`, and
+`APPLE_API_ISSUER`. Notarization adds 2–10 min per DMG; leave it to CI.
+
+**When notarization fails,** it is almost always a nested binary that
+didn't get signed or didn't inherit the hardened runtime — for us the
+candidates are the portable git under `Contents/Resources/git` (§4.6)
+and the `picg-heic-exr` Core Image helper that `after-pack.js` drops in
+`Contents/Resources`. Apple tells you exactly which file:
+
+```bash
+xcrun notarytool log <submission-id> \
+  --key AuthKey_XXXXXXXXXX.p8 --key-id <KEY_ID> --issuer <ISSUER_ID>
+```
+
+The submission ID is in the electron-builder output. A stray extended
+attribute (`xattr -cr` the tree) is the other recurring cause.
+
+Once a notarized DMG is verified end to end, `build/fix-gatekeeper.command`
+and its `dmg.contents` entry can be deleted — a stapled app opens on a
+double-click with no prompt.
 
 ---
 
@@ -714,9 +789,9 @@ doesn't redo investigations.
   `src/components/desktop/galleryDb.ts`). Building the DB locally
   would mean owning the rendering layer (template + theme + build.py)
   — an explicit non-goal per §0.
-- **macOS code signing + notarization** — see §8.2. Cert costs $99/yr;
-  workflow secrets pre-wired (commented out). Without it users hit
-  "PicG is damaged" → must run `xattr -cr` or right-click open.
+- **macOS code signing + notarization** — build config and workflow are
+  wired (§8.2); waiting on the cert + API-key secrets. Until they land
+  users hit "PicG is damaged" → must run `xattr -cr` or right-click open.
 - **HEIC on Linux / Windows** — `decodeHeicViaSips` is macOS-only.
   Replace with libde265 in libvips, or a wasm HEIC decoder, before
   we ship Linux/Windows builds.

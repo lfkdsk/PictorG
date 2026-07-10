@@ -19,14 +19,20 @@
 # We key off tags rather than every push to main so dev branches don't
 # burn macOS runner minutes (those are 10x billed compared to ubuntu).
 #
-# Requires no secrets for the unsigned build (current default). Once
-# you have an Apple Developer ID Application cert:
-#   - Export it as a .p12, base64-encode → secret `MAC_CERT_P12_BASE64`
-#   - Cert password → `MAC_CERT_PASSWORD`
-#   - Apple ID + app-specific pwd + team ID for notarization →
-#     `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`
-# Then flip `mac.identity` in electron-builder.yml from null and turn
-# on `mac.notarize: true` (electron-builder reads APPLE_* env vars).
+# macOS signing + notarization are driven entirely by repo secrets — see
+# docs/desktop-development.md §8.2 for how to produce each one:
+#
+#   MAC_CERT_P12_BASE64      Developer ID Application cert + private key,
+#                            exported as .p12 and base64-encoded
+#   MAC_CERT_PASSWORD        the .p12 export password
+#   APPLE_API_KEY_P8_BASE64  App Store Connect API key (.p8), base64-encoded
+#   APPLE_API_KEY_ID         the key's 10-char Key ID
+#   APPLE_API_ISSUER         the issuer UUID from App Store Connect
+#
+# With none of them set (forks, or before you had a cert) the build still
+# succeeds — electron-builder ships an unsigned, un-notarized DMG. Windows
+# signing is separate and still unconfigured; an Apple cert does nothing
+# for it.
 
 name: Release desktop build
 
@@ -116,6 +122,31 @@ jobs:
       - name: Generate icon
         run: node scripts/build-icon.js
 
+      # @electron/notarize wants the App Store Connect key as a file on disk,
+      # not as key material in an env var, so the secret has to be unpacked
+      # before electron-builder runs. Exporting APPLE_API_* only when the
+      # secret exists is deliberate: electron-builder throws if one of the
+      # three is set and the others aren't, but skips notarization silently
+      # when all three are absent. That's what keeps fork builds green.
+      - name: Stage notarization API key
+        env:
+          KEY_B64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "APPLE_API_KEY_P8_BASE64 not set — DMG will not be notarized."
+            exit 0
+          fi
+          key_path="$RUNNER_TEMP/apple-api-key.p8"
+          printf '%s' "$KEY_B64" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          {
+            echo "APPLE_API_KEY=$key_path"
+            echo "APPLE_API_KEY_ID=$KEY_ID"
+            echo "APPLE_API_ISSUER=$ISSUER"
+          } >> "$GITHUB_ENV"
+
       - name: Package + publish DMG
         run: |
           if [ "${{ github.event_name }}" = "push" ] || [ -n "${{ needs.tag.outputs.tag }}" ]; then
@@ -129,12 +160,13 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Uncomment once you've added the cert/notarize secrets:
-          # CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # electron-builder imports this .p12 into a throwaway keychain and
+          # signs with the Developer ID Application identity inside it. Both
+          # empty (fork PRs) → unsigned build, no failure.
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          # APPLE_API_KEY / _KEY_ID / _ISSUER arrive via $GITHUB_ENV from the
+          # step above.
 
       - name: Upload artifact (unpublished manual runs only)
         if: github.event_name == 'workflow_dispatch' && needs.tag.result == 'skipped'
