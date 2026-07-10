@@ -138,9 +138,37 @@ jobs:
             echo "APPLE_API_KEY_P8_BASE64 not set — DMG will not be notarized."
             exit 0
           fi
+
+          # GitHub secrets keep whatever whitespace you pasted in, and a
+          # trailing newline from `echo ... | gh secret set` is enough to make
+          # notarytool reject the value.
+          KEY_ID="${KEY_ID//[[:space:]]/}"
+          ISSUER="${ISSUER//[[:space:]]/}"
+
+          # Check the credential shapes here rather than letting notarytool
+          # discover them ~15 min in, after packaging + signing have already
+          # run on a 10x-billed macOS runner. Never print the values: they're
+          # masked in logs, but only if they reach the log as-is.
+          if [[ ! "$ISSUER" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::APPLE_API_ISSUER is not a UUID (got ${#ISSUER} chars)." \
+                 "It's the Issuer ID from App Store Connect → Integrations, NOT the Key ID." \
+                 "Individual Keys have no issuer — the key must be a Team Key."
+            exit 1
+          fi
+          if [[ ! "$KEY_ID" =~ ^[0-9A-Z]{10}$ ]]; then
+            echo "::error::APPLE_API_KEY_ID should be the 10-character Key ID (got ${#KEY_ID} chars)."
+            exit 1
+          fi
+
           key_path="$RUNNER_TEMP/apple-api-key.p8"
           printf '%s' "$KEY_B64" | base64 --decode > "$key_path"
           chmod 600 "$key_path"
+          if ! head -1 "$key_path" | grep -q 'BEGIN PRIVATE KEY'; then
+            echo "::error::APPLE_API_KEY_P8_BASE64 did not decode to a PEM private key." \
+                 "Re-run: base64 -i AuthKey_XXXXXXXXXX.p8 | gh secret set APPLE_API_KEY_P8_BASE64"
+            exit 1
+          fi
+
           {
             echo "APPLE_API_KEY=$key_path"
             echo "APPLE_API_KEY_ID=$KEY_ID"
