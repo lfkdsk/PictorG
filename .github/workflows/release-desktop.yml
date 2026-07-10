@@ -13,8 +13,9 @@
 #      workflow, so we deliberately keep both steps in this one run
 #      rather than relying on the tag-push trigger above.)
 #
-# Running manually with `bump` = none just produces a .dmg artifact
-# without publishing or tagging — handy for verifying CI changes.
+# Running manually with `bump` = none just produces artifacts without
+# publishing or tagging — handy for verifying CI changes. Manual release
+# runs can also mark the GitHub Release as a pre-release.
 #
 # We key off tags rather than every push to main so dev branches don't
 # burn macOS runner minutes (those are 10x billed compared to ubuntu).
@@ -33,6 +34,11 @@
 # succeeds — electron-builder ships an unsigned, un-notarized DMG. Windows
 # signing is separate and still unconfigured; an Apple cert does nothing
 # for it.
+#
+# Notarization used to authenticate as APPLE_ID + an app-specific password;
+# those three secrets are gone. An App Store Connect key belongs to the team
+# rather than to one maintainer's Apple ID, so it doesn't break when that
+# person rotates a password or leaves.
 
 name: Release desktop build
 
@@ -53,6 +59,10 @@ on:
           - patch
           - minor
           - major
+      prerelease:
+        description: "Mark the published GitHub Release as a pre-release."
+        type: boolean
+        default: false
 
 permissions:
   contents: write # needed to push the release commit/tag and upload to the Release
@@ -194,7 +204,10 @@ jobs:
           CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           # APPLE_API_KEY / _KEY_ID / _ISSUER arrive via $GITHUB_ENV from the
-          # step above.
+          # step above. They replace the APPLE_ID + app-specific-password
+          # trio that used to sit here: an App Store Connect key isn't tied
+          # to one maintainer's Apple ID and survives their 2FA changes.
+          EP_PRE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease && inputs.bump != 'none' }}
 
       - name: Upload artifact (unpublished manual runs only)
         if: github.event_name == 'workflow_dispatch' && needs.tag.result == 'skipped'
@@ -263,6 +276,7 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_PRE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease && inputs.bump != 'none' }}
           # Unsigned for now — users get a Windows SmartScreen warning on
           # first run. Once you have a code-signing cert (an OV/EV .pfx or
           # an Azure Trusted Signing account), set:

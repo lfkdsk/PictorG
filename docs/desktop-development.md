@@ -343,15 +343,15 @@ two DMGs. Rather than fighting dugite's postinstall to download both,
 we use `dugite-native` directly and own the fetch script. Simpler,
 predictable.
 
-**Quarantine flag matters here.** Unsigned builds inherit
-`com.apple.quarantine` from the DMG, and macOS applies that check to
-the nested git binary too — not just the bundle's main executable.
-The `Fix Gatekeeper.command` shipped in the DMG runs `xattr -cr`
-(recursive) for exactly this reason; if you change it back to
-plain `xattr -c`, clone will fail post-install with a Gatekeeper
-denial on `Contents/Resources/git/bin/git`. Once we sign +
-notarize (see §8.2), the whole bundle including nested binaries
-gets trusted at install time and the script becomes vestigial.
+**Quarantine flag matters for unsigned local builds.** Unsigned or
+ad-hoc builds inherit `com.apple.quarantine` from the DMG, and macOS
+applies that check to the nested git binary too — not just the bundle's
+main executable. The `Fix Gatekeeper.command` helper runs `xattr -cr`
+(recursive) for exactly this reason; if you change it back to plain
+`xattr -c`, clone can fail post-install with a Gatekeeper denial on
+`Contents/Resources/git/bin/git`. CI release builds are signed and
+notarized (see §8.2), so users should not need this workaround for
+published macOS releases.
 
 ---
 
@@ -569,85 +569,72 @@ without tagging. Workflow only fires on tag push.
 
 ### 8.2 Signing / notarization
 
-Unsigned until the five secrets below are added to the repo. An unsigned
-build shows "PicG is damaged" on first open (quarantine flag → Gatekeeper
-reject).
+Release builds are Developer ID signed and notarized in GitHub Actions.
+electron-builder imports the `.p12` from `CSC_LINK` / `CSC_KEY_PASSWORD`
+and notarizes through Apple's notarytool with an App Store Connect API
+key. Nothing in `electron-builder.yml` turns this on — see the comment
+on `mac.hardenedRuntime` for why it's credential-driven rather than
+config-driven.
 
-Mitigation we ship today: the DMG includes
-`build/fix-gatekeeper.command`, dropped into the DMG window next to
-the app + Applications symlink as **"Fix Gatekeeper.command"**. After
-dragging PicG to Applications the user double-clicks it — macOS shows
-the standard "are you sure you want to open this?" prompt (the
-.command inherited the same quarantine flag), they click Open, the
-script runs `xattr -c /Applications/PicG.app`, and PicG launches
-normally from then on. Trade-off vs. doing nothing: one less-scary
-prompt instead of "is damaged → move to Trash."
-
-Manual fallback in the release notes for users who prefer Terminal:
-
-```bash
-xattr -cr /Applications/PicG.app
-```
-
-`-r` is required because the bundled portable git under
-`Contents/Resources/git/bin/git` (see §4.6) carries its own quarantine
-xattr that Gatekeeper checks at spawn time. Plain `xattr -c` only
-clears the bundle's top-level attribute and leaves clone broken.
-
-The repo side is done: `hardenedRuntime: true`, entitlements in
-`build/entitlements.mac{,.inherit}.plist`, and the workflow reads the
-secrets below. What remains is producing the credentials — everything
-here needs a paid Apple Developer Program membership ($99/yr).
-
-**1. Developer ID Application certificate.** Easiest path is Xcode →
-Settings → Accounts → (your Apple ID) → Manage Certificates → **+** →
-*Developer ID Application*. It generates the keypair and installs it in
-the login keychain. (The web portal at developer.apple.com/account
-works too but makes you upload a CSR from Keychain Access first.) You
-must be the Account Holder; on an individual account that's you.
-
-Note the cert type: **Developer ID Application**, not "Apple
-Development" (which only signs builds for machines registered to your
-team) and not "Apple Distribution" (Mac App Store). Signing with the
-wrong one notarizes fine and then fails Gatekeeper on every other Mac.
-
-**2. Export it as `.p12`.** Keychain Access → *My Certificates* →
-right-click the cert → Export. Expand the disclosure triangle and
-export the **certificate**, which carries the private key with it —
-exporting the bare private key produces a `.p12` electron-builder
-can't sign with. Pick an export password.
-
-```bash
-base64 -i cert.p12 | pbcopy   # → secret MAC_CERT_P12_BASE64
-```
-
-**3. App Store Connect API key** for notarization. appstoreconnect.apple.com
-→ Users and Access → Integrations → App Store Connect API → **+**.
-Role *Developer* is enough. Download the `.p8` — Apple lets you do that
-exactly once. Copy the **Key ID** (10 chars) and the **Issuer ID**
-(a UUID, shown above the key table).
-
-```bash
-base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy   # → secret APPLE_API_KEY_P8_BASE64
-```
-
-**4. Add five repo secrets** (Settings → Secrets and variables →
-Actions):
+Required repository secrets:
 
 | Secret | Value |
 | --- | --- |
-| `MAC_CERT_P12_BASE64` | step 2 output |
-| `MAC_CERT_PASSWORD` | the `.p12` export password |
-| `APPLE_API_KEY_P8_BASE64` | step 3 output |
-| `APPLE_API_KEY_ID` | the Key ID |
-| `APPLE_API_ISSUER` | the Issuer ID |
+| `MAC_CERT_P12_BASE64` | base64 of the Developer ID Application `.p12` |
+| `MAC_CERT_PASSWORD` | password used when exporting that `.p12` |
+| `APPLE_API_KEY_P8_BASE64` | base64 of the App Store Connect `.p8` |
+| `APPLE_API_KEY_ID` | the key's 10-character Key ID |
+| `APPLE_API_ISSUER` | the team's Issuer ID (a UUID) |
 
-Then cut a release as usual. Signing and notarization both key off the
-presence of those env vars, so nothing else has to be toggled — and a
-fork or a credential-less local build still produces a working unsigned
-DMG rather than erroring.
+With none of them present the build still succeeds and ships an unsigned,
+un-notarized DMG — that's what keeps fork PRs and credential-less local
+`pack:dir` runs green.
 
-**Verifying.** On a Mac that has never run the app:
+Producing them needs a paid Apple Developer Program membership ($99/yr).
+
+**1. Developer ID Application certificate.** Xcode → Settings → Accounts
+→ (your Apple ID) → Manage Certificates → **+** → *Developer ID
+Application*. It generates the keypair and installs it in the login
+keychain. (developer.apple.com/account works too, but makes you upload a
+CSR from Keychain Access first.) You must be the Account Holder; on an
+individual account that's you.
+
+Note the type: **Developer ID Application**, not "Apple Development"
+(signs only for machines registered to your team) and not "Apple
+Distribution" (Mac App Store). The wrong one notarizes fine and then
+fails Gatekeeper on every Mac but yours.
+
+**2. Export it as `.p12`.** Keychain Access → *My Certificates* →
+right-click the cert → Export. Expand the disclosure triangle and export
+the **certificate** — the private key travels with it. A bare `.cer`
+holds only the public half and a bare private key is missing the cert;
+neither can sign. Pick an export password.
+
+```bash
+base64 -i cert.p12 | gh secret set MAC_CERT_P12_BASE64
+```
+
+**3. App Store Connect API key.** appstoreconnect.apple.com → Users and
+Access → Integrations → App Store Connect API → **Team Keys** → **+**;
+role *Developer* is enough. Download the `.p8` — Apple allows that
+exactly once. Copy the **Key ID** (10 chars) and the **Issuer ID** (the
+UUID above the key table).
+
+It must be a Team Key. **Individual Keys have no Issuer ID**, and
+notarytool has no mode that works without one.
+
+```bash
+base64 -i AuthKey_XXXXXXXXXX.p8 | gh secret set APPLE_API_KEY_P8_BASE64
+```
+
+Check the three parts agree before spending a CI run on them:
+
+```bash
+xcrun notarytool history --key AuthKey_XXXXXXXXXX.p8 \
+  --key-id <KEY_ID> --issuer <ISSUER_ID>
+```
+
+**Verifying a build.** On a Mac that has never run the app:
 
 ```bash
 spctl -a -vvv -t install /Applications/PicG.app   # → "source=Notarized Developer ID"
@@ -655,21 +642,37 @@ codesign -dv --verbose=4 /Applications/PicG.app   # check TeamIdentifier + runti
 xcrun stapler validate /Applications/PicG.app     # ticket stapled?
 ```
 
-The `stapler` check matters: notarization can succeed while stapling
-silently doesn't, and then the app needs network access on first launch
-to pass Gatekeeper.
+The `stapler` check earns its place: notarization can succeed while
+stapling silently doesn't, and the app then needs network access on
+first launch to pass Gatekeeper.
 
-**Signing locally.** Once the cert is in your login keychain,
+**Signing locally.** With the cert in your login keychain,
 `npm run dist:mac` signs automatically — electron-builder auto-discovers
 the Developer ID identity. It won't notarize unless you also export
 `APPLE_API_KEY` (a *path* to the `.p8`), `APPLE_API_KEY_ID`, and
 `APPLE_API_ISSUER`. Notarization adds 2–10 min per DMG; leave it to CI.
 
-**When notarization fails,** it is almost always a nested binary that
-didn't get signed or didn't inherit the hardened runtime — for us the
-candidates are the portable git under `Contents/Resources/git` (§4.6)
-and the `picg-heic-exr` Core Image helper that `after-pack.js` drops in
-`Contents/Resources`. Apple tells you exactly which file:
+**On changing the signing identity.** Releases up to and including
+v1.3.6 were signed by team `FM39C6H8AH`; from v1.3.7 on it's
+`R6QM7B7GB7`. Users notice nothing today, but only because of two
+properties that are easy to lose:
+
+- tokens live in `<userData>/auth.json`, not the OS keychain (§ see
+  `electron/ipc/auth.ts`) — keychain items are ACL'd to the signing
+  identity that created them, so a team change would silently sign
+  everyone out;
+- the updater is notify-only and sends users to the release page for a
+  fresh DMG. Squirrel.Mac, which electron-updater would use for an
+  in-place swap, refuses to replace a bundle whose code-signature team
+  doesn't match the running one.
+
+Restore either and a team change becomes a breaking release.
+
+**When notarization fails,** it's usually a nested binary that didn't
+get signed or didn't inherit the hardened runtime — for us that means
+the portable git under `Contents/Resources/git` (§4.6) or the
+`picg-heic-exr` Core Image helper `after-pack.js` drops into
+`Contents/Resources`. Apple names the file:
 
 ```bash
 xcrun notarytool log <submission-id> \
@@ -679,10 +682,22 @@ xcrun notarytool log <submission-id> \
 The submission ID is in the electron-builder output. A stray extended
 attribute (`xattr -cr` the tree) is the other recurring cause.
 
-Once a notarized DMG is verified end to end, `build/fix-gatekeeper.command`
-and its `dmg.contents` entry can be deleted — a stapled app opens on a
-double-click with no prompt.
+**Unsigned builds** (local `pack:dir`, forks) still trip Gatekeeper:
+"PicG is damaged" on first open. The DMG ships
+`build/fix-gatekeeper.command` for that, and the manual fallback is:
 
+```bash
+xattr -cr /Applications/PicG.app
+```
+
+`-r` is required because the bundled git at
+`Contents/Resources/git/bin/git` carries its own quarantine xattr that
+Gatekeeper checks at spawn time. Plain `xattr -c` clears only the
+bundle's top-level attribute and leaves clone broken.
+
+Once a notarized DMG is verified end to end, `fix-gatekeeper.command`
+and its `dmg.contents` entry can go — a stapled app opens on a
+double-click with no prompt.
 ---
 
 ## 9. Singletons & lifecycle gotchas
@@ -789,9 +804,6 @@ doesn't redo investigations.
   `src/components/desktop/galleryDb.ts`). Building the DB locally
   would mean owning the rendering layer (template + theme + build.py)
   — an explicit non-goal per §0.
-- **macOS code signing + notarization** — build config and workflow are
-  wired (§8.2); waiting on the cert + API-key secrets. Until they land
-  users hit "PicG is damaged" → must run `xattr -cr` or right-click open.
 - **HEIC on Linux / Windows** — `decodeHeicViaSips` is macOS-only.
   Replace with libde265 in libvips, or a wasm HEIC decoder, before
   we ship Linux/Windows builds.

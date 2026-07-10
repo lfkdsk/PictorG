@@ -12,6 +12,7 @@ import {
   decodePath,
   encodePath,
   GITHUB_API_BASE,
+  getPicgBridge,
   checkRepositorySecret as coreCheckRepositorySecret,
   checkTokenPermissions as coreCheckTokenPermissions,
   createRepo as coreCreateRepo,
@@ -109,6 +110,56 @@ export function logout(): void {
   if (typeof window !== 'undefined') {
     window.location.href = '/login';
   }
+}
+
+// Recognizes a GitHub git-over-HTTPS authentication failure. These surface
+// when the stored OAuth token has been revoked or expired: `git push`/`pull`
+// reject with "remote: Invalid username or token. Password authentication is
+// not supported for Git operations." / "fatal: Authentication failed", and the
+// IPC layer forwards that string into the rejected promise the renderer awaits.
+// We match the stable substrings rather than the exact message so a git version
+// bump, locale, or differing repo URL doesn't slip past us.
+export function isGitAuthError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes('invalid username or token') ||
+    msg.includes('password authentication is not supported') ||
+    msg.includes('authentication failed') ||
+    msg.includes('could not read username')
+  );
+}
+
+// Desktop sign-out. Drops the durable on-disk token (main process) first so a
+// stale copy can't restore the session on next launch, then clears the
+// renderer's localStorage/cookie cache and hard-navs to the desktop sign-in.
+// Distinct from the web logout() above, which targets /login. Shared by the
+// Topbar "Sign out" action and the auto-logout-on-auth-failure path; the
+// optional `reason` is surfaced on the sign-in page so a forced logout can
+// explain itself instead of dropping the user on a bare screen.
+export async function desktopLogout(reason?: string): Promise<void> {
+  const bridge = getPicgBridge();
+  if (bridge) {
+    try {
+      await bridge.auth.clearToken();
+    } catch {
+      /* clear the renderer copy regardless */
+    }
+  }
+  clearGitHubToken();
+  if (typeof window !== 'undefined') {
+    window.location.href = reason
+      ? `/desktop/login?reason=${encodeURIComponent(reason)}`
+      : '/desktop/login';
+  }
+}
+
+// If `err` is a GitHub auth failure, sign the desktop user out and resolve true
+// so the caller stops (the page is already navigating to the sign-in). Resolves
+// false for any other error, leaving the caller to surface it normally.
+export async function logoutIfGitAuthError(err: unknown): Promise<boolean> {
+  if (!isGitAuthError(err)) return false;
+  await desktopLogout('auth-expired');
+  return true;
 }
 
 // ---------------------------------------------------------------------------

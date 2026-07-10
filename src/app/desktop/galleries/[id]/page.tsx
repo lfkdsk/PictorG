@@ -13,6 +13,7 @@ import {
   type PushReceipt,
   type StorageAdapter,
 } from '@/core/storage';
+import { isGitAuthError, desktopLogout, logoutIfGitAuthError } from '@/lib/github';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { EditGalleryModal } from '@/components/desktop/EditGalleryModal';
@@ -128,8 +129,17 @@ export default function GalleryDetailPage() {
         : bridge.gallery.status(gallery.id);
       statusPromise
         .then(applyStatus)
-        .catch(() => {
-          if (!remote) return;
+        .catch((err) => {
+          if (!remote || cancelled) return;
+          // The entry-time network refresh is the earliest place a
+          // revoked/expired token shows up. Sign out on a genuine auth
+          // failure; let everything else (offline, GitHub down) fall
+          // through to the local-only status so the gallery stays
+          // browsable offline.
+          if (isGitAuthError(err)) {
+            void desktopLogout('auth-expired');
+            return;
+          }
           bridge.gallery.status(gallery.id).then(applyStatus).catch(() => {});
         });
     };
@@ -275,6 +285,9 @@ export default function GalleryDetailPage() {
         window.location.assign(href);
       }
     } catch (err) {
+      // A revoked/expired token surfaces here as a git auth failure; sign
+      // out and bounce to the sign-in page rather than showing a raw error.
+      if (await logoutIfGitAuthError(err)) return;
       setOpError(err instanceof Error ? err.message : String(err));
       setPulling(false);
     }
@@ -298,6 +311,9 @@ export default function GalleryDetailPage() {
       setAhead(s.ahead);
       setBehind(s.behind);
     } catch (err) {
+      // A revoked/expired token surfaces here as a git auth failure; sign
+      // out and bounce to the sign-in page rather than showing a raw error.
+      if (await logoutIfGitAuthError(err)) return;
       setOpError(err instanceof Error ? err.message : String(err));
     } finally {
       setPushing(false);

@@ -8,7 +8,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { clearGitHubToken, getGitHubToken } from '@/lib/github';
+import { desktopLogout, getGitHubToken } from '@/lib/github';
 import { getStoredUser, type GitHubUser } from '@/lib/auth';
 import { getPicgBridge } from '@/core/storage';
 import { InfoToastHost, fireInfoToast } from '@/components/desktop/InfoToast';
@@ -186,26 +186,11 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
   }, []);
 
   async function handleLogout() {
-    // Clear the durable on-disk copy first (was Keychain, now
-    // <userData>/auth.json) so a stale token can't "restore" us into a
-    // logged-in state on next launch.
-    const bridge = getPicgBridge();
-    if (bridge) {
-      try {
-        await bridge.auth.clearToken();
-      } catch {
-        /* ignore */
-      }
-    }
-    // Don't call the shared logout() — it redirects to /login, which is
-    // the web sign-in page. Desktop has its own /desktop/login. We
-    // still clear the renderer-side localStorage token via
-    // clearGitHubToken (re-exported through getGitHubToken's module),
-    // then hard-nav to the desktop login.
-    clearGitHubToken();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/desktop/login';
-    }
+    // Shared with the auto-logout-on-auth-failure path (see desktopLogout):
+    // clears the durable on-disk token first so a stale copy can't restore
+    // the session on next launch, then the renderer cache, then hard-navs to
+    // /desktop/login (not the web /login the shared logout() uses).
+    await desktopLogout();
   }
 
   return (

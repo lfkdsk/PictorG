@@ -49,7 +49,7 @@ PicG 还提供基于 Electron 的桌面端（macOS / Windows），与 Web 端共
 
 发布产物见 [Releases](https://github.com/lfkdsk/PicG/releases)：macOS DMG（arm64 / x64）与 Windows 安装包（NSIS，x64）。
 
-> macOS 当前签名/公证仍在筹备中，首次启动若被 Gatekeeper 拦截，DMG 内附带了一份 `Fix Gatekeeper` 助手，按提示放行即可。Windows 安装包尚未签名，首次运行 SmartScreen 会拦截，点「更多信息 → 仍要运行」即可。
+> macOS 发布版会使用 Developer ID 签名并通过 Apple 公证，可正常通过 Gatekeeper。Windows 安装包尚未签名，首次运行 SmartScreen 会拦截，点「更多信息 → 仍要运行」即可。
 
 ### 本地构建
 
