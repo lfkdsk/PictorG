@@ -477,6 +477,14 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
           background: rgba(217, 119, 87, 0.22);
           border-color: var(--accent);
         }
+        /* Downloading: still very much alive (label ticks %), just not
+           clickable — so no hover invite, but no washed-out disabled
+           look either. */
+        .picg-update-pill:disabled { cursor: default; }
+        .picg-update-pill:disabled:hover {
+          background: rgba(217, 119, 87, 0.12);
+          border-color: rgba(217, 119, 87, 0.45);
+        }
         .picg-update-pill-dot {
           width: 6px; height: 6px;
           border-radius: 50%;
