@@ -323,11 +323,24 @@ export type PushReceipt = {
 
 export type PreloadUpdaterBridge = {
   openReleasePage(): Promise<void>;
+  // Resolves when the download completes (progress streams via
+  // onDownloadProgress); rejects on failure — callers fall back to
+  // openReleasePage.
+  downloadUpdate(): Promise<void>;
+  quitAndInstall(): Promise<void>;
   onUpdateAvailable(
     handler: (info: { version: string; releaseUrl: string }) => void
   ): () => void;
+  onDownloadProgress(handler: (info: { percent: number }) => void): () => void;
+  onUpdateDownloaded(handler: (info: { version: string }) => void): () => void;
   onUpdateError(handler: (info: { message: string }) => void): () => void;
-  getPending(): Promise<{ version: string; releaseUrl: string } | null>;
+  // `downloaded` distinguishes "offer the download" from "offer the
+  // restart" when a Topbar mounts after the download already finished.
+  getPending(): Promise<{
+    version: string;
+    releaseUrl: string;
+    downloaded: boolean;
+  } | null>;
   checkNow(): Promise<
     | {
         ok: true;
