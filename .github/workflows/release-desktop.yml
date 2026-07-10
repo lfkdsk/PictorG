@@ -124,6 +124,16 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      # The mac job ships BOTH a arm64 and a x64 DMG (see mac.target), but
+      # npm ci's postinstall only fetches the runner's own arch of the
+      # bundled portable git. extraResources then points the x64 DMG at an
+      # empty build/git/x64, and electron-builder copies a missing source
+      # dir SILENTLY — so the x64 build packages with no git and clone/push
+      # fail on Intel Macs (shipped broken in 1.3.5/1.3.6 this way). Fetch
+      # every arch up front, exactly as build-win already does.
+      - name: Fetch portable git (all arches)
+        run: npm run fetch:git:all
+
       - name: Build Electron main + Next standalone
         run: |
           npm run electron:build
