@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the main PicG.app binary under the hardened runtime,
+  which Apple requires before it will notarize a Developer ID build.
+
+  electron-builder finds this file by convention: buildResources is
+  `build/`, and a non-MAS mac build looks for `entitlements.mac.plist`
+  there. No electron-builder.yml key points at it.
+-->
+<plist version="1.0">
+  <dict>
+    <!-- V8 compiles JS to machine code at runtime. Without these two the
+         renderer dies on launch under the hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- sharp dlopen()s its libvips prebuild out of app.asar.unpacked, and
+         those .dylibs are signed by us rather than by Apple. Library
+         validation would reject them. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Part of Electron's documented hardened-runtime baseline. main.ts
+         fork()s the Next standalone server, re-execing our own binary with
+         a custom environment (ELECTRON_RUN_AS_NODE=1). -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+  </dict>
+</plist>

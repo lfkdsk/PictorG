@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements applied to everything nested inside PicG.app that isn't the
+  main binary: the Electron Helper apps (renderer / GPU / plugin), the
+  bundled portable git under Contents/Resources/git, and the picg-heic-exr
+  Core Image helper.
+
+  Found by convention as `entitlements.mac.inherit.plist` in buildResources.
+  We keep it identical to entitlements.mac.plist: the renderer helper is the
+  process that actually runs V8, and the Next server child re-execs the same
+  binary. Omit this file and electron-builder falls back to its own template,
+  which is missing allow-dyld-environment-variables.
+
+  (There's no com.apple.security.inherit here — that key only means anything
+  for App Sandbox builds, and we ship a Developer ID build, not a MAS one.)
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+  </dict>
+</plist>

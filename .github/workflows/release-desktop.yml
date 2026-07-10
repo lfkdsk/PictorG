@@ -20,13 +20,25 @@
 # We key off tags rather than every push to main so dev branches don't
 # burn macOS runner minutes (those are 10x billed compared to ubuntu).
 #
-# macOS releases are Developer ID signed and notarized when these
-# repository secrets are present:
-#   - `MAC_CERT_P12_BASE64`: base64-encoded Developer ID Application .p12
-#   - `MAC_CERT_PASSWORD`: password for that .p12
-#   - `APPLE_ID`: Apple ID email used for notarization
-#   - `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for APPLE_ID
-#   - `APPLE_TEAM_ID`: Apple Developer Team ID
+# macOS signing + notarization are driven entirely by repo secrets — see
+# docs/desktop-development.md §8.2 for how to produce each one:
+#
+#   MAC_CERT_P12_BASE64      Developer ID Application cert + private key,
+#                            exported as .p12 and base64-encoded
+#   MAC_CERT_PASSWORD        the .p12 export password
+#   APPLE_API_KEY_P8_BASE64  App Store Connect API key (.p8), base64-encoded
+#   APPLE_API_KEY_ID         the key's 10-char Key ID
+#   APPLE_API_ISSUER         the issuer UUID from App Store Connect
+#
+# With none of them set (forks, or before you had a cert) the build still
+# succeeds — electron-builder ships an unsigned, un-notarized DMG. Windows
+# signing is separate and still unconfigured; an Apple cert does nothing
+# for it.
+#
+# Notarization used to authenticate as APPLE_ID + an app-specific password;
+# those three secrets are gone. An App Store Connect key belongs to the team
+# rather than to one maintainer's Apple ID, so it doesn't break when that
+# person rotates a password or leaves.
 
 name: Release desktop build
 
@@ -112,6 +124,16 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      # The mac job ships BOTH a arm64 and a x64 DMG (see mac.target), but
+      # npm ci's postinstall only fetches the runner's own arch of the
+      # bundled portable git. extraResources then points the x64 DMG at an
+      # empty build/git/x64, and electron-builder copies a missing source
+      # dir SILENTLY — so the x64 build packages with no git and clone/push
+      # fail on Intel Macs (shipped broken in 1.3.5/1.3.6 this way). Fetch
+      # every arch up front, exactly as build-win already does.
+      - name: Fetch portable git (all arches)
+        run: npm run fetch:git:all
+
       - name: Build Electron main + Next standalone
         run: |
           npm run electron:build
@@ -119,6 +141,59 @@ jobs:
 
       - name: Generate icon
         run: node scripts/build-icon.js
+
+      # @electron/notarize wants the App Store Connect key as a file on disk,
+      # not as key material in an env var, so the secret has to be unpacked
+      # before electron-builder runs. Exporting APPLE_API_* only when the
+      # secret exists is deliberate: electron-builder throws if one of the
+      # three is set and the others aren't, but skips notarization silently
+      # when all three are absent. That's what keeps fork builds green.
+      - name: Stage notarization API key
+        env:
+          KEY_B64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "APPLE_API_KEY_P8_BASE64 not set — DMG will not be notarized."
+            exit 0
+          fi
+
+          # GitHub secrets keep whatever whitespace you pasted in, and a
+          # trailing newline from `echo ... | gh secret set` is enough to make
+          # notarytool reject the value.
+          KEY_ID="${KEY_ID//[[:space:]]/}"
+          ISSUER="${ISSUER//[[:space:]]/}"
+
+          # Check the credential shapes here rather than letting notarytool
+          # discover them ~15 min in, after packaging + signing have already
+          # run on a 10x-billed macOS runner. Never print the values: they're
+          # masked in logs, but only if they reach the log as-is.
+          if [[ ! "$ISSUER" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "::error::APPLE_API_ISSUER is not a UUID (got ${#ISSUER} chars)." \
+                 "It's the Issuer ID from App Store Connect → Integrations, NOT the Key ID." \
+                 "Individual Keys have no issuer — the key must be a Team Key."
+            exit 1
+          fi
+          if [[ ! "$KEY_ID" =~ ^[0-9A-Z]{10}$ ]]; then
+            echo "::error::APPLE_API_KEY_ID should be the 10-character Key ID (got ${#KEY_ID} chars)."
+            exit 1
+          fi
+
+          key_path="$RUNNER_TEMP/apple-api-key.p8"
+          printf '%s' "$KEY_B64" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          if ! head -1 "$key_path" | grep -q 'BEGIN PRIVATE KEY'; then
+            echo "::error::APPLE_API_KEY_P8_BASE64 did not decode to a PEM private key." \
+                 "Re-run: base64 -i AuthKey_XXXXXXXXXX.p8 | gh secret set APPLE_API_KEY_P8_BASE64"
+            exit 1
+          fi
+
+          {
+            echo "APPLE_API_KEY=$key_path"
+            echo "APPLE_API_KEY_ID=$KEY_ID"
+            echo "APPLE_API_ISSUER=$ISSUER"
+          } >> "$GITHUB_ENV"
 
       - name: Package + publish DMG
         run: |
@@ -133,11 +208,15 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder imports this .p12 into a throwaway keychain and
+          # signs with the Developer ID Application identity inside it. Both
+          # empty (fork PRs) → unsigned build, no failure.
           CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_API_KEY / _KEY_ID / _ISSUER arrive via $GITHUB_ENV from the
+          # step above. They replace the APPLE_ID + app-specific-password
+          # trio that used to sit here: an App Store Connect key isn't tied
+          # to one maintainer's Apple ID and survives their 2FA changes.
           EP_PRE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease && inputs.bump != 'none' }}
 
       - name: Upload artifact (unpublished manual runs only)
@@ -147,6 +226,7 @@ jobs:
           name: PicG-mac
           path: |
             dist-electron/*.dmg
+            dist-electron/*.zip
             dist-electron/latest-mac.yml
           retention-days: 14
 

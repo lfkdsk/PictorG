@@ -24,13 +24,18 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
   // unmount the page underneath and wipe an in-progress album draft.
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Set when a newer version is on the GitHub release page. The pill
-  // doesn't trigger a download — it opens the release page in the
-  // user's browser, since unsigned macOS builds can't use Squirrel's
-  // silent install. See electron/updater.ts for the rationale.
+  // walks through download → restart in place: click starts the silent
+  // download, progress streams into the label, and once the update is
+  // on disk the same pill relaunches into it. Downloads only start on
+  // click — see electron/updater.ts for why nothing preloads.
   const [updateAvailable, setUpdateAvailable] = useState<{
     version: string;
     releaseUrl: string;
   } | null>(null);
+  const [updatePhase, setUpdatePhase] = useState<
+    'idle' | 'downloading' | 'downloaded'
+  >('idle');
+  const [downloadPercent, setDownloadPercent] = useState(0);
 
   // Windows/Linux get titleBarOverlay (native controls float top-right);
   // macOS floats the traffic lights top-left. Pad the Topbar to clear
@@ -52,7 +57,12 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     bridge.updater
       .getPending()
       .then((pending) => {
-        if (pending) setUpdateAvailable(pending);
+        if (!pending) return;
+        setUpdateAvailable(pending);
+        // A download that finished before this Topbar mounted (page
+        // navigation mid-download) must resurface as "Restart", not as
+        // a fresh download offer.
+        if (pending.downloaded) setUpdatePhase('downloaded');
       })
       .catch(() => {
         /* old preload without getPending — fall back to live event */
@@ -62,6 +72,18 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         version: info.version,
         releaseUrl: info.releaseUrl,
       });
+    });
+    const offProgress = bridge.updater.onDownloadProgress((info) => {
+      setUpdatePhase('downloading');
+      setDownloadPercent(info.percent);
+    });
+    const offDownloaded = bridge.updater.onUpdateDownloaded((info) => {
+      setUpdatePhase('downloaded');
+      // Guard against the update-available broadcast having been missed
+      // entirely (listener attached mid-download after a navigation).
+      setUpdateAvailable(
+        (prev) => prev ?? { version: info.version, releaseUrl: '' }
+      );
     });
     // Background-poll errors used to be completely silent — surface
     // them as error toasts so the user has SOME signal when the
@@ -74,14 +96,37 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
     });
     return () => {
       offAvailable();
+      offProgress();
+      offDownloaded();
       offError();
     };
   }, []);
 
-  async function handleDownloadUpdate() {
+  async function handleUpdatePillClick() {
     const bridge = getPicgBridge();
     if (!bridge?.updater) return;
-    await bridge.updater.openReleasePage();
+    if (updatePhase === 'downloading') return;
+    if (updatePhase === 'downloaded') {
+      await bridge.updater.quitAndInstall();
+      return;
+    }
+    setUpdatePhase('downloading');
+    setDownloadPercent(0);
+    try {
+      await bridge.updater.downloadUpdate();
+      // The update-downloaded broadcast normally flips the phase; set it
+      // here too so a missed event can't strand the pill at 100%.
+      setUpdatePhase('downloaded');
+    } catch (err) {
+      // Silent path failed (network, or a release without its zip).
+      // Surface why and fall back to the manual flow that always works.
+      setUpdatePhase('idle');
+      fireInfoToast({
+        message: `Update download failed: ${err instanceof Error ? err.message : err} — opening the release page instead.`,
+        kind: 'error',
+      });
+      await bridge.updater.openReleasePage();
+    }
   }
 
   async function handleManualCheck() {
@@ -205,12 +250,21 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         <button
           type="button"
           className="picg-update-pill"
-          onClick={handleDownloadUpdate}
-          title={`Open the GitHub release page to download v${updateAvailable.version}`}
+          onClick={handleUpdatePillClick}
+          disabled={updatePhase === 'downloading'}
+          title={
+            updatePhase === 'downloaded'
+              ? `Restart PicG to finish updating to v${updateAvailable.version}`
+              : `Download v${updateAvailable.version} and install on restart`
+          }
         >
           <span className="picg-update-pill-dot" aria-hidden="true" />
           <span className="picg-update-pill-text">
-            v{updateAvailable.version} available · Download
+            {updatePhase === 'downloaded'
+              ? `v${updateAvailable.version} ready · Restart to update`
+              : updatePhase === 'downloading'
+                ? `Downloading v${updateAvailable.version} · ${downloadPercent}%`
+                : `v${updateAvailable.version} available · Download`}
           </span>
         </button>
       )}
@@ -422,6 +476,14 @@ export function Topbar({ actions }: { actions?: ReactNode }) {
         .picg-update-pill:hover {
           background: rgba(217, 119, 87, 0.22);
           border-color: var(--accent);
+        }
+        /* Downloading: still very much alive (label ticks %), just not
+           clickable — so no hover invite, but no washed-out disabled
+           look either. */
+        .picg-update-pill:disabled { cursor: default; }
+        .picg-update-pill:disabled:hover {
+          background: rgba(217, 119, 87, 0.12);
+          border-color: rgba(217, 119, 87, 0.45);
         }
         .picg-update-pill-dot {
           width: 6px; height: 6px;

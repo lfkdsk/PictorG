@@ -502,22 +502,35 @@ sips path).
 
 ## 8. Auto-update + release flow
 
-Built on `electron-updater`. Behaviour:
+Built on `electron-updater`. Detection is automatic; downloading is
+user-initiated. Behaviour:
 
-- Boot → 0.5 s later `autoUpdater.checkForUpdates()`. Then every 4 h.
-- If the GitHub Release manifest version is **strictly greater**
-  than the installed version (`semver.gt`, not `!==`), we download
-  in the background. Progress events stream to the renderer over
-  `updater:download-progress` → Topbar shows a slim bar next to
-  the brand logo while bytes flow in.
-- On download finish, main caches the event in
-  `pendingDownloadedUpdate` and broadcasts `updater:update-downloaded`.
-  Topbar renders an "Update ready · v0.x.y" pill. Click → main
-  calls `autoUpdater.quitAndInstall()`.
-- The cached `pendingDownloadedUpdate` is what `getPending()` IPC
-  returns on Topbar mount — this **replays the event** to a Topbar
-  that mounted *after* the download finished (e.g. user navigating
-  between desktop pages mid-download).
+- Boot → `autoUpdater.checkForUpdates()`. Then every 4 h.
+- An update exists when the GitHub Release manifest version is
+  **strictly greater** than the installed version (`semver.gt`, not
+  `!==`). The Topbar shows a "vX.Y.Z available · Download" pill —
+  nothing downloads until the user clicks it, because update payloads
+  run to hundreds of MB and quietly saturating a metered connection is
+  worse than asking.
+- Click → `updater:download-update`; progress streams over
+  `updater:download-progress` into the pill label ("Downloading … NN%").
+  On finish the pill flips to "Restart to update" → click →
+  `autoUpdater.quitAndInstall()`. Quitting without clicking still
+  applies the update (`autoInstallOnAppQuit`).
+- If the download fails (network, or a release missing its zip), the
+  renderer toasts the error and falls back to opening the GitHub
+  release page — the manual flow that always works.
+- `getPending()` IPC returns the cached available-update (plus a
+  `downloaded` flag) on Topbar mount — this **replays state** to a
+  Topbar that mounted *after* the event fired (user navigating between
+  desktop pages mid-download).
+- macOS silent install needs two things that only exist from v1.3.7 on:
+  a Developer ID signed + notarized build (Squirrel.Mac refuses to swap
+  in an app whose signature team differs from the running one — see
+  §8.2) and the per-arch `zip` targets in `electron-builder.yml`
+  (Squirrel consumes the zip out of latest-mac.yml, never the DMG).
+  Users on ≤1.3.6 run notify-only builds and take the browser path one
+  last time.
 
 Two non-obvious failure modes burned into the doc as guard rails:
 
@@ -569,35 +582,137 @@ without tagging. Workflow only fires on tag push.
 
 ### 8.2 Signing / notarization
 
-Release builds are Developer ID signed and notarized in GitHub
-Actions. `electron-builder` reads the Developer ID Application `.p12`
-from `CSC_LINK` / `CSC_KEY_PASSWORD`, then notarizes with Apple's
-notarytool through `APPLE_*` credentials.
+Release builds are Developer ID signed and notarized in GitHub Actions.
+electron-builder imports the `.p12` from `CSC_LINK` / `CSC_KEY_PASSWORD`
+and notarizes through Apple's notarytool with an App Store Connect API
+key. Nothing in `electron-builder.yml` turns this on — see the comment
+on `mac.hardenedRuntime` for why it's credential-driven rather than
+config-driven.
 
-Required GitHub repository secrets:
+Required repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `MAC_CERT_P12_BASE64` | base64 of the Developer ID Application `.p12` |
+| `MAC_CERT_PASSWORD` | password used when exporting that `.p12` |
+| `APPLE_API_KEY_P8_BASE64` | base64 of the App Store Connect `.p8` |
+| `APPLE_API_KEY_ID` | the key's 10-character Key ID |
+| `APPLE_API_ISSUER` | the team's Issuer ID (a UUID) |
+
+With none of them present the build still succeeds and ships an unsigned,
+un-notarized DMG — that's what keeps fork PRs and credential-less local
+`pack:dir` runs green.
+
+Producing them needs a paid Apple Developer Program membership ($99/yr).
+
+**1. Developer ID Application certificate.** Xcode → Settings → Accounts
+→ (your Apple ID) → Manage Certificates → **+** → *Developer ID
+Application*. It generates the keypair and installs it in the login
+keychain. (developer.apple.com/account works too, but makes you upload a
+CSR from Keychain Access first.) You must be the Account Holder; on an
+individual account that's you.
+
+Note the type: **Developer ID Application**, not "Apple Development"
+(signs only for machines registered to your team) and not "Apple
+Distribution" (Mac App Store). The wrong one notarizes fine and then
+fails Gatekeeper on every Mac but yours.
+
+**2. Export it as `.p12`.** Keychain Access → *My Certificates* →
+right-click the cert → Export. Expand the disclosure triangle and export
+the **certificate** — the private key travels with it. A bare `.cer`
+holds only the public half and a bare private key is missing the cert;
+neither can sign. Pick an export password.
 
 ```bash
-MAC_CERT_P12_BASE64=<base64 encoded Developer ID Application .p12>
-MAC_CERT_PASSWORD=<password used when exporting the .p12>
-APPLE_ID=<Apple ID email>
-APPLE_APP_SPECIFIC_PASSWORD=<app-specific password for APPLE_ID>
-APPLE_TEAM_ID=<Apple Developer Team ID, e.g. FM39C6H8AH>
+base64 -i cert.p12 | gh secret set MAC_CERT_P12_BASE64
 ```
 
-The `.cer` file alone is not enough for CI signing because it contains
-only the public certificate. Export a `.p12` from Keychain Access with
-the matching private key, then base64 it:
+**3. App Store Connect API key.** appstoreconnect.apple.com → Users and
+Access → Integrations → App Store Connect API → **Team Keys** → **+**;
+role *Developer* is enough. Download the `.p8` — Apple allows that
+exactly once. Copy the **Key ID** (10 chars) and the **Issuer ID** (the
+UUID above the key table).
+
+It must be a Team Key. **Individual Keys have no Issuer ID**, and
+notarytool has no mode that works without one.
 
 ```bash
-base64 -i DeveloperIDApplication.p12 -o DeveloperIDApplication.p12.b64
+base64 -i AuthKey_XXXXXXXXXX.p8 | gh secret set APPLE_API_KEY_P8_BASE64
 ```
 
-Local unsigned/ad-hoc builds may still need the quarantine workaround:
+Check the three parts agree before spending a CI run on them:
+
+```bash
+xcrun notarytool history --key AuthKey_XXXXXXXXXX.p8 \
+  --key-id <KEY_ID> --issuer <ISSUER_ID>
+```
+
+**Verifying a build.** On a Mac that has never run the app:
+
+```bash
+spctl -a -vvv -t install /Applications/PicG.app   # → "source=Notarized Developer ID"
+codesign -dv --verbose=4 /Applications/PicG.app   # check TeamIdentifier + runtime flag
+xcrun stapler validate /Applications/PicG.app     # ticket stapled?
+```
+
+The `stapler` check earns its place: notarization can succeed while
+stapling silently doesn't, and the app then needs network access on
+first launch to pass Gatekeeper.
+
+**Signing locally.** With the cert in your login keychain,
+`npm run dist:mac` signs automatically — electron-builder auto-discovers
+the Developer ID identity. It won't notarize unless you also export
+`APPLE_API_KEY` (a *path* to the `.p8`), `APPLE_API_KEY_ID`, and
+`APPLE_API_ISSUER`. Notarization adds 2–10 min per DMG; leave it to CI.
+
+**The signing identity is now load-bearing — don't change it.**
+Releases up to and including v1.3.6 were signed by team `FM39C6H8AH`;
+from v1.3.7 on it's `R6QM7B7GB7`. That particular switch was safe only
+because v1.3.6's updater was notify-only (users fetched the new DMG by
+hand, and Gatekeeper accepts any notarized app). From v1.3.7 the
+updater does silent in-place updates through Squirrel.Mac, and Squirrel
+refuses to swap in a bundle whose code-signature team differs from the
+running one — so the next identity change breaks auto-update for every
+installed copy, and each user must download one DMG manually again.
+Budget for that (release notes, a notify-only fallback release) if the
+cert ever has to move to another team.
+
+Relatedly: tokens live in `<userData>/auth.json` rather than the OS
+keychain (see `electron/ipc/auth.ts`). Keychain items are ACL'd to the
+signing identity that created them; moving token storage back to the
+keychain would make an identity change silently sign everyone out, on
+top of the update break.
+
+**When notarization fails,** it's usually a nested binary that didn't
+get signed or didn't inherit the hardened runtime — for us that means
+the portable git under `Contents/Resources/git` (§4.6) or the
+`picg-heic-exr` Core Image helper `after-pack.js` drops into
+`Contents/Resources`. Apple names the file:
+
+```bash
+xcrun notarytool log <submission-id> \
+  --key AuthKey_XXXXXXXXXX.p8 --key-id <KEY_ID> --issuer <ISSUER_ID>
+```
+
+The submission ID is in the electron-builder output. A stray extended
+attribute (`xattr -cr` the tree) is the other recurring cause.
+
+**Unsigned builds** (local `pack:dir`, forks) still trip Gatekeeper:
+"PicG is damaged" on first open. The DMG ships
+`build/fix-gatekeeper.command` for that, and the manual fallback is:
 
 ```bash
 xattr -cr /Applications/PicG.app
 ```
 
+`-r` is required because the bundled git at
+`Contents/Resources/git/bin/git` carries its own quarantine xattr that
+Gatekeeper checks at spawn time. Plain `xattr -c` clears only the
+bundle's top-level attribute and leaves clone broken.
+
+Once a notarized DMG is verified end to end, `fix-gatekeeper.command`
+and its `dmg.contents` entry can go — a stapled app opens on a
+double-click with no prompt.
 ---
 
 ## 9. Singletons & lifecycle gotchas

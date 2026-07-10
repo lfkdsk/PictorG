@@ -175,26 +175,55 @@ mac:
   # both keeps the filenames symmetric and makes electron-updater's
   # latest-mac.yml unambiguous about which file is for which arch.
   artifactName: ${productName}-${version}-${arch}.${ext}
-  # Two distinct dmg targets, one per architecture, so the Release page
-  # gets two separate downloads:
-  #   PicG-<version>-arm64.dmg
-  #   PicG-<version>-x64.dmg
-  # Putting both arches under a SINGLE dmg target collapses to a single
-  # universal DMG (a fat binary that bundles both arches). That's about
-  # ~2× the size and shows up as "Universal" in Finder. Splitting them
-  # lets Apple Silicon users download a smaller arm64-only DMG, and
-  # electron-updater picks the right one via latest-mac.yml regardless.
+  # Two artifact kinds per architecture:
+  #
+  #   dmg — what humans download from the Release page and first-install.
+  #   zip — what electron-updater's silent in-place update consumes.
+  #         Squirrel.Mac (the installer under electron-updater on macOS)
+  #         only ingests zips; without one in latest-mac.yml the updater
+  #         errors out at download time and the app falls back to
+  #         sending the user to the release page.
+  #
+  # Each arch is its own target entry: putting both arches under a
+  # SINGLE target collapses to a universal build (~2× size, shows as
+  # "Universal" in Finder). Splitting keeps downloads small and
+  # electron-updater picks the right file via latest-mac.yml anyway.
   target:
     - target: dmg
       arch: arm64
+    - target: zip
+      arch: arm64
     - target: dmg
       arch: x64
-  # CI signs with the Developer ID Application certificate provided via
-  # CSC_LINK / CSC_KEY_PASSWORD, then notarizes with APPLE_* credentials.
-  # Locally, electron-builder picks up a matching Developer ID identity
-  # from the keychain automatically.
+    - target: zip
+      arch: x64
+  # Signing is credential-driven, not config-driven — there's deliberately
+  # no `identity` or `notarize` key here.
+  #
+  #   Signing:  electron-builder auto-discovers a "Developer ID Application"
+  #             cert, either from the login keychain (local builds) or from
+  #             CSC_LINK + CSC_KEY_PASSWORD (CI, see release-desktop.yml).
+  #             No cert anywhere → it logs a warning and ships unsigned.
+  #
+  #   Notarize: runs automatically when the APPLE_API_KEY / APPLE_API_KEY_ID
+  #             / APPLE_API_ISSUER env vars are set, and is silently skipped
+  #             when they aren't. Do NOT add `notarize: true` — in
+  #             electron-builder 26 only `notarize: false` is read, and the
+  #             truthy form buys nothing while making a credential-less local
+  #             `npm run pack:dir` look misconfigured.
+  #
+  # So: contributors keep getting unsigned local builds with zero setup, and
+  # CI produces a signed + notarized DMG purely from repo secrets.
+  #
+  # hardenedRuntime is what Apple requires before it will notarize. It's the
+  # electron-builder default, spelled out here because flipping it off is
+  # what a "why did notarization start failing" bisect usually lands on.
+  # Entitlements come from build/entitlements.mac{,.inherit}.plist by
+  # convention.
   hardenedRuntime: true
-  notarize: true
+  # Skip the local `spctl --assess` dry-run after signing. It checks the app
+  # against Gatekeeper *before* the notarization ticket is stapled, so it
+  # fails on a perfectly good build.
   gatekeeperAssess: false
 
 dmg:

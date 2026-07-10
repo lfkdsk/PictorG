@@ -41,11 +41,21 @@ export const CHANNELS = {
   },
   updater: {
     // Renderer → main: open the GitHub release page in the user's
-    // default browser. The Topbar "vX.Y.Z available — Download" pill
-    // calls this; we ship unsigned macOS builds, so users grab the
-    // new DMG manually rather than the (broken-without-signing)
-    // electron-updater silent install path.
+    // default browser. Fallback surface for when the silent download
+    // fails (network, or a release that's missing its zip artifact) —
+    // the primary path is downloadUpdate → quitAndInstall.
     openReleasePage: 'updater:open-release-page',
+    // Renderer → main: start downloading the available update. Resolves
+    // when the download completes (updateDownloaded also broadcasts) or
+    // rejects with the failure message.
+    downloadUpdate: 'updater:download-update',
+    // Main → renderer broadcast: download progress, { percent } 0-100.
+    downloadProgress: 'updater:download-progress',
+    // Main → renderer broadcast: update sits on disk, ready to install.
+    // Payload { version }.
+    updateDownloaded: 'updater:update-downloaded',
+    // Renderer → main: relaunch into the downloaded update now.
+    quitAndInstall: 'updater:quit-and-install',
     // Main → renderer broadcast: a newer version is available.
     // Payload is { version, releaseUrl } — the renderer pill uses
     // version for the label and releaseUrl is informational (the
@@ -357,11 +367,25 @@ export interface PicgBridge {
   };
   updater: {
     openReleasePage(): Promise<void>;
+    // Resolves once the update is fully downloaded; progress streams
+    // via onDownloadProgress in the meantime. Rejects on failure — the
+    // renderer falls back to openReleasePage.
+    downloadUpdate(): Promise<void>;
+    quitAndInstall(): Promise<void>;
     onUpdateAvailable(
       handler: (info: { version: string; releaseUrl: string }) => void
     ): () => void;
+    onDownloadProgress(handler: (info: { percent: number }) => void): () => void;
+    onUpdateDownloaded(handler: (info: { version: string }) => void): () => void;
     onUpdateError(handler: (info: { message: string }) => void): () => void;
-    getPending(): Promise<{ version: string; releaseUrl: string } | null>;
+    getPending(): Promise<{
+      version: string;
+      releaseUrl: string;
+      // True when the update already finished downloading in this
+      // session — the remounting Topbar should offer "Restart" rather
+      // than re-offering the download.
+      downloaded: boolean;
+    } | null>;
     checkNow(): Promise<
       | {
           ok: true;
