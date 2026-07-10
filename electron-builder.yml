@@ -175,19 +175,27 @@ mac:
   # both keeps the filenames symmetric and makes electron-updater's
   # latest-mac.yml unambiguous about which file is for which arch.
   artifactName: ${productName}-${version}-${arch}.${ext}
-  # Two distinct dmg targets, one per architecture, so the Release page
-  # gets two separate downloads:
-  #   PicG-<version>-arm64.dmg
-  #   PicG-<version>-x64.dmg
-  # Putting both arches under a SINGLE dmg target collapses to a single
-  # universal DMG (a fat binary that bundles both arches). That's about
-  # ~2× the size and shows up as "Universal" in Finder. Splitting them
-  # lets Apple Silicon users download a smaller arm64-only DMG, and
-  # electron-updater picks the right one via latest-mac.yml regardless.
+  # Two artifact kinds per architecture:
+  #
+  #   dmg — what humans download from the Release page and first-install.
+  #   zip — what electron-updater's silent in-place update consumes.
+  #         Squirrel.Mac (the installer under electron-updater on macOS)
+  #         only ingests zips; without one in latest-mac.yml the updater
+  #         errors out at download time and the app falls back to
+  #         sending the user to the release page.
+  #
+  # Each arch is its own target entry: putting both arches under a
+  # SINGLE target collapses to a universal build (~2× size, shows as
+  # "Universal" in Finder). Splitting keeps downloads small and
+  # electron-updater picks the right file via latest-mac.yml anyway.
   target:
     - target: dmg
       arch: arm64
+    - target: zip
+      arch: arm64
     - target: dmg
+      arch: x64
+    - target: zip
       arch: x64
   # Signing is credential-driven, not config-driven — there's deliberately
   # no `identity` or `notarize` key here.

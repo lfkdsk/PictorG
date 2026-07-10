@@ -502,22 +502,35 @@ sips path).
 
 ## 8. Auto-update + release flow
 
-Built on `electron-updater`. Behaviour:
+Built on `electron-updater`. Detection is automatic; downloading is
+user-initiated. Behaviour:
 
-- Boot → 0.5 s later `autoUpdater.checkForUpdates()`. Then every 4 h.
-- If the GitHub Release manifest version is **strictly greater**
-  than the installed version (`semver.gt`, not `!==`), we download
-  in the background. Progress events stream to the renderer over
-  `updater:download-progress` → Topbar shows a slim bar next to
-  the brand logo while bytes flow in.
-- On download finish, main caches the event in
-  `pendingDownloadedUpdate` and broadcasts `updater:update-downloaded`.
-  Topbar renders an "Update ready · v0.x.y" pill. Click → main
-  calls `autoUpdater.quitAndInstall()`.
-- The cached `pendingDownloadedUpdate` is what `getPending()` IPC
-  returns on Topbar mount — this **replays the event** to a Topbar
-  that mounted *after* the download finished (e.g. user navigating
-  between desktop pages mid-download).
+- Boot → `autoUpdater.checkForUpdates()`. Then every 4 h.
+- An update exists when the GitHub Release manifest version is
+  **strictly greater** than the installed version (`semver.gt`, not
+  `!==`). The Topbar shows a "vX.Y.Z available · Download" pill —
+  nothing downloads until the user clicks it, because update payloads
+  run to hundreds of MB and quietly saturating a metered connection is
+  worse than asking.
+- Click → `updater:download-update`; progress streams over
+  `updater:download-progress` into the pill label ("Downloading … NN%").
+  On finish the pill flips to "Restart to update" → click →
+  `autoUpdater.quitAndInstall()`. Quitting without clicking still
+  applies the update (`autoInstallOnAppQuit`).
+- If the download fails (network, or a release missing its zip), the
+  renderer toasts the error and falls back to opening the GitHub
+  release page — the manual flow that always works.
+- `getPending()` IPC returns the cached available-update (plus a
+  `downloaded` flag) on Topbar mount — this **replays state** to a
+  Topbar that mounted *after* the event fired (user navigating between
+  desktop pages mid-download).
+- macOS silent install needs two things that only exist from v1.3.7 on:
+  a Developer ID signed + notarized build (Squirrel.Mac refuses to swap
+  in an app whose signature team differs from the running one — see
+  §8.2) and the per-arch `zip` targets in `electron-builder.yml`
+  (Squirrel consumes the zip out of latest-mac.yml, never the DMG).
+  Users on ≤1.3.6 run notify-only builds and take the browser path one
+  last time.
 
 Two non-obvious failure modes burned into the doc as guard rails:
 
@@ -652,21 +665,23 @@ the Developer ID identity. It won't notarize unless you also export
 `APPLE_API_KEY` (a *path* to the `.p8`), `APPLE_API_KEY_ID`, and
 `APPLE_API_ISSUER`. Notarization adds 2–10 min per DMG; leave it to CI.
 
-**On changing the signing identity.** Releases up to and including
-v1.3.6 were signed by team `FM39C6H8AH`; from v1.3.7 on it's
-`R6QM7B7GB7`. Users notice nothing today, but only because of two
-properties that are easy to lose:
+**The signing identity is now load-bearing — don't change it.**
+Releases up to and including v1.3.6 were signed by team `FM39C6H8AH`;
+from v1.3.7 on it's `R6QM7B7GB7`. That particular switch was safe only
+because v1.3.6's updater was notify-only (users fetched the new DMG by
+hand, and Gatekeeper accepts any notarized app). From v1.3.7 the
+updater does silent in-place updates through Squirrel.Mac, and Squirrel
+refuses to swap in a bundle whose code-signature team differs from the
+running one — so the next identity change breaks auto-update for every
+installed copy, and each user must download one DMG manually again.
+Budget for that (release notes, a notify-only fallback release) if the
+cert ever has to move to another team.
 
-- tokens live in `<userData>/auth.json`, not the OS keychain (§ see
-  `electron/ipc/auth.ts`) — keychain items are ACL'd to the signing
-  identity that created them, so a team change would silently sign
-  everyone out;
-- the updater is notify-only and sends users to the release page for a
-  fresh DMG. Squirrel.Mac, which electron-updater would use for an
-  in-place swap, refuses to replace a bundle whose code-signature team
-  doesn't match the running one.
-
-Restore either and a team change becomes a breaking release.
+Relatedly: tokens live in `<userData>/auth.json` rather than the OS
+keychain (see `electron/ipc/auth.ts`). Keychain items are ACL'd to the
+signing identity that created them; moving token storage back to the
+keychain would make an identity change silently sign everyone out, on
+top of the update break.
 
 **When notarization fails,** it's usually a nested binary that didn't
 get signed or didn't inherit the hardened runtime — for us that means

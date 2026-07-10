@@ -39,6 +39,10 @@ const bridge: PicgBridge = {
   updater: {
     openReleasePage: () =>
       ipcRenderer.invoke(CHANNELS.updater.openReleasePage),
+    downloadUpdate: () =>
+      ipcRenderer.invoke(CHANNELS.updater.downloadUpdate),
+    quitAndInstall: () =>
+      ipcRenderer.invoke(CHANNELS.updater.quitAndInstall),
     onUpdateAvailable: (handler) => {
       const listener = (
         _e: unknown,
@@ -46,6 +50,18 @@ const bridge: PicgBridge = {
       ) => handler(payload);
       ipcRenderer.on(CHANNELS.updater.updateAvailable, listener);
       return () => ipcRenderer.off(CHANNELS.updater.updateAvailable, listener);
+    },
+    onDownloadProgress: (handler) => {
+      const listener = (_e: unknown, payload: { percent: number }) =>
+        handler(payload);
+      ipcRenderer.on(CHANNELS.updater.downloadProgress, listener);
+      return () => ipcRenderer.off(CHANNELS.updater.downloadProgress, listener);
+    },
+    onUpdateDownloaded: (handler) => {
+      const listener = (_e: unknown, payload: { version: string }) =>
+        handler(payload);
+      ipcRenderer.on(CHANNELS.updater.updateDownloaded, listener);
+      return () => ipcRenderer.off(CHANNELS.updater.updateDownloaded, listener);
     },
     onUpdateError: (handler) => {
       const listener = (_e: unknown, payload: { message: string }) =>

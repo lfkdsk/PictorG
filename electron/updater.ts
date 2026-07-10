@@ -1,23 +1,25 @@
-// Notify-only update flow.
+// Click-to-download, click-to-restart update flow.
 //
-// We don't run electron-updater's silent download / Squirrel.Mac
-// install path: the app is ad-hoc signed (no Apple Developer cert),
-// and Squirrel.Mac refuses to swap a .app whose code-signature team
-// doesn't match the running binary. Even if we shipped the .zip
-// artifact electron-updater wants on macOS, the install step would
-// still fail — and the failure is invisible to the renderer.
+// Detection is automatic (initial check + 4 h poll against
+// latest-mac.yml / latest.yml on the GitHub release), but nothing
+// downloads until the user clicks the topbar pill: updates run to
+// hundreds of MB and quietly saturating a metered connection is worse
+// than asking. After downloadUpdate resolves the pill flips to
+// "Restart to update" → quitAndInstall. If the user quits without
+// clicking, autoInstallOnAppQuit applies the downloaded update on the
+// way out.
 //
-// Instead: keep electron-updater for the cheap part (parse
-// latest-mac.yml off the GitHub release, semver-compare against
-// app.getVersion()), and when an update exists, surface a "vX.Y.Z
-// available — Download" pill in the topbar. Click → opens the
-// GitHub release page in the user's browser; they grab the new DMG
-// and replace /Applications/PicG.app the same way they did the first
-// install. Same flow Fix-Gatekeeper.command was designed around.
+// macOS silent install (Squirrel.Mac) only works because builds are
+// Developer ID signed + notarized from v1.3.7 on — Squirrel refuses to
+// swap in a .app whose code-signature team differs from the running
+// binary's, which is also why the signing identity must never change
+// between releases (see docs/desktop-development.md §8.2). It consumes
+// the zip artifact from latest-mac.yml, not the DMG; users on ≤1.3.6
+// run the old notify-only build and take the browser path one last
+// time. Windows (NSIS) has no signature gate and just works.
 //
-// We can revisit silent updates once the app is properly signed +
-// notarized; until then this is the only channel that actually
-// works for unsigned macOS builds.
+// openReleasePage survives as the fallback CTA when a download fails
+// (network, or a release missing its zip).
 //
 // Skipped on dev (`!app.isPackaged`).
 
@@ -47,6 +49,11 @@ const RELEASE_PAGE_URL =
 // the check completed.
 let pendingAvailableUpdate: { version: string; releaseUrl: string } | null = null;
 
+// Set once update-downloaded fires. Replayed via getPending alongside
+// the available-update cache so a freshly-mounted Topbar renders
+// "Restart to update" instead of re-offering the download.
+let downloadedUpdate: { version: string } | null = null;
+
 // Most recent updater error message + ISO timestamp. Surfaced via
 // checkNow's response so the avatar-menu manual check can tell the
 // user "last attempt failed N min ago because X".
@@ -65,11 +72,11 @@ export function initAutoUpdater(): void {
     debug: (m: unknown) => log('updater debug', m),
   } as any;
 
-  // Notify-only: we never let electron-updater download or install.
-  // The "Download" CTA in the renderer opens the release page in the
-  // browser instead.
+  // Download only on explicit user click (see header). Once a download
+  // HAS happened, install it on quit even if the user never clicks
+  // "Restart to update" — the work is already on disk.
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info) => {
     const version = info?.version;
@@ -77,6 +84,17 @@ export function initAutoUpdater(): void {
     log('update-available', version);
     pendingAvailableUpdate = { version, releaseUrl: RELEASE_PAGE_URL };
     broadcastChan(CHANNELS.updater.updateAvailable, pendingAvailableUpdate);
+  });
+  autoUpdater.on('download-progress', (p) => {
+    broadcastChan(CHANNELS.updater.downloadProgress, {
+      percent: Math.round(p?.percent ?? 0),
+    });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    const version = info?.version ?? pendingAvailableUpdate?.version ?? '';
+    log('update-downloaded', version);
+    downloadedUpdate = { version };
+    broadcastChan(CHANNELS.updater.updateDownloaded, downloadedUpdate);
   });
   autoUpdater.on('update-not-available', () => {
     log('update-not-available');
@@ -97,8 +115,32 @@ export function initAutoUpdater(): void {
 
   // Topbar mount-time replay: "is there already an available update I
   // missed?" If we have a cached event, the pill shows immediately
-  // without waiting for the next broadcast.
-  ipcMain.handle(CHANNELS.updater.getPending, () => pendingAvailableUpdate);
+  // without waiting for the next broadcast. `downloaded` distinguishes
+  // "offer the download" from "offer the restart" after a remount.
+  ipcMain.handle(CHANNELS.updater.getPending, () =>
+    pendingAvailableUpdate
+      ? { ...pendingAvailableUpdate, downloaded: downloadedUpdate != null }
+      : null
+  );
+
+  // One download at a time; a second click while in flight just awaits
+  // the same download. Rejections propagate to the renderer's invoke,
+  // which falls back to the release page.
+  let inFlightDownload: Promise<unknown> | null = null;
+  ipcMain.handle(CHANNELS.updater.downloadUpdate, async () => {
+    if (downloadedUpdate) return;
+    if (!inFlightDownload) {
+      inFlightDownload = autoUpdater.downloadUpdate().finally(() => {
+        inFlightDownload = null;
+      });
+    }
+    await inFlightDownload;
+  });
+
+  ipcMain.handle(CHANNELS.updater.quitAndInstall, () => {
+    log('quitAndInstall');
+    autoUpdater.quitAndInstall();
+  });
 
   // Manual check trigger from the avatar menu — useful when you want
   // to verify the update plumbing without waiting for the 4 h poll.
