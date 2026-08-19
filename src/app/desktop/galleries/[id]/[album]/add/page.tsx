@@ -14,7 +14,12 @@ import {
 } from '@/core/storage';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useCompressIpc } from '@/components/desktop/useCompressIpc';
-import { isHeic, makePreviewUrl } from '@/components/desktop/makePreview';
+import {
+  baseName,
+  isHeic,
+  isVideoFile,
+  makePreviewUrl,
+} from '@/components/desktop/makePreview';
 import { fireUndoToast } from '@/components/desktop/UndoToast';
 import {
   CompressCompareModal,
@@ -230,7 +235,9 @@ export default function AddPhotosPage() {
   const comparePhotos = useMemo<ComparePhoto[]>(
     () =>
       photos
-        .filter((p) => p.status === 'ready' && p.compressed)
+        // Videos are copied through untouched, so there's no encode to
+        // compare — and nothing the modal could paint for either pane.
+        .filter((p) => p.status === 'ready' && p.compressed && !isVideoFile(p.original))
         .map((p) => ({
           id: p.id,
           name: p.original.name,
@@ -249,6 +256,18 @@ export default function AddPhotosPage() {
         })),
     [photos]
   );
+
+  // A Live Photo lands as `<name>.HEIC` + `<name>.MOV`, one card each. Index
+  // the stills by basename so the .MOV card can borrow its partner's
+  // thumbnail when the frame grab came up empty, and so it can say LIVE
+  // instead of looking like a mystery duplicate.
+  const stillPreviews = useMemo(() => {
+    const map = new Map<string, string>();
+    photos.forEach((p) => {
+      if (!isVideoFile(p.original)) map.set(baseName(p.original.name), p.preview);
+    });
+    return map;
+  }, [photos]);
 
   async function handleSubmit() {
     if (!adapter || !gallery || !albumUrl) return;
@@ -398,9 +417,20 @@ export default function AddPhotosPage() {
             <ul className="photos">
               {photos.map((p) => {
                 const ready = p.status === 'ready' && p.compressed;
-                const delta = ready
+                const video = isVideoFile(p.original);
+                // Nothing to compare for a passthrough video, so the card
+                // stays inert rather than opening two blank panes.
+                const canCompare = ready && !video;
+                const delta = ready && !video
                   ? sizeDelta(p.original.size, p.compressed!.size)
                   : null;
+                // Frame grab first; if the codec wasn't there, fall back to
+                // the still this .MOV belongs to. `undefined` (rather than an
+                // empty string) means no partner was picked at all.
+                const partner = video
+                  ? stillPreviews.get(baseName(p.original.name))
+                  : undefined;
+                const cover = p.preview || partner || '';
                 const openCompare = () => {
                   const i = comparePhotos.findIndex((c) => c.id === p.id);
                   if (i >= 0) setCompareIdx(i);
@@ -408,12 +438,12 @@ export default function AddPhotosPage() {
                 return (
                   <li key={p.id}>
                     <div
-                      className={`picg-thumb ${ready ? 'is-clickable' : ''}`}
-                      onClick={ready ? openCompare : undefined}
-                      role={ready ? 'button' : undefined}
-                      tabIndex={ready ? 0 : undefined}
+                      className={`picg-thumb ${canCompare ? 'is-clickable' : ''}`}
+                      onClick={canCompare ? openCompare : undefined}
+                      role={canCompare ? 'button' : undefined}
+                      tabIndex={canCompare ? 0 : undefined}
                       onKeyDown={
-                        ready
+                        canCompare
                           ? (e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
@@ -422,12 +452,26 @@ export default function AddPhotosPage() {
                             }
                           : undefined
                       }
-                      aria-label={ready ? `Compare ${p.original.name}` : undefined}
+                      aria-label={canCompare ? `Compare ${p.original.name}` : undefined}
                     >
-                      <img src={p.preview} alt="" className="photo-preview" />
+                      {cover ? (
+                        <img src={cover} alt="" className="photo-preview" />
+                      ) : video ? (
+                        <span className="video-ph" aria-hidden="true">▶</span>
+                      ) : null}
+                      {video && (
+                        <span className="live-badge">
+                          {partner === undefined ? 'MOV' : 'LIVE'}
+                        </span>
+                      )}
                       {p.status === 'pending' && <span className="state pending">queued</span>}
                       {p.status === 'compressing' && <span className="state compressing">compressing…</span>}
                       {p.status === 'error' && <span className="state errored">{p.error ?? 'error'}</span>}
+                      {ready && video && (
+                        <span className="state ready">
+                          {formatBytes(p.original.size)} · copied as-is
+                        </span>
+                      )}
                       {ready && delta && (
                         <span className={`state ready ${delta.bigger ? 'is-bigger' : ''}`}>
                           {formatBytes(p.original.size)} → {formatBytes(p.compressed!.size)}
@@ -569,6 +613,27 @@ export default function AddPhotosPage() {
         .photo-preview {
           object-fit: contain;
           background: var(--bg);
+        }
+
+        /* Live Photo motion half — badged so the near-duplicate tile reads
+           as the video rather than a second copy of the photo. */
+        .live-badge {
+          position: absolute; top: 6px; left: 6px;
+          padding: 2px 8px;
+          background: rgba(20, 18, 14, 0.85);
+          color: var(--text);
+          font-family: var(--mono);
+          font-size: 10px;
+          letter-spacing: 0.05em;
+          border-radius: 999px;
+        }
+        /* Shown only when the frame grab failed AND no partner still was
+           picked — a play glyph beats a broken-image icon. */
+        .video-ph {
+          position: absolute; inset: 0;
+          display: grid; place-items: center;
+          color: var(--text-muted);
+          font-size: 22px;
         }
 
         .actions-row {
