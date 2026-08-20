@@ -5,6 +5,7 @@ import Link from 'next/link';
 import yaml from 'js-yaml';
 import { fetchGitHubFile, updateGitHubFile, getFileSha, getGitHubToken, decodeGitHubPath, encodeGitHubPath, deleteDirectory, deleteFiles } from '@/lib/github';
 import { computeJustifiedRows, useElementWidth, DEFAULT_RATIO } from '@/lib/justifiedLayout';
+import { upsertAlbumEntry, type AlbumEntry } from '@/lib/readmeAlbum';
 
 // Justified ("Apple Photos") grid tuning for the album page.
 const ROW_TARGET_HEIGHT = 240;
@@ -250,28 +251,29 @@ export default function AlbumPage() {
         json: true 
       }) as Record<string, Omit<AlbumInfo, 'name'>>;
       
-      // 删除旧的相册条目（如果名称改变了）
-      if (albumInfo && editForm.name !== albumInfo.name) {
-        delete readmeData[albumInfo.name];
-      }
-      
       // 更新相册信息
-      const albumData: any = {
+      const albumData: AlbumEntry = {
         url: editForm.url,
         date: editForm.date, // 保持字符串格式，YAML会正确处理
         style: editForm.style,
         cover: editForm.cover
       };
-      
+
       // 只有当经纬度都不为空且不为0时才添加location
       if (editForm.location[0] !== 0 && editForm.location[1] !== 0) {
         albumData.location = [editForm.location[0], editForm.location[1]]; // 确保是数组格式
       }
-      
-      readmeData[editForm.name] = albumData;
-      
+
+      // 写回时保留 build.py 会读、但本表单不管的键（layout / hidden / subtitle），
+      // 并让改名后的条目留在原位——README.yml 的顺序就是站点上的相册顺序。
+      const nextReadme = upsertAlbumEntry(readmeData, {
+        oldName: albumInfo?.name,
+        newName: editForm.name,
+        entry: albumData
+      });
+
       // 转换回YAML格式，确保正确的数组和字符串格式
-      const updatedYaml = yaml.dump(readmeData, {
+      const updatedYaml = yaml.dump(nextReadme, {
         indent: 2,
         lineWidth: -1,
         noRefs: true,
