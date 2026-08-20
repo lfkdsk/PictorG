@@ -29,3 +29,6 @@ build/native/
 # Claude Code project-local state (cache, scheduled-task lock, .DS_Store).
 # Per-developer machine state, not source.
 .claude/
+
+# design mockups (prototype assets, not shipped)
+design/mockups/

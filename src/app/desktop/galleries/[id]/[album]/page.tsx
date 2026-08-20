@@ -14,6 +14,7 @@ import {
   type StorageAdapter,
 } from '@/core/storage';
 import { logoutIfGitAuthError } from '@/lib/github';
+import { upsertAlbumEntry } from '@/lib/readmeAlbum';
 import { Topbar, DesktopTheme } from '@/components/DesktopChrome';
 import { useAdapterImage } from '@/components/desktop/useAdapterImage';
 import { fireUndoToast, UndoToastHost } from '@/components/desktop/UndoToast';
@@ -437,16 +438,8 @@ export default function AlbumPage() {
         json: true,
       }) ?? {}) as Record<string, any>;
 
-      // If the user renamed the album, drop the old YAML key.
-      if (trimmedName !== albumMeta.name) {
-        delete data[albumMeta.name];
-        // And refuse to silently overwrite a different existing album with
-        // the same new name.
-        if (data[trimmedName]) {
-          throw new Error(`Another album already uses the name "${trimmedName}".`);
-        }
-      }
-      // Same guard for URL slug collisions.
+      // Guard URL slug collisions. (The name collision case is handled by
+      // upsertAlbumEntry below, which throws AlbumNameCollisionError.)
       if (trimmedUrl !== albumMeta.url) {
         for (const [k, v] of Object.entries(data)) {
           if (k !== albumMeta.name && k !== trimmedName && v?.url === trimmedUrl) {
@@ -462,9 +455,17 @@ export default function AlbumPage() {
         cover: editForm.cover.trim(),
       };
       if (location) entry.location = location;
-      data[trimmedName] = entry;
 
-      const yamlText = yaml.dump(data, {
+      // Carries over the keys build.py reads but this form doesn't manage
+      // (layout / hidden / subtitle), and keeps a renamed album in place —
+      // README.yml order is the album order on the deployed site.
+      const next = upsertAlbumEntry(data, {
+        oldName: albumMeta.name,
+        newName: trimmedName,
+        entry,
+      });
+
+      const yamlText = yaml.dump(next, {
         indent: 2,
         lineWidth: -1,
         noRefs: true,
