@@ -26,7 +26,7 @@ npm run dist:win:arm64    # Windows arm64 安装包（Windows on ARM 原生）
 
 > 打包须在目标系统上进行（git 与 sharp 原生模块按平台/架构抓取，不能从 macOS 交叉打 Windows）。无 Windows 机器时用 GitHub Actions 的 `Release desktop build` 工作流自动出 x64 包。
 
-详见 [`docs/desktop-development.md`](docs/desktop-development.md)，发布版本在 [Releases](https://github.com/lfkdsk/PicG/releases)。
+详见 [`docs/desktop-development.md`](docs/desktop-development.md)，发布版本在 [Releases](https://github.com/lfkdsk/PictorG/releases)。
 
 ## 🚀 快速开始
 

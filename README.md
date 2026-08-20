@@ -6,11 +6,11 @@
 
 **基于GitHub的现代化相册管理平台**
 
-[![Next.js](https://img.shields.io/badge/Next.js-14.2.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-18.3.1-blue?style=flat-square&logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![Electron](https://img.shields.io/badge/Electron-31-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![macOS](https://img.shields.io/badge/macOS-arm64%20%7C%20x64-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/lfkdsk/PicG/releases)
+[![Electron](https://img.shields.io/badge/Electron-42-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![macOS](https://img.shields.io/badge/macOS-arm64%20%7C%20x64-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/lfkdsk/PictorG/releases)
 [![GitHub OAuth](https://img.shields.io/badge/GitHub-OAuth-green?style=flat-square&logo=github)](https://docs.github.com/en/developers/apps/building-oauth-apps)
 
 [在线演示](https://pictor-g.vercel.app) • [快速开始](#-快速开始) • [功能特性](#-功能特性) • [部署指南](#-部署)
@@ -47,7 +47,7 @@ PicG 还提供基于 Electron 的桌面端（macOS / Windows），与 Web 端共
 
 ### 下载与安装
 
-发布产物见 [Releases](https://github.com/lfkdsk/PicG/releases)：macOS DMG（arm64 / x64）与 Windows 安装包（NSIS，x64）。
+发布产物见 [Releases](https://github.com/lfkdsk/PictorG/releases)：macOS DMG（arm64 / x64）与 Windows 安装包（NSIS，x64）。
 
 > macOS 发布版会使用 Developer ID 签名并通过 Apple 公证，可正常通过 Gatekeeper。Windows 安装包尚未签名，首次运行 SmartScreen 会拦截，点「更多信息 → 仍要运行」即可。
 
@@ -75,7 +75,7 @@ npm run dist:win:arm64    # arm64（Windows on ARM 原生）
 
 ### 环境要求
 
-- Node.js 18.17.0 或更高版本
+- Node.js 18.18.0 或更高版本（Next.js 15 的下限）
 - npm 或 yarn 包管理器
 - GitHub账号
 
@@ -83,7 +83,7 @@ npm run dist:win:arm64    # arm64（Windows on ARM 原生）
 
 ```bash
 git clone https://github.com/lfkdsk/PictorG.git
-cd PicG
+cd PictorG
 ```
 
 ### 2. 安装依赖
@@ -194,7 +194,7 @@ npm run dev
 ## 📂 项目结构
 
 ```
-PicG/
+PictorG/
 ├── src/
 │   ├── app/                    # Next.js App Router
 │   │   ├── api/               # API路由
