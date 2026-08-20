@@ -1,0 +1,46 @@
+name: CI
+
+# The repo had 51 unit tests and no workflow running them — the only checks on
+# a PR were Vercel's build/deploy, which says nothing about whether the tests
+# pass. This gates the three things that are cheap and already scripted.
+#
+# `test:e2e` (playwright) is deliberately left out: it needs a browser download
+# and a running dev server, so it belongs in a separate, slower workflow rather
+# than on every push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same PR makes the in-flight run pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the floor documented in README ("Next.js 15 的下限").
+          node-version: '20'
+          cache: npm
+
+      # postinstall fetches dugite-native and is already `|| true`, so a miss
+      # here can't fail the install — the desktop git binary isn't needed to
+      # typecheck or run unit tests.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:ci
