@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { UnpushedCommit } from '@/core/storage/electron/PreloadBridgeAdapter';
-import { getPicgBridge } from '@/core/storage/electron';
+import { getPicgBridge, type PushProgress } from '@/core/storage/electron';
 
 type Props = {
   galleryId: string;
@@ -29,6 +29,43 @@ type Props = {
 // rest into "… and N more". Picked empirically: 8 lines fits a
 // reasonable-height tooltip without scrolling on a 13" laptop.
 const MAX_VISIBLE_SUBJECTS = 8;
+
+// git reports each push stage on its own 0-100 scale. Writing objects is
+// the actual network upload and dominates wall time for photo pushes, so
+// it gets most of the overall bar; counting + compressing are local and
+// quick. Anything after writing (e.g. `remote: Resolving deltas`) means
+// the bytes are already on the server.
+function overallPercent(p: PushProgress): number {
+  const pct = Math.max(0, Math.min(100, p.percent));
+  switch (p.stage) {
+    case 'enumerating':
+    case 'counting':
+      return pct * 0.05;
+    case 'delta':
+    case 'compressing':
+      return 5 + pct * 0.1;
+    case 'writing':
+      return 15 + pct * 0.85;
+    default:
+      return 100;
+  }
+}
+
+function stageLabel(p: PushProgress | null): string {
+  if (!p) return 'Preparing…';
+  switch (p.stage) {
+    case 'enumerating':
+    case 'counting':
+      return 'Counting objects…';
+    case 'delta':
+    case 'compressing':
+      return 'Compressing…';
+    case 'writing':
+      return 'Uploading…';
+    default:
+      return 'Finishing…';
+  }
+}
 
 export function PushButton({
   galleryId,
@@ -45,6 +82,21 @@ export function PushButton({
   // because the user-visible state we're showing IS the count and the
   // list of those N commits — if N changes the cached list is wrong.
   const cachedFor = useRef<number | null>(null);
+  const [progress, setProgress] = useState<PushProgress | null>(null);
+
+  // Stream upload progress for this gallery while a push is in flight.
+  // Reset on each new push so the bar never starts from the last run.
+  useEffect(() => {
+    if (!pushing) {
+      setProgress(null);
+      return;
+    }
+    const bridge = getPicgBridge();
+    if (!bridge) return;
+    return bridge.gallery.onPushProgress((evt) => {
+      if (evt.galleryId === galleryId) setProgress(evt);
+    });
+  }, [pushing, galleryId]);
 
   // Lazy fetch on first hover (or when `ahead` invalidates a cached list).
   useEffect(() => {
@@ -90,7 +142,8 @@ export function PushButton({
     }
   }, [ahead]);
 
-  const showTooltip = open && ahead > 0;
+  const showTooltip = open && ahead > 0 && !pushing;
+  const percent = progress ? overallPercent(progress) : 0;
   const visibleCommits = commits?.slice(-MAX_VISIBLE_SUBJECTS) ?? [];
   const hiddenCount = (commits?.length ?? 0) - visibleCommits.length;
 
@@ -119,6 +172,33 @@ export function PushButton({
         <span className={pushing ? 'picg-spin' : ''}>↑</span>
         {ahead > 0 && <span className="picg-badge-count">{ahead}</span>}
       </button>
+
+      {pushing && (
+        <div
+          className="picg-push-progress"
+          role="progressbar"
+          aria-label="Push progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(percent)}
+        >
+          <div className="picg-push-progress-head">
+            <span>{stageLabel(progress)}</span>
+            <span className="picg-push-progress-pct">{Math.round(percent)}%</span>
+          </div>
+          <div className="picg-push-progress-track">
+            <div
+              className="picg-push-progress-fill"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          {progress?.total ? (
+            <div className="picg-push-progress-sub">
+              {progress.processed ?? 0}/{progress.total} objects
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {showTooltip && (
         <div className="picg-push-tooltip" role="tooltip">
@@ -171,6 +251,48 @@ export function PushButton({
           line-height: 1.45;
           animation: picg-push-tooltip-in 0.12s ease-out;
           pointer-events: none;
+        }
+        .picg-push-progress {
+          position: absolute;
+          top: calc(100% + 6px);
+          right: 0;
+          z-index: 50;
+          width: 240px;
+          padding: 8px 10px;
+          background: rgba(28, 28, 30, 0.96);
+          color: rgba(255, 255, 255, 0.92);
+          border-radius: 6px;
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+          font-size: 12px;
+          line-height: 1.45;
+          animation: picg-push-tooltip-in 0.12s ease-out;
+          pointer-events: none;
+        }
+        .picg-push-progress-head {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 6px;
+          font-weight: 600;
+        }
+        .picg-push-progress-pct {
+          font-variant-numeric: tabular-nums;
+          color: rgba(255, 255, 255, 0.7);
+        }
+        .picg-push-progress-track {
+          height: 4px;
+          background: rgba(255, 255, 255, 0.12);
+          border-radius: 2px;
+          overflow: hidden;
+        }
+        .picg-push-progress-fill {
+          height: 100%;
+          background: var(--accent, #e8dcc4);
+          transition: width 0.25s ease;
+        }
+        .picg-push-progress-sub {
+          margin-top: 4px;
+          color: rgba(255, 255, 255, 0.55);
+          font-variant-numeric: tabular-nums;
         }
         .picg-push-tooltip-head {
           font-weight: 600;

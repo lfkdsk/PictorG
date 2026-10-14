@@ -13,6 +13,7 @@ import type {
 } from './ipc/contract';
 import type {
   CloneProgress,
+  PushProgress,
   PhotoIndexProgress,
 } from '../src/core/storage/electron/galleryTypes';
 
@@ -94,6 +95,11 @@ const bridge: PicgBridge = {
       const listener = (_e: unknown, evt: CloneProgress) => handler(evt);
       ipcRenderer.on(CHANNELS.gallery.cloneProgress, listener);
       return () => ipcRenderer.off(CHANNELS.gallery.cloneProgress, listener);
+    },
+    onPushProgress: (handler: (event: PushProgress) => void) => {
+      const listener = (_e: unknown, evt: PushProgress) => handler(evt);
+      ipcRenderer.on(CHANNELS.gallery.pushProgress, listener);
+      return () => ipcRenderer.off(CHANNELS.gallery.pushProgress, listener);
     },
     onChanged: (handler: (event: GalleryChangedEvent) => void) => {
       const listener = (_e: unknown, evt: GalleryChangedEvent) => handler(evt);

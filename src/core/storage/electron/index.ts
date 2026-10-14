@@ -24,6 +24,7 @@ export type {
   CloneProgress,
   CloneStage,
   InFlightClone,
+  PushProgress,
   PhotoIndexData,
   PhotoIndexAlbum,
   PhotoIndexPhoto,

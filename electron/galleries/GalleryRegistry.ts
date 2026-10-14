@@ -15,6 +15,7 @@ import type {
   CloneProgress,
   InFlightClone,
   LocalGallery,
+  PushProgress,
 } from '../../src/core/storage/electron/galleryTypes';
 
 const MANIFEST_FILE = 'galleries.json';
@@ -312,13 +313,36 @@ export class GalleryRegistry {
     return { ...updated };
   }
 
-  async push(id: string): Promise<PushReceipt> {
+  async push(id: string, sender?: WebContents): Promise<PushReceipt> {
     const gallery = await this.resolve(id);
     if (!gallery) throw new Error(`Gallery not found: ${id}`);
     // forCommits: true because maybeSquash() runs a `git commit` to
     // record the squashed commit. Identity comes from the OAuth token,
     // not from the user's (now-ignored) ~/.gitconfig.
-    const git = await buildIsolatedGit(gallery.localPath, { forCommits: true });
+    //
+    // The progress plugin appends `--progress` to the push and parses
+    // git's stderr ("Writing objects: 45% (12/26)"), so a photo-heavy
+    // push shows a real upload bar instead of an open-ended spinner.
+    const git = await buildIsolatedGit(gallery.localPath, {
+      forCommits: true,
+      progress: sender
+        ? ({ method, stage, progress, processed, total }) => {
+            if (method !== 'push') return;
+            const evt: PushProgress = {
+              galleryId: id,
+              stage,
+              percent: typeof progress === 'number' ? progress : 0,
+              processed,
+              total,
+            };
+            try {
+              sender.send('gallery:push-progress', evt);
+            } catch {
+              /* renderer might be gone; ignore */
+            }
+          }
+        : undefined,
+    });
     const branch = await currentBranch(git);
 
     // Snapshot the pending commits BEFORE squashing — we need their
