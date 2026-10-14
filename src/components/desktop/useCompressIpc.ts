@@ -30,6 +30,7 @@ const PASSTHROUGH_TYPES = /^video\/quicktime$/i;
 
 export function useCompressIpc(): {
   compress: (file: File) => Promise<File>;
+  toJpeg: (file: File) => Promise<File>;
 } {
   const compress = useCallback(async (file: File): Promise<File> => {
     const bridge = getPicgBridge();
@@ -75,5 +76,28 @@ export function useCompressIpc(): {
     return new File([result.buffer], result.name, { type: result.type });
   }, []);
 
-  return { compress };
+  // Plain (SDR) JPEG transcode, used as the web-displayable stand-in for a
+  // HEIC/HEIF "original" — browsers can't render HEIF, so uploading the raw
+  // file would leave a broken image on the site. Runs regardless of
+  // enableWebP (it's a format conversion, not optional compression) and with
+  // the user's quality/EXIF/size knobs, so it costs about what a 'jpeg'
+  // output setting would. No gain map: when the Ultra HDR encode is what came
+  // out larger than the HEIC, the SDR JPEG is the smaller web-safe option.
+  const toJpeg = useCallback(async (file: File): Promise<File> => {
+    const bridge = getPicgBridge();
+    if (!bridge) return file;
+    const settings = getCompressionSettings();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const result = await bridge.compress.image({
+      bytes,
+      originalName: file.name,
+      outputFormat: 'jpeg',
+      preserveExif: settings.preserveEXIF,
+      quality: settings.quality,
+      maxMegapixels: settings.maxMegapixels,
+    });
+    return new File([result.buffer], result.name, { type: result.type });
+  }, []);
+
+  return { compress, toJpeg };
 }

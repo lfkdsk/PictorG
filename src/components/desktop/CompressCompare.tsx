@@ -39,8 +39,13 @@ export type ComparePhoto = {
   originalFile?: File;
   /** Object URL for the COMPRESSED encode (always a WebP/JPEG we can show). */
   afterUrl: string;
-  /** Byte size of the original file. */
+  /** Byte size of what "use original" uploads (the JPEG transcode for HEIC). */
   originalSize: number;
+  /**
+   * True when "use original" uploads a JPEG transcode instead of the raw
+   * file — HEIC/HEIF, which browsers can't display on the published site.
+   */
+  originalAsJpeg?: boolean;
   /** Byte size of the compressed encode. */
   compressedSize: number;
   /** Current choice: true = upload the original, false = upload the compressed. */
@@ -210,7 +215,9 @@ export function CompressCompareModal({
                 {photo.useOriginal && <span className="cc-chosen-tag">Using this</span>}
               </div>
               <figcaption>
-                <span className="cc-kind">Original</span>
+                <span className="cc-kind">
+                  {photo.originalAsJpeg ? 'Original → JPEG' : 'Original'}
+                </span>
                 <span className="cc-size">{formatBytes(photo.originalSize)}</span>
               </figcaption>
             </figure>
@@ -269,7 +276,7 @@ export function CompressCompareModal({
                 if (!photo.useOriginal) onToggle(photo.id);
               }}
             >
-              Use original
+              {photo.originalAsJpeg ? 'Use original as JPEG' : 'Use original'}
             </button>
           </div>
         </footer>
