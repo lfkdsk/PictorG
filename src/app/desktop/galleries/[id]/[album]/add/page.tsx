@@ -26,6 +26,12 @@ import {
   type ComparePhoto,
   sizeDelta,
 } from '@/components/desktop/CompressCompare';
+import {
+  originalConvertsToJpeg,
+  originalUploadSize,
+  resolveUploadFile,
+  settleDefaultVariant,
+} from '@/components/desktop/uploadVariant';
 
 type PhotoStatus = 'pending' | 'compressing' | 'ready' | 'error';
 
@@ -36,6 +42,7 @@ type Photo = {
   originalUrl: string;   // full-res object URL of the original — compare modal
   compressed?: File;
   compressedUrl?: string;
+  originalJpeg?: File;   // JPEG transcode of a HEIC original (see uploadVariant)
   useOriginal?: boolean;
   status: PhotoStatus;
   error?: string;
@@ -81,7 +88,7 @@ export default function AddPhotosPage() {
   const [compareIdx, setCompareIdx] = useState<number | null>(null);
 
   const inFlightRef = useRef<Set<string>>(new Set());
-  const { compress } = useCompressIpc();
+  const { compress, toJpeg } = useCompressIpc();
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -113,11 +120,17 @@ export default function AddPhotosPage() {
     );
 
     compress(next.original)
-      .then((compressed) => {
+      .then(async (compressed) => {
         // Re-encoding a lossy source losslessly (or even lossy WebP on an
         // already-small file) can come out LARGER than the original. Default
         // the per-photo choice to whichever file is smaller so doing nothing
         // never inflates a photo; the user can override in the compare modal.
+        // A HEIC original is weighed as a JPEG transcode, never as raw HEIC.
+        const { originalJpeg, useOriginal } = await settleDefaultVariant(
+          next.original,
+          compressed,
+          toJpeg
+        );
         const compressedUrl = URL.createObjectURL(compressed);
         setPhotos((prev) =>
           prev.map((p) =>
@@ -126,7 +139,8 @@ export default function AddPhotosPage() {
                   ...p,
                   compressed,
                   compressedUrl,
-                  useOriginal: compressed.size >= p.original.size,
+                  originalJpeg,
+                  useOriginal,
                   status: 'ready',
                 }
               : p
@@ -145,7 +159,7 @@ export default function AddPhotosPage() {
       .finally(() => {
         inFlightRef.current.delete(next.id);
       });
-  }, [photos, compress]);
+  }, [photos, compress, toJpeg]);
 
   useEffect(() => {
     return () => {
@@ -250,7 +264,8 @@ export default function AddPhotosPage() {
             ? p.preview || p.originalUrl
             : p.originalUrl || p.preview,
           afterUrl: p.compressedUrl ?? '',
-          originalSize: p.original.size,
+          originalSize: originalUploadSize(p),
+          originalAsJpeg: originalConvertsToJpeg(p.original),
           compressedSize: p.compressed!.size,
           useOriginal: !!p.useOriginal,
         })),
@@ -293,10 +308,11 @@ export default function AddPhotosPage() {
       for (const p of photos) {
         // Upload the variant the user chose. Default (set at compress time)
         // is whichever is smaller, so the original wins when the WebP encode
-        // came out larger. Using the original keeps its source extension.
-        const chosen = p.useOriginal ? p.original : p.compressed;
+        // came out larger. Using the original keeps its source extension —
+        // except HEIC, which browsers can't show, so it goes up as a JPEG.
+        const chosen = await resolveUploadFile(p, toJpeg);
         if (!chosen) continue;
-        const chosenName = p.useOriginal ? p.original.name : p.compressed!.name;
+        const chosenName = chosen.name;
         if (existingNames.has(chosenName)) {
           duplicates.push(chosenName);
           continue;
@@ -422,7 +438,7 @@ export default function AddPhotosPage() {
                 // stays inert rather than opening two blank panes.
                 const canCompare = ready && !video;
                 const delta = ready && !video
-                  ? sizeDelta(p.original.size, p.compressed!.size)
+                  ? sizeDelta(originalUploadSize(p), p.compressed!.size)
                   : null;
                 // Frame grab first; if the codec wasn't there, fall back to
                 // the still this .MOV belongs to. `undefined` (rather than an
@@ -474,7 +490,7 @@ export default function AddPhotosPage() {
                       )}
                       {ready && delta && (
                         <span className={`state ready ${delta.bigger ? 'is-bigger' : ''}`}>
-                          {formatBytes(p.original.size)} → {formatBytes(p.compressed!.size)}
+                          {formatBytes(originalUploadSize(p))} → {formatBytes(p.compressed!.size)}
                           {' · '}
                           {delta.label}
                         </span>

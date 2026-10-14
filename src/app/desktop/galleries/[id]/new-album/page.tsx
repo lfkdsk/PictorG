@@ -27,6 +27,12 @@ import {
   type ComparePhoto,
   sizeDelta,
 } from '@/components/desktop/CompressCompare';
+import {
+  originalConvertsToJpeg,
+  originalUploadSize,
+  resolveUploadFile,
+  settleDefaultVariant,
+} from '@/components/desktop/uploadVariant';
 
 const README_PATH = 'README.yml';
 
@@ -55,6 +61,7 @@ type Photo = {
   originalUrl: string;   // full-res object URL of the original — compare modal
   compressed?: File;     // squoosh output
   compressedUrl?: string; // object URL for the compressed encode (compare modal)
+  originalJpeg?: File;   // JPEG transcode of a HEIC original (see uploadVariant)
   useOriginal?: boolean;  // true = upload the original (compressed came out larger)
   status: PhotoStatus;
   error?: string;
@@ -105,7 +112,7 @@ export default function NewAlbumPage() {
 
   // Compression queue: serial, one file at a time, won't restart in-flight items.
   const inFlightRef = useRef<Set<string>>(new Set());
-  const { compress } = useCompressIpc();
+  const { compress, toJpeg } = useCompressIpc();
 
   useEffect(() => {
     setBridge(getPicgBridge());
@@ -136,11 +143,17 @@ export default function NewAlbumPage() {
     );
 
     compress(next.original)
-      .then((compressed) => {
+      .then(async (compressed) => {
         // Re-encoding a lossy source losslessly (or even lossy WebP on an
         // already-small file) can come out LARGER than the original. Default
         // the per-photo choice to whichever file is smaller so doing nothing
         // never inflates a photo; the user can override in the compare modal.
+        // A HEIC original is weighed as a JPEG transcode, never as raw HEIC.
+        const { originalJpeg, useOriginal } = await settleDefaultVariant(
+          next.original,
+          compressed,
+          toJpeg
+        );
         const compressedUrl = URL.createObjectURL(compressed);
         setPhotos((prev) =>
           prev.map((p) =>
@@ -149,7 +162,8 @@ export default function NewAlbumPage() {
                   ...p,
                   compressed,
                   compressedUrl,
-                  useOriginal: compressed.size >= p.original.size,
+                  originalJpeg,
+                  useOriginal,
                   status: 'ready',
                 }
               : p
@@ -168,7 +182,7 @@ export default function NewAlbumPage() {
       .finally(() => {
         inFlightRef.current.delete(next.id);
       });
-  }, [photos, compress]);
+  }, [photos, compress, toJpeg]);
 
   // Free object URLs on unmount.
   useEffect(() => {
@@ -279,7 +293,8 @@ export default function NewAlbumPage() {
             ? p.preview || p.originalUrl
             : p.originalUrl || p.preview,
           afterUrl: p.compressedUrl ?? '',
-          originalSize: p.original.size,
+          originalSize: originalUploadSize(p),
+          originalAsJpeg: originalConvertsToJpeg(p.original),
           compressedSize: p.compressed!.size,
           useOriginal: !!p.useOriginal,
         })),
@@ -350,20 +365,20 @@ export default function NewAlbumPage() {
       }
       // The cover entry must point at the filename we actually write for the
       // cover photo, which depends on its chosen variant (original keeps the
-      // source extension; compressed is the .webp).
-      const coverFilename = cover.useOriginal
-        ? cover.original.name
-        : cover.compressed.name;
+      // source extension, or .jpg for HEIC; compressed is the encoder's).
+      let coverFilename = cover.compressed.name;
 
       // Build the BatchFile[] payload: every chosen photo + the new README.
       const fileEntries: BatchFile[] = [];
       for (const p of photos) {
         // Upload the variant the user chose. Default (set at compress time)
         // is whichever is smaller, so the original wins when the WebP encode
-        // came out larger. Using the original keeps its source extension.
-        const chosen = p.useOriginal ? p.original : p.compressed;
+        // came out larger. Using the original keeps its source extension —
+        // except HEIC, which browsers can't show, so it goes up as a JPEG.
+        const chosen = await resolveUploadFile(p, toJpeg);
         if (!chosen) continue;
-        const chosenName = p.useOriginal ? p.original.name : p.compressed!.name;
+        const chosenName = chosen.name;
+        if (p.id === cover.id) coverFilename = chosenName;
         const bytes = new Uint8Array(await chosen.arrayBuffer());
         fileEntries.push({
           path: `${form.url}/${chosenName}`,
@@ -563,7 +578,7 @@ export default function NewAlbumPage() {
                 const ready = p.status === 'ready' && p.compressed;
                 const video = isVideoFile(p.original);
                 const delta = ready && !video
-                  ? sizeDelta(p.original.size, p.compressed!.size)
+                  ? sizeDelta(originalUploadSize(p), p.compressed!.size)
                   : null;
                 // Frame grab first; if the codec wasn't there, fall back to
                 // the still this .MOV belongs to. `undefined` (rather than an
@@ -611,7 +626,7 @@ export default function NewAlbumPage() {
                       )}
                       {ready && delta && (
                         <span className={`state ready ${delta.bigger ? 'is-bigger' : ''}`}>
-                          {formatBytes(p.original.size)} → {formatBytes(p.compressed!.size)}
+                          {formatBytes(originalUploadSize(p))} → {formatBytes(p.compressed!.size)}
                           {' · '}
                           {delta.label}
                         </span>
