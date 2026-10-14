@@ -15,6 +15,7 @@ import type {
 import type {
   CloneProgress,
   InFlightClone,
+  PushProgress,
   LocalGallery,
   PhotoIndexProgress,
   PhotoIndexResult,
@@ -89,6 +90,8 @@ export const CHANNELS = {
     status: 'gallery:status',
     refreshStatus: 'gallery:refresh-status',
     cloneProgress: 'gallery:clone-progress',
+    // Main → renderer: upload progress for an in-flight push.
+    pushProgress: 'gallery:push-progress',
     undoLastCommit: 'gallery:undo-last-commit',
     // Main → renderer broadcast: a gallery's git state changed in a
     // way that probably affects ahead/behind/dirty. Fired after every
@@ -423,6 +426,7 @@ export interface PicgBridge {
     refreshStatus(id: string): Promise<GalleryStatus>;
     undoLastCommit(id: string): Promise<UndoResult>;
     onCloneProgress(handler: (event: CloneProgress) => void): () => void;
+    onPushProgress(handler: (event: PushProgress) => void): () => void;
     // Subscribe to git-state-change broadcasts. See CHANNELS.gallery.changed.
     onChanged(handler: (event: GalleryChangedEvent) => void): () => void;
   };

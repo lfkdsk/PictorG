@@ -76,8 +76,8 @@ export function registerGalleryIpcHandlers(): void {
     return updated;
   });
 
-  ipcMain.handle(CHANNELS.gallery.push, async (_e, id: string) => {
-    const receipt = await getRegistry().push(id);
+  ipcMain.handle(CHANNELS.gallery.push, async (event, id: string) => {
+    const receipt = await getRegistry().push(id, event.sender);
     const gallery = await getRegistry().resolve(id);
     emitGalleryChanged({
       galleryId: id,

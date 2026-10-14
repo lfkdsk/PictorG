@@ -11,6 +11,7 @@ import type {
 import { bytesToBase64, bytesToUtf8 } from '../encoding';
 import type {
   CloneProgress,
+  PushProgress,
   InFlightClone,
   LocalGallery,
   PhotoIndexProgress,
@@ -278,6 +279,9 @@ export type PreloadGalleryBridge = {
   // Subscribe to clone-progress events. Returns an unsubscribe fn — call it
   // from a useEffect cleanup to avoid leaks.
   onCloneProgress(handler: (event: CloneProgress) => void): () => void;
+  // Subscribe to push upload progress (git's own --progress output),
+  // tagged with galleryId. Returns an unsubscribe fn.
+  onPushProgress(handler: (event: PushProgress) => void): () => void;
   // Subscribe to git-state-change broadcasts. Main fires these
   // after every storage mutation (write/delete/etc.) and after
   // pull/push/undo. Lets the renderer keep its ahead/behind/dirty

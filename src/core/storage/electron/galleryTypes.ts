@@ -38,6 +38,19 @@ export type CloneProgress = {
   htmlUrl?: string;
 };
 
+// Streamed while `gallery.push` uploads objects to the remote. Parsed from
+// git's own `--progress` stderr lines ("Writing objects: 45% (12/26)").
+// `stage` is git's lowercased first word (counting / compressing /
+// writing / …); `percent` is that stage's own 0-100 — the renderer maps
+// stages onto one overall bar.
+export type PushProgress = {
+  galleryId: string;
+  stage: string;
+  percent: number;       // 0-100 within `stage`
+  processed?: number;
+  total?: number;
+};
+
 // Snapshot of a clone the registry is currently running. Returned by
 // `gallery.listInFlight()` so the page can rehydrate its progress UI
 // after navigating away and back — clones run in main and survive the
